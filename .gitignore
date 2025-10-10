@@ -53,9 +53,6 @@ temp/
 .env.local
 .env.production
 
-# Database
-*.db
-*.sqlite3
 
 # Temporary files
 *.tmp
