@@ -44,6 +44,9 @@ except ImportError:
     from cron import start_cron
     # check_now_adv removed - functionality integrated directly into bot.py
 
+# Global scheduler instance
+_checker_scheduler = None
+
 
 class TelegramBot:
     """Simple Telegram bot using direct API calls."""
@@ -1455,38 +1458,34 @@ def main():
     bot = TelegramBot(settings.bot_token)
     logger.info("Bot created")
     
-    # Start threaded auto-checker (pass bot token for notifications)
+    # Start APScheduler-based auto-checker
     # Auto-check interval is read from database (can be changed via admin menu)
-    global _checker_thread
-    import asyncio
+    global _checker_scheduler
     try:
-        from .auto_checker_threaded import AutoCheckerThread
+        from .auto_checker_scheduler import AutoCheckerScheduler
         from .services.system_settings import get_auto_check_interval
     except ImportError:
-        from auto_checker_threaded import AutoCheckerThread
+        from auto_checker_scheduler import AutoCheckerScheduler
         from services.system_settings import get_auto_check_interval
     
     # Get current interval from database
     with session_factory() as session:
         interval_minutes = get_auto_check_interval(session)
     
-    # Create main event loop for threading
-    try:
-        main_loop = asyncio.get_event_loop()
-    except RuntimeError:
-        main_loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(main_loop)
-    
-    # Start threaded auto-checker
-    _checker_thread = AutoCheckerThread(
-        main_loop=main_loop,
+    # Initialize and start scheduler
+    _checker_scheduler = AutoCheckerScheduler(
         bot_token=settings.bot_token,
         SessionLocal=session_factory,
-        interval_seconds=interval_minutes * 60,  # Convert minutes to seconds
+        interval_minutes=interval_minutes,
         run_immediately=True,
     )
-    _checker_thread.start()
-    logger.info(f"Threaded auto-checker started (every {interval_minutes} minutes)")
+    _checker_scheduler.start()
+    logger.info(f"APScheduler auto-checker started (every {interval_minutes} minutes)")
+    
+    # Get next run time
+    next_run = _checker_scheduler.get_next_run_time()
+    if next_run:
+        logger.info(f"Next check scheduled at: {next_run}")
     
     # Start polling
     logger.info("Starting polling...")
@@ -1508,10 +1507,10 @@ def main():
             
         except KeyboardInterrupt:
             logger.info("Bot stopped by user")
-            # Stop threaded auto-checker
+            # Stop scheduler
             try:
-                _checker_thread.stop()
-                logger.info("Threaded auto-checker stopped")
+                _checker_scheduler.stop()
+                logger.info("APScheduler auto-checker stopped")
             except Exception as e:
                 logger.error(f"Error stopping auto-checker: {e}")
             break
