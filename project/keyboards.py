@@ -206,11 +206,11 @@ def ig_add_mode_kb() -> dict:
         dict with Instagram add mode keyboard
     """
     return {
-        "inline_keyboard": [
-            [{"text": "Импорт cookies", "callback_data": "ig_mode:cookies"}],
-            [{"text": "Логин (Playwright)", "callback_data": "ig_mode:login"}],
-            [{"text": "❌ Отмена", "callback_data": "ig_mode:cancel"}]
-        ]
+        "keyboard": [
+            [{"text": "❌ Отмена"}]
+        ],
+        "resize_keyboard": True,
+        "one_time_keyboard": True
     }
 
 

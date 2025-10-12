@@ -34,6 +34,13 @@ def register_ig_menu_handlers(bot, session_factory) -> None:
                 bot.send_message(chat_id, "⚠️ Обработчик проверки не зарегистрирован.")
             return
         
+        # Handle cancel button
+        if text == "❌ Отмена":
+            if chat_id in bot.fsm_states:
+                del bot.fsm_states[chat_id]
+            bot.send_message(chat_id, "❌ Добавление сессии отменено.", reply_markup=instagram_menu_kb())
+            return
+        
         if text == "Instagram":
             with session_factory() as session:
                 user = get_or_create_user(session, message["from"])
@@ -65,11 +72,12 @@ def register_ig_menu_handlers(bot, session_factory) -> None:
         elif text == "Добавить IG-сессию":
             bot.send_message(
                 chat_id,
-                "Выберите способ добавления сессии:\n"
-                "• Импорт cookies (рекомендуется)\n"
-                "• Логин (Playwright, потребует пароль и возможен 2FA)",
-                reply_markup=instagram_menu_kb()
+                "Пришлите cookies в формате JSON (список объектов, как выдаёт DevTools/Extension).\n"
+                "Минимум: name, value, domain, path.\n\n"
+                "Для отмены нажмите кнопку ниже или напишите: /cancel"
             )
+            # Set FSM state for cookies import
+            bot.fsm_states[chat_id] = {"state": "waiting_cookies", "mode": "cookies"}
             bot.send_message(chat_id, "Режим:", reply_markup=ig_add_mode_kb())
 
         elif text == "Назад в меню":
@@ -80,36 +88,8 @@ def register_ig_menu_handlers(bot, session_factory) -> None:
 
     def process_callback_query(callback_query: dict, session_factory) -> None:
         """Process Instagram menu callback queries."""
-        data = callback_query.get("data", "")
-        chat_id = callback_query["message"]["chat"]["id"]
-        message_id = callback_query["message"]["message_id"]
-        
-        if data.startswith("ig_mode:"):
-            mode = data.split(":")[1]
-            
-            if mode == "cancel":
-                # Clear FSM state if any
-                if chat_id in bot.fsm_states:
-                    del bot.fsm_states[chat_id]
-                bot.send_message(chat_id, "❌ Отменено.", reply_markup=instagram_menu_kb())
-                bot.answer_callback_query(callback_query["id"])
-                return
-            
-            elif mode == "cookies":
-                bot.send_message(
-                    chat_id,
-                    "Пришлите cookies в формате JSON (список объектов, как выдаёт DevTools/Extension).\n"
-                    "Минимум: name, value, domain, path.\n\n"
-                    "Для отмены напишите: /cancel"
-                )
-                # Set FSM state
-                bot.fsm_states[chat_id] = {"state": "waiting_cookies", "mode": "cookies"}
-                
-            elif mode == "login":
-                bot.send_message(chat_id, "Введите IG username (под которым будем логиниться):\n\nДля отмены напишите: /cancel")
-                bot.fsm_states[chat_id] = {"state": "waiting_username", "mode": "login"}
-            
-            bot.answer_callback_query(callback_query["id"])
+        # No more callback queries needed - all moved to regular keyboard
+        pass
 
     def process_instagram_flow(message: dict, session_factory) -> None:
         """Process Instagram session flow messages."""
