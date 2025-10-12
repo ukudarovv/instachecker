@@ -18,14 +18,14 @@ try:
     from ..keyboards import api_menu_kb, main_menu, api_key_card_kb
     from ..models import APIKey
     from ..states import AddApiKeyStates
-    from ..services.api_keys import list_keys_for_user, test_api_key
+    from ..services.api_keys import list_keys_for_user
     from ..config import get_settings
 except ImportError:
     from utils.access import get_or_create_user, ensure_active, ensure_admin
     from keyboards import api_menu_kb, main_menu, api_key_card_kb
     from models import APIKey
     from states import AddApiKeyStates
-    from services.api_keys import list_keys_for_user, test_api_key
+    from services.api_keys import list_keys_for_user
     from config import get_settings
 
 
@@ -99,31 +99,22 @@ def register_api_menu_handlers(dp: Dispatcher, SessionLocal: sessionmaker) -> No
             await message.answer("⚠️ Ключ слишком короткий. Пришлите действительный ключ.")
             return
         
-        await message.answer("⏳ Проверяю ключ тестовым запросом...")
-        ok, err = await test_api_key(key_value, test_username="instagram")
-        
         with SessionLocal() as s:
             user = get_or_create_user(s, message.from_user)
             obj = APIKey(
                 user_id=user.id,
                 key=key_value,
                 qty_req=0,
-                is_work=ok,
+                is_work=True,
             )
             s.add(obj)
             s.commit()
             s.refresh(obj)
         
         await state.finish()
-        if ok:
-            await message.answer(f"✅ Ключ добавлен и валиден (id={obj.id}).", reply_markup=api_menu_kb())
-        else:
-            await message.answer(
-                f"⚠️ Ключ добавлен, но тест не пройден ({err or 'unknown'}).",
-                reply_markup=api_menu_kb()
-            )
+        await message.answer(f"✅ Ключ добавлен (id={obj.id}).", reply_markup=api_menu_kb())
 
-    @dp.callback_query_handler(lambda c: c.data and c.data.startswith(("api_del:", "api_test:")))
+    @dp.callback_query_handler(lambda c: c.data and c.data.startswith("api_del:"))
     async def api_key_actions(call: types.CallbackQuery):
         """Handle API key actions."""
         action, sid = call.data.split(":")
@@ -146,20 +137,4 @@ def register_api_menu_handlers(dp: Dispatcher, SessionLocal: sessionmaker) -> No
                 await call.message.edit_text("🗑 Ключ удалён.")
                 await call.answer()
                 return
-            elif action == "api_test":
-                await call.answer("Тестирую...")
-                key_value = key.key
-        
-        # Test outside of session context
-        ok, err = await test_api_key(key_value, test_username="instagram")
-        
-        with SessionLocal() as s:
-            k2 = s.query(APIKey).get(sid)
-            if k2:
-                k2.is_work = ok
-                s.commit()
-                s.refresh(k2)
-                await call.message.edit_text(_fmt_key(k2), reply_markup=api_key_card_kb(k2.id))
-        
-        await call.answer("OK" if ok else (err or "fail"))
 

@@ -245,8 +245,7 @@ def api_key_card_kb(key_id: int) -> dict:
     return {
         "inline_keyboard": [
             [
-                {"text": "Удалить", "callback_data": f"api_del:{key_id}"},
-                {"text": "Тест", "callback_data": f"api_test:{key_id}"}
+                {"text": "Удалить", "callback_data": f"api_del:{key_id}"}
             ]
         ]
     }
