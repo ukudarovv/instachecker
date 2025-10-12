@@ -7,11 +7,13 @@ try:
     from ..utils.access import get_or_create_user, ensure_active, ensure_admin
     from ..services.system_settings import get_auto_check_interval, set_auto_check_interval
     from ..models import Account, User, APIKey, Proxy, InstagramSession
+    from .user_management import register_user_management_handlers
 except ImportError:
     from keyboards import admin_menu_kb, main_menu
     from utils.access import get_or_create_user, ensure_active, ensure_admin
     from services.system_settings import get_auto_check_interval, set_auto_check_interval
     from models import Account, User, APIKey, Proxy, InstagramSession
+    from handlers.user_management import register_user_management_handlers
 
 
 def register_admin_menu_handlers(bot, session_factory):
@@ -222,14 +224,25 @@ def register_admin_menu_handlers(bot, session_factory):
         print("[ADMIN] Shutting down gracefully for restart...")
         sys.exit(0)  # Exit code 0 = auto-restart
     
-    # Register message handlers
-    return {
+    # Register user management handlers
+    user_mgmt_handlers, user_mgmt_callbacks = register_user_management_handlers(bot, session_factory)
+    
+    # Combine all handlers
+    message_handlers = {
         "Админка": handle_admin_menu,
         "Интервал автопроверки": handle_interval_menu,
         "Статистика системы": handle_statistics,
         "Перезапуск бота": handle_restart_bot,
-    }, {
+    }
+    
+    # Add user management handlers
+    message_handlers.update(user_mgmt_handlers)
+    
+    fsm_handlers = {
         "waiting_for_interval": handle_interval_input,
         "waiting_for_restart_confirm": handle_restart_confirm,
     }
+    
+    # Register message handlers
+    return message_handlers, fsm_handlers, user_mgmt_callbacks
 

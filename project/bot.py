@@ -126,7 +126,8 @@ class TelegramBot:
         data = {
             "chat_id": chat_id,
             "message_id": message_id,
-            "text": text
+            "text": text,
+            "parse_mode": "HTML"
         }
         
         if reply_markup:
@@ -420,6 +421,72 @@ class TelegramBot:
                         self.edit_message_text(chat_id, message_id, key_text, api_key_card_kb(k2.id))
                 
                 self.answer_callback_query(callback_query["id"], "OK" if ok else (err or "fail"))
+            
+            elif callback_data.startswith("usr_"):
+                # User management callbacks (admin only)
+                if not ensure_admin(user):
+                    self.answer_callback_query(callback_query["id"], "⛔ Доступ запрещен")
+                    return
+                
+                # Import admin handlers
+                try:
+                    from .handlers.admin_menu import register_admin_menu_handlers
+                except ImportError:
+                    from handlers.admin_menu import register_admin_menu_handlers
+                
+                text_handlers, fsm_handlers, callback_handlers = register_admin_menu_handlers(self, session_factory)
+                
+                # Parse callback data
+                parts = callback_data.split(":")
+                callback_type = parts[0]
+                
+                # Handle different user management callbacks
+                if callback_type in callback_handlers:
+                    if callback_type == "usr_back" or callback_type == "usr_delete_inactive_ok":
+                        # Callbacks without parameters
+                        callback_handlers[callback_type](callback_query, user)
+                    elif callback_type == "usr_page":
+                        # usr_page:filter_type:page
+                        if len(parts) >= 3:
+                            filter_type = parts[1]
+                            page = parts[2]
+                            callback_handlers[callback_type](callback_query, user, filter_type, page)
+                        else:
+                            self.answer_callback_query(callback_query["id"], "❌ Некорректный запрос")
+                    elif callback_type == "usr_acc_page":
+                        # usr_acc_page:user_id:acc_page:show_active:user_page:user_filter
+                        if len(parts) >= 6:
+                            target_user_id = parts[1]
+                            acc_page = parts[2]
+                            show_active = parts[3]
+                            user_page = parts[4]
+                            user_filter = parts[5]
+                            callback_handlers[callback_type](callback_query, user, target_user_id, acc_page, show_active, user_page, user_filter)
+                        else:
+                            self.answer_callback_query(callback_query["id"], "❌ Некорректный запрос")
+                    elif callback_type == "usr_acc_toggle":
+                        # usr_acc_toggle:user_id:acc_page:show_active:user_page:user_filter
+                        if len(parts) >= 6:
+                            target_user_id = parts[1]
+                            acc_page = parts[2]
+                            show_active = parts[3]
+                            user_page = parts[4]
+                            user_filter = parts[5]
+                            callback_handlers[callback_type](callback_query, user, target_user_id, acc_page, show_active, user_page, user_filter)
+                        else:
+                            self.answer_callback_query(callback_query["id"], "❌ Некорректный запрос")
+                    else:
+                        # Callbacks with user_id and optional page/filter
+                        # Format: usr_action:user_id:page:filter_type
+                        if len(parts) >= 2:
+                            target_user_id = parts[1]
+                            page = parts[2] if len(parts) > 2 else 1
+                            filter_type = parts[3] if len(parts) > 3 else "all"
+                            callback_handlers[callback_type](callback_query, user, target_user_id, page, filter_type)
+                        else:
+                            self.answer_callback_query(callback_query["id"], "❌ Некорректный запрос")
+                else:
+                    self.answer_callback_query(callback_query["id"])
                 
             else:
                 self.answer_callback_query(callback_query["id"])
@@ -838,7 +905,7 @@ class TelegramBot:
                     except ImportError:
                         from handlers.admin_menu import register_admin_menu_handlers
                     
-                    text_handlers, fsm_handlers = register_admin_menu_handlers(self, session_factory)
+                    text_handlers, fsm_handlers, callback_handlers = register_admin_menu_handlers(self, session_factory)
                     if state in fsm_handlers:
                         fsm_handlers[state](message, user)
                 
@@ -1125,11 +1192,13 @@ class TelegramBot:
                 except ImportError:
                     from handlers.admin_menu import register_admin_menu_handlers
                 
-                text_handlers, fsm_handlers = register_admin_menu_handlers(self, session_factory)
+                text_handlers, fsm_handlers, callback_handlers = register_admin_menu_handlers(self, session_factory)
                 if "Админка" in text_handlers:
                     text_handlers["Админка"](message, user)
             
-            elif text in ["Интервал автопроверки", "Статистика системы", "Перезапуск бота"]:
+            elif text in ["Интервал автопроверки", "Статистика системы", "Перезапуск бота", 
+                          "Управление пользователями", "Все пользователи", "Активные", 
+                          "Неактивные", "Администраторы", "Удалить неактивных", "Назад в админку"]:
                 if not ensure_active(user):
                     self.send_message(chat_id, "⛔ Доступ пока не выдан.")
                     return
@@ -1142,7 +1211,7 @@ class TelegramBot:
                 except ImportError:
                     from handlers.admin_menu import register_admin_menu_handlers
                 
-                text_handlers, fsm_handlers = register_admin_menu_handlers(self, session_factory)
+                text_handlers, fsm_handlers, callback_handlers = register_admin_menu_handlers(self, session_factory)
                 if text in text_handlers:
                     text_handlers[text](message, user)
             

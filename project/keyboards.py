@@ -263,12 +263,228 @@ def admin_menu_kb() -> dict:
         "keyboard": [
             [{"text": "Интервал автопроверки"}],
             [{"text": "Статистика системы"}],
+            [{"text": "Управление пользователями"}],
             [{"text": "Перезапуск бота"}],
             [{"text": "Назад в меню"}]
         ],
         "resize_keyboard": True,
         "one_time_keyboard": False
     }
+
+
+def user_management_kb() -> dict:
+    """
+    Create user management menu keyboard.
+    
+    Returns:
+        dict with user management menu keyboard
+    """
+    return {
+        "keyboard": [
+            [{"text": "Все пользователи"}, {"text": "Активные"}],
+            [{"text": "Неактивные"}, {"text": "Администраторы"}],
+            [{"text": "Удалить неактивных"}],
+            [{"text": "Назад в админку"}]
+        ],
+        "resize_keyboard": True,
+        "one_time_keyboard": False
+    }
+
+
+def users_list_kb(users: list, page: int = 1, total_pages: int = 1, filter_type: str = "all") -> dict:
+    """
+    Create users list inline keyboard with pagination.
+    
+    Args:
+        users: list of users to display (already paginated)
+        page: current page number
+        total_pages: total number of pages
+        filter_type: type of filter (all/active/inactive/admin)
+        
+    Returns:
+        dict with users list inline keyboard
+    """
+    keyboard = []
+    
+    # User buttons
+    for user in users:
+        status_icon = "✅" if user.is_active else "❌"
+        role_icon = "👑" if user.role in ["admin", "superuser"] else "👤"
+        username = user.username or f"id{user.id}"
+        keyboard.append([{
+            "text": f"{status_icon} {role_icon} {username}",
+            "callback_data": f"usr_view:{user.id}:{page}:{filter_type}"
+        }])
+    
+    # Pagination buttons
+    if total_pages > 1:
+        pagination_row = []
+        
+        # Previous page button
+        if page > 1:
+            pagination_row.append({
+                "text": "◀️ Назад",
+                "callback_data": f"usr_page:{filter_type}:{page - 1}"
+            })
+        
+        # Page indicator
+        pagination_row.append({
+            "text": f"{page}/{total_pages}",
+            "callback_data": "noop"
+        })
+        
+        # Next page button
+        if page < total_pages:
+            pagination_row.append({
+                "text": "Вперёд ▶️",
+                "callback_data": f"usr_page:{filter_type}:{page + 1}"
+            })
+        
+        keyboard.append(pagination_row)
+    
+    # Back button
+    keyboard.append([{
+        "text": "⬅ Назад в меню",
+        "callback_data": "usr_back"
+    }])
+    
+    return {"inline_keyboard": keyboard}
+
+
+def user_card_kb(user_id: int, is_active: bool, role: str, page: int = 1, filter_type: str = "all") -> dict:
+    """
+    Create user card keyboard with management actions.
+    
+    Args:
+        user_id: user ID
+        is_active: whether user is active
+        role: user role (user/admin/superuser)
+        page: current page number for back navigation
+        filter_type: filter type for back navigation
+        
+    Returns:
+        dict with user card keyboard
+    """
+    keyboard = []
+    
+    # Access control row
+    if is_active:
+        keyboard.append([{"text": "🚫 Отозвать доступ", "callback_data": f"usr_deactivate:{user_id}:{page}:{filter_type}"}])
+    else:
+        keyboard.append([{"text": "✅ Предоставить доступ", "callback_data": f"usr_activate:{user_id}:{page}:{filter_type}"}])
+    
+    # Role management row
+    if role in ["admin", "superuser"]:
+        keyboard.append([{"text": "👤 Снять админа", "callback_data": f"usr_demote:{user_id}:{page}:{filter_type}"}])
+    else:
+        keyboard.append([{"text": "👑 Сделать админом", "callback_data": f"usr_promote:{user_id}:{page}:{filter_type}"}])
+    
+    # Accounts row
+    keyboard.append([{"text": "📱 Показать аккаунты", "callback_data": f"usr_accounts:{user_id}:{page}:{filter_type}"}])
+    
+    # Delete row
+    keyboard.append([{"text": "🗑 Удалить пользователя", "callback_data": f"usr_delete_confirm:{user_id}:{page}:{filter_type}"}])
+    
+    # Back row
+    keyboard.append([{"text": "⬅ Назад к списку", "callback_data": f"usr_page:{filter_type}:{page}"}])
+    
+    return {"inline_keyboard": keyboard}
+
+
+def confirm_user_delete_kb(user_id: int, page: int = 1, filter_type: str = "all") -> dict:
+    """
+    Create confirm user deletion keyboard.
+    
+    Args:
+        user_id: user ID to delete
+        page: current page number
+        filter_type: filter type
+        
+    Returns:
+        dict with confirm delete keyboard
+    """
+    return {
+        "inline_keyboard": [[
+            {"text": "✅ Да, удалить", "callback_data": f"usr_delete_ok:{user_id}:{page}:{filter_type}"},
+            {"text": "❌ Отмена", "callback_data": f"usr_view:{user_id}:{page}:{filter_type}"}
+        ]]
+    }
+
+
+def confirm_delete_inactive_kb() -> dict:
+    """
+    Create confirm delete all inactive users keyboard.
+    
+    Returns:
+        dict with confirm delete keyboard
+    """
+    return {
+        "inline_keyboard": [[
+            {"text": "✅ Да, удалить всех", "callback_data": "usr_delete_inactive_ok"},
+            {"text": "❌ Отмена", "callback_data": "usr_back"}
+        ]]
+    }
+
+
+def user_accounts_kb(user_id: int, page: int, total_pages: int, show_active: bool, user_page: int = 1, filter_type: str = "all") -> dict:
+    """
+    Create keyboard for user accounts pagination.
+    
+    Args:
+        user_id: user ID
+        page: current page of accounts
+        total_pages: total pages of accounts
+        show_active: True for active accounts, False for inactive
+        user_page: page number to return to user list
+        filter_type: filter type to return to user list
+        
+    Returns:
+        dict with keyboard
+    """
+    keyboard = []
+    
+    # Toggle between active/inactive
+    if show_active:
+        keyboard.append([{
+            "text": "⏳ Показать неактивные",
+            "callback_data": f"usr_acc_toggle:{user_id}:1:0:{user_page}:{filter_type}"
+        }])
+    else:
+        keyboard.append([{
+            "text": "✅ Показать активные",
+            "callback_data": f"usr_acc_toggle:{user_id}:1:1:{user_page}:{filter_type}"
+        }])
+    
+    # Pagination
+    if total_pages > 1:
+        pagination_row = []
+        
+        if page > 1:
+            pagination_row.append({
+                "text": "◀️ Назад",
+                "callback_data": f"usr_acc_page:{user_id}:{page-1}:{int(show_active)}:{user_page}:{filter_type}"
+            })
+        
+        pagination_row.append({
+            "text": f"{page}/{total_pages}",
+            "callback_data": "noop"
+        })
+        
+        if page < total_pages:
+            pagination_row.append({
+                "text": "Вперёд ▶️",
+                "callback_data": f"usr_acc_page:{user_id}:{page+1}:{int(show_active)}:{user_page}:{filter_type}"
+            })
+        
+        keyboard.append(pagination_row)
+    
+    # Back button
+    keyboard.append([{
+        "text": "⬅ Назад к пользователю",
+        "callback_data": f"usr_view:{user_id}:{user_page}:{filter_type}"
+    }])
+    
+    return {"inline_keyboard": keyboard}
 
 
 def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
