@@ -86,8 +86,15 @@ def register_ig_menu_handlers(bot, session_factory) -> None:
         elif text == "Добавить IG-сессию":
             bot.send_message(
                 chat_id,
-                "Выберите способ добавления сессии:\n"
-                "• Логин (Playwright, потребует пароль и возможен 2FA)"
+                "Выберите способ добавления сессии:\n\n"
+                "📋 **Импорт cookies** - рекомендуется для аккаунтов с 2FA\n"
+                "  • Войдите в Instagram через браузер\n"
+                "  • Экспортируйте cookies\n"
+                "  • Надежно и безопасно\n\n"
+                "🔐 **Логин через Playwright** - автоматический вход\n"
+                "  • Потребует username и password\n"
+                "  • Может не работать с 2FA\n"
+                "  • Требует установки браузера на сервере"
             )
             bot.send_message(chat_id, "Режим:", reply_markup=ig_add_mode_kb())
 
@@ -114,6 +121,20 @@ def register_ig_menu_handlers(bot, session_factory) -> None:
                 bot.answer_callback_query(callback_query["id"])
                 return
             
+            elif mode == "cookies":
+                bot.send_message(
+                    chat_id, 
+                    "📋 Пришлите cookies в формате JSON.\n\n"
+                    "**Как получить cookies:**\n"
+                    "1. Откройте Instagram в браузере и войдите\n"
+                    "2. Откройте консоль (F12)\n"
+                    "3. Во вкладке Application → Cookies → instagram.com\n"
+                    "4. Экспортируйте все cookies в JSON\n\n"
+                    "Минимально нужны: name, value, domain, path\n\n"
+                    "Для отмены напишите: /cancel"
+                )
+                bot.fsm_states[chat_id] = {"state": "waiting_cookies", "mode": "cookies"}
+                
             elif mode == "login":
                 bot.send_message(chat_id, "Введите IG username (под которым будем логиниться):\n\nДля отмены напишите: /cancel")
                 bot.fsm_states[chat_id] = {"state": "waiting_username", "mode": "login"}
@@ -237,11 +258,43 @@ def register_ig_menu_handlers(bot, session_factory) -> None:
         settings = get_settings()
         fernet = OptionalFernet(settings.encryption_key)
 
-        if state == "waiting_username":
+        if state == "waiting_cookies":
+            # Parse JSON cookies
+            import json
+            try:
+                cookies = json.loads(text)
+                if not isinstance(cookies, list):
+                    raise ValueError("Cookies должны быть списком")
+            except Exception as e:
+                bot.send_message(chat_id, f"⚠️ Неверный JSON: {str(e)}\n\nПришлите **список** cookie-объектов.")
+                return
+            
+            # Ask for IG username to label the session
+            bot.fsm_states[chat_id] = {"state": "waiting_username", "mode": "cookies", "cookies": cookies}
+            bot.send_message(chat_id, "Укажите IG username для этой сессии (только для подписи):")
+            return
+        
+        elif state == "waiting_username":
             ig_username = (text or "").strip().lstrip("@")
             bot.fsm_states[chat_id]["ig_username"] = ig_username
             
-            if mode == "login":
+            if mode == "cookies":
+                # Save session with imported cookies
+                cookies = bot.fsm_states[chat_id].get("cookies")
+                with session_factory() as s:
+                    user = get_or_create_user(s, message["from"])
+                    obj = save_session(
+                        session=s,
+                        user_id=user.id,
+                        ig_username=ig_username,
+                        cookies_json=cookies,
+                        fernet=fernet,
+                    )
+                del bot.fsm_states[chat_id]
+                bot.send_message(chat_id, f"✅ Сессия @{ig_username} импортирована (id={obj.id}).", reply_markup=instagram_menu_kb())
+                return
+            
+            elif mode == "login":
                 bot.fsm_states[chat_id]["state"] = "waiting_password"
                 bot.send_message(chat_id, "Теперь введите пароль IG:")
                 return
