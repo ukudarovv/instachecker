@@ -100,29 +100,70 @@ async def playwright_login_and_get_cookies(
             # Ввод логина/пароля с задержками (имитация человека)
             print(f"🔐 Logging in as @{ig_username}...")
             
-            # Focus and type username slowly
-            try:
-                username_input = await page.wait_for_selector('input[name="username"]', timeout=15000)
-                await username_input.click()
-                await page.wait_for_timeout(500)
-                await username_input.type(ig_username, delay=100)  # Type with 100ms delay between chars
-                await page.wait_for_timeout(500)
-                print(f"✅ Username entered")
-            except Exception as e:
-                print(f"❌ Failed to enter username: {e}")
-                raise Exception("Could not find username input field")
+            # Focus and type username slowly - try multiple selectors
+            username_input = None
+            username_selectors = [
+                'input[name="username"]',
+                'input[aria-label="Phone number, username, or email"]',
+                'input[type="text"]',
+                'input._aa4b._add6._ac4d._ap35'
+            ]
             
-            # Focus and type password slowly
-            try:
-                password_input = await page.wait_for_selector('input[name="password"]', timeout=15000)
-                await password_input.click()
-                await page.wait_for_timeout(500)
-                await password_input.type(ig_password, delay=100)
-                await page.wait_for_timeout(1000)
-                print(f"✅ Password entered")
-            except Exception as e:
-                print(f"❌ Failed to enter password: {e}")
-                raise Exception("Could not find password input field")
+            for selector in username_selectors:
+                try:
+                    print(f"🔍 Trying selector: {selector}")
+                    username_input = await page.wait_for_selector(selector, timeout=5000)
+                    if username_input:
+                        print(f"✅ Found username input with selector: {selector}")
+                        break
+                except:
+                    continue
+            
+            if not username_input:
+                print(f"❌ Could not find username input field with any selector")
+                print(f"📸 Current URL: {page.url}")
+                # Try to save screenshot for debugging
+                try:
+                    await page.screenshot(path="login_error.png")
+                    print(f"📸 Screenshot saved as login_error.png")
+                except:
+                    pass
+                raise Exception("Instagram login page not loaded correctly. Please use cookies import method.")
+            
+            await username_input.click()
+            await page.wait_for_timeout(500)
+            await username_input.type(ig_username, delay=100)
+            await page.wait_for_timeout(500)
+            print(f"✅ Username entered")
+            
+            # Focus and type password slowly - try multiple selectors
+            password_input = None
+            password_selectors = [
+                'input[name="password"]',
+                'input[type="password"]',
+                'input[aria-label="Password"]',
+                'input._aa4b._add6._ac4d._ap35[type="password"]'
+            ]
+            
+            for selector in password_selectors:
+                try:
+                    print(f"🔍 Trying selector: {selector}")
+                    password_input = await page.wait_for_selector(selector, timeout=5000)
+                    if password_input:
+                        print(f"✅ Found password input with selector: {selector}")
+                        break
+                except:
+                    continue
+            
+            if not password_input:
+                print(f"❌ Could not find password input field with any selector")
+                raise Exception("Instagram login page structure changed. Please use cookies import method.")
+            
+            await password_input.click()
+            await page.wait_for_timeout(500)
+            await password_input.type(ig_password, delay=100)
+            await page.wait_for_timeout(1000)
+            print(f"✅ Password entered")
             
             # Click login button
             print("🖱️ Clicking login button...")
