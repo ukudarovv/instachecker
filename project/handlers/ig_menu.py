@@ -87,17 +87,26 @@ def register_ig_menu_handlers(bot, session_factory) -> None:
         if data.startswith("ig_mode:"):
             mode = data.split(":")[1]
             
-            if mode == "cookies":
+            if mode == "cancel":
+                # Clear FSM state if any
+                if chat_id in bot.fsm_states:
+                    del bot.fsm_states[chat_id]
+                bot.send_message(chat_id, "❌ Отменено.", reply_markup=instagram_menu_kb())
+                bot.answer_callback_query(callback_query["id"])
+                return
+            
+            elif mode == "cookies":
                 bot.send_message(
                     chat_id,
                     "Пришлите cookies в формате JSON (список объектов, как выдаёт DevTools/Extension).\n"
-                    "Минимум: name, value, domain, path."
+                    "Минимум: name, value, domain, path.\n\n"
+                    "Для отмены напишите: /cancel"
                 )
                 # Set FSM state
                 bot.fsm_states[chat_id] = {"state": "waiting_cookies", "mode": "cookies"}
                 
             elif mode == "login":
-                bot.send_message(chat_id, "Введите IG username (под которым будем логиниться):")
+                bot.send_message(chat_id, "Введите IG username (под которым будем логиниться):\n\nДля отмены напишите: /cancel")
                 bot.fsm_states[chat_id] = {"state": "waiting_username", "mode": "login"}
             
             bot.answer_callback_query(callback_query["id"])
@@ -106,6 +115,13 @@ def register_ig_menu_handlers(bot, session_factory) -> None:
         """Process Instagram session flow messages."""
         text = message.get("text", "")
         chat_id = message["chat"]["id"]
+        
+        # Handle cancel command
+        if text and text.strip().lower() == "/cancel":
+            if chat_id in bot.fsm_states:
+                del bot.fsm_states[chat_id]
+            bot.send_message(chat_id, "❌ Добавление сессии отменено.", reply_markup=instagram_menu_kb())
+            return
         
         if chat_id not in bot.fsm_states:
             return

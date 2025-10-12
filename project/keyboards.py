@@ -208,7 +208,8 @@ def ig_add_mode_kb() -> dict:
     return {
         "inline_keyboard": [
             [{"text": "Импорт cookies", "callback_data": "ig_mode:cookies"}],
-            [{"text": "Логин (Playwright)", "callback_data": "ig_mode:login"}]
+            [{"text": "Логин (Playwright)", "callback_data": "ig_mode:login"}],
+            [{"text": "❌ Отмена", "callback_data": "ig_mode:cancel"}]
         ]
     }
 
