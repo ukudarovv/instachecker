@@ -58,18 +58,18 @@ async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accou
         
         print(f"[AUTO-CHECK] Found {len(pending_accounts)} pending accounts to check.")
         
-        # Notify admins about check start
-        if bot and admin_users:
-            for admin in admin_users:
-                try:
-                    await bot.send_message(
-                        admin.id,
-                        f"🔄 Автопроверка запущена\n\n"
-                        f"📊 Аккаунтов к проверке: {len(pending_accounts)}\n"
-                        f"⏰ Время: {datetime.now().strftime('%H:%M:%S')}"
-                    )
-                except Exception as e:
-                    print(f"[AUTO-CHECK] Failed to notify admin {admin.id}: {e}")
+        # Notify admins about check start - DISABLED
+        # if bot and admin_users:
+        #     for admin in admin_users:
+        #         try:
+        #             await bot.send_message(
+        #                 admin.id,
+        #                 f"🔄 Автопроверка запущена\n\n"
+        #                 f"📊 Аккаунтов к проверке: {len(pending_accounts)}\n"
+        #                 f"⏰ Время: {datetime.now().strftime('%H:%M:%S')}"
+        #             )
+        #         except Exception as e:
+        #             print(f"[AUTO-CHECK] Failed to notify admin {admin.id}: {e}")
         
         checked = 0
         found = 0
@@ -171,22 +171,22 @@ async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accou
         print(f"  • Not found: {not_found}")
         print(f"  • Errors: {errors}\n")
         
-        # Notify admins about check completion
-        if bot and admin_users:
-            for admin in admin_users:
-                try:
-                    result_text = (
-                        f"✅ Автопроверка завершена\n\n"
-                        f"📊 Результаты:\n"
-                        f"• Проверено: {checked}\n"
-                        f"• Найдено: {found}\n"
-                        f"• Не найдено: {not_found}\n"
-                        f"• Ошибок: {errors}\n\n"
-                        f"⏰ Завершено: {datetime.now().strftime('%H:%M:%S')}"
-                    )
-                    await bot.send_message(admin.id, result_text)
-                except Exception as e:
-                    print(f"[AUTO-CHECK] Failed to notify admin {admin.id} about completion: {e}")
+        # Notify admins about check completion - DISABLED
+        # if bot and admin_users:
+        #     for admin in admin_users:
+        #         try:
+        #             result_text = (
+        #                 f"✅ Автопроверка завершена\n\n"
+        #                 f"📊 Результаты:\n"
+        #                 f"• Проверено: {checked}\n"
+        #                 f"• Найдено: {found}\n"
+        #                 f"• Не найдено: {not_found}\n"
+        #                 f"• Ошибок: {errors}\n\n"
+        #                 f"⏰ Завершено: {datetime.now().strftime('%H:%M:%S')}"
+        #             )
+        #             await bot.send_message(admin.id, result_text)
+        #         except Exception as e:
+        #             print(f"[AUTO-CHECK] Failed to notify admin {admin.id} about completion: {e}")
 
 
 def start_auto_checker(SessionLocal: sessionmaker, bot=None, interval_minutes: int = 3, run_immediately: bool = True):
