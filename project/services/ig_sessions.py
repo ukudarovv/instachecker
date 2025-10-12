@@ -60,6 +60,12 @@ def is_session_expired(ig_session: InstagramSession, fernet: OptionalFernet) -> 
     try:
         cookies = decode_cookies(fernet, ig_session.cookies)
         
+        print(f"🍪 Checking session @{ig_session.username} with {len(cookies)} cookies")
+        
+        # Debug: show all cookie names
+        cookie_names = [c.get('name', 'unknown') for c in cookies]
+        print(f"🍪 Cookie names: {', '.join(cookie_names[:10])}{'...' if len(cookie_names) > 10 else ''}")
+        
         # Look for sessionid cookie which is crucial for Instagram
         sessionid_cookie = None
         for cookie in cookies:
@@ -68,7 +74,8 @@ def is_session_expired(ig_session: InstagramSession, fernet: OptionalFernet) -> 
                 break
         
         if not sessionid_cookie:
-            print("❌ No sessionid cookie found - session invalid")
+            print(f"❌ No sessionid cookie found - session invalid for @{ig_session.username}")
+            print(f"ℹ️ This usually means the login didn't complete successfully")
             return True
         
         # Check if sessionid has expired
@@ -80,7 +87,7 @@ def is_session_expired(ig_session: InstagramSession, fernet: OptionalFernet) -> 
                 print(f"❌ Sessionid cookie expired (expires: {expires}, current: {current_time})")
                 return True
         
-        print("✅ Sessionid cookie is valid")
+        print(f"✅ Sessionid cookie is valid for @{ig_session.username}")
         return False
         
     except Exception as e:

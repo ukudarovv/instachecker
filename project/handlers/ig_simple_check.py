@@ -68,7 +68,15 @@ def register_ig_simple_check_handlers(bot, session_factory) -> None:
                 
                 ig_session = get_valid_session(session, user.id, fernet)
                 if not ig_session:
-                    bot.send_message(chat_id, "⚠️ Нет активной IG-сессии или сессия истекла. Добавьте новую через меню 'Instagram'.")
+                    bot.send_message(
+                        chat_id, 
+                        "⚠️ Нет активной IG-сессии или сессия невалидна.\n\n"
+                        "💡 Возможные причины:\n"
+                        "• Логин не завершился успешно (требуется 2FA)\n"
+                        "• Instagram заблокировал сессию\n"
+                        "• Cookies истекли\n\n"
+                        "👉 Попробуйте добавить новую сессию через меню 'Instagram'."
+                    )
                     return
                 
                 pending = session.query(Account).filter(
