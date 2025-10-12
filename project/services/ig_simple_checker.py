@@ -16,7 +16,7 @@ RE_POSTS = re.compile(r'"edge_owner_to_timeline_media"\s*:\s*\{"count"\s*:\s*(\d
 
 
 async def check_and_refresh_session(
-    context: BrowserContext,
+    page,
     ig_username: Optional[str] = None,
     ig_password: Optional[str] = None
 ) -> tuple[bool, List[Dict[str, Any]]]:
@@ -24,30 +24,36 @@ async def check_and_refresh_session(
     Check if Instagram session is valid and refresh if needed.
     
     Args:
-        context: Playwright browser context
+        page: Playwright page object
         ig_username: Instagram username for login (optional)
         ig_password: Instagram password for login (optional)
         
     Returns:
         Tuple of (is_valid, new_cookies)
     """
-    page = await context.new_page()
-    
     try:
         # Try to access Instagram home page
         await page.goto("https://www.instagram.com/", wait_until="domcontentloaded", timeout=15000)
         await page.wait_for_timeout(2000)
         
-        # Check if we're logged in
+        # Check if we're logged in by looking for login indicators
         current_url = page.url
+        print(f"🔍 Current URL after navigation: {current_url}")
         
-        # If redirected to login page, session is invalid
-        if "accounts/login" in current_url:
+        # Check for login page indicators
+        login_indicators = [
+            "accounts/login" in current_url,
+            "Log In" in await page.content(),
+            "Sign up" in await page.content()
+        ]
+        
+        is_login_page = any(login_indicators)
+        
+        if is_login_page:
             print("🔄 Session expired, attempting to login...")
             
             if not ig_username or not ig_password:
                 print("❌ No credentials provided for login")
-                await page.close()
                 return False, []
             
             # Attempt login
@@ -61,32 +67,29 @@ async def check_and_refresh_session(
                 
                 # Check if login was successful
                 try:
-                    await page.wait_for_selector('nav, a[href="/accounts/edit/"]', timeout=10000)
+                    await page.wait_for_selector('nav, a[href="/accounts/edit/"], [data-testid="user-avatar"]', timeout=10000)
                     print("✅ Login successful")
                     
-                    # Get new cookies
+                    # Get new cookies from the page context
+                    context = page.context
                     new_cookies = await context.cookies()
-                    await page.close()
+                    print(f"🍪 Retrieved {len(new_cookies)} new cookies after login")
                     return True, new_cookies
                     
                 except PWTimeoutError:
                     print("❌ Login failed - might require 2FA or wrong credentials")
-                    await page.close()
                     return False, []
                     
             except Exception as e:
                 print(f"❌ Login error: {e}")
-                await page.close()
                 return False, []
         else:
             # Session is valid
-            print("✅ Session is valid")
-            await page.close()
+            print("✅ Session is valid - user is logged in")
             return True, []
             
     except Exception as e:
         print(f"⚠️ Session check error: {e}")
-        await page.close()
         return False, []
 
 
@@ -190,21 +193,26 @@ async def check_account_with_screenshot(
         )
         
         # Add cookies to context
+        print(f"🍪 Adding {len(cookies)} cookies to browser context...")
         for cookie in cookies:
             try:
-                await context.add_cookies([{
+                cookie_data = {
                     "name": cookie["name"],
                     "value": cookie["value"],
                     "domain": cookie.get("domain", ".instagram.com"),
                     "path": cookie.get("path", "/"),
                     "expires": cookie.get("expires", -1)
-                }])
+                }
+                await context.add_cookies([cookie_data])
+                print(f"✅ Added cookie: {cookie['name']}")
             except Exception as e:
-                print(f"Warning: Failed to add cookie {cookie['name']}: {e}")
+                print(f"❌ Failed to add cookie {cookie['name']}: {e}")
+        
+        page = await context.new_page()
         
         # Check if session is valid and refresh if needed
         session_valid, new_cookies = await check_and_refresh_session(
-            context, 
+            page, 
             ig_username=ig_username, 
             ig_password=ig_password
         )
@@ -224,8 +232,6 @@ async def check_account_with_screenshot(
             except Exception as e:
                 print(f"⚠️ Failed to update cookies in DB: {e}")
         
-        page = await context.new_page()
-        
         try:
             print(f"🔍 Checking @{username}...")
             
@@ -234,6 +240,13 @@ async def check_account_with_screenshot(
             
             # Wait for page to load
             await page.wait_for_timeout(2000)
+            
+            # Double-check that we're still logged in
+            current_url = page.url
+            if "accounts/login" in current_url:
+                result["error"] = "Session lost during navigation - redirected to login"
+                print(f"❌ Lost session during navigation to @{username}")
+                return result
             
             # Check if profile exists - multiple methods
             try:
