@@ -20,6 +20,11 @@ except ImportError:
 
 def register_ig_menu_handlers(bot, session_factory) -> None:
     """Register Instagram menu handlers."""
+    
+    def get_ig_menu_kb():
+        """Get Instagram menu keyboard with Mini App URL if configured."""
+        settings = get_settings()
+        return instagram_menu_kb(mini_app_url=settings.ig_mini_app_url if settings.ig_mini_app_url else None)
 
     def process_message(message: dict, session_factory) -> None:
         """Process Instagram menu messages."""
@@ -38,7 +43,7 @@ def register_ig_menu_handlers(bot, session_factory) -> None:
         if text == "❌ Отмена":
             if chat_id in bot.fsm_states:
                 del bot.fsm_states[chat_id]
-            bot.send_message(chat_id, "❌ Добавление сессии отменено.", reply_markup=instagram_menu_kb())
+            bot.send_message(chat_id, "❌ Добавление сессии отменено.", reply_markup=get_ig_menu_kb())
             return
         
         if text == "Instagram":
@@ -47,7 +52,7 @@ def register_ig_menu_handlers(bot, session_factory) -> None:
                 if not ensure_active(user):
                     bot.send_message(chat_id, "⛔ Доступ пока не выдан.")
                     return
-                bot.send_message(chat_id, "Раздел «Instagram»", reply_markup=instagram_menu_kb())
+                bot.send_message(chat_id, "Раздел «Instagram»", reply_markup=get_ig_menu_kb())
 
         elif text == "Мои IG-сессии":
             with session_factory() as session:
@@ -61,7 +66,7 @@ def register_ig_menu_handlers(bot, session_factory) -> None:
                 ).order_by(InstagramSession.created_at.desc()).all()
                 
                 if not sessions:
-                    bot.send_message(chat_id, "📭 У вас нет сохранённых IG-сессий.", reply_markup=instagram_menu_kb())
+                    bot.send_message(chat_id, "📭 У вас нет сохранённых IG-сессий.", reply_markup=get_ig_menu_kb())
                     return
                 
                 # Create inline keyboard with sessions list
@@ -117,7 +122,7 @@ def register_ig_menu_handlers(bot, session_factory) -> None:
                 # Clear FSM state if any
                 if chat_id in bot.fsm_states:
                     del bot.fsm_states[chat_id]
-                bot.send_message(chat_id, "❌ Отменено.", reply_markup=instagram_menu_kb())
+                bot.send_message(chat_id, "❌ Отменено.", reply_markup=get_ig_menu_kb())
                 bot.answer_callback_query(callback_query["id"])
                 return
             
@@ -143,7 +148,7 @@ def register_ig_menu_handlers(bot, session_factory) -> None:
         
         elif data == "ig_back":
             # Return to Instagram menu
-            bot.send_message(chat_id, "Раздел «Instagram»", reply_markup=instagram_menu_kb())
+            bot.send_message(chat_id, "Раздел «Instagram»", reply_markup=get_ig_menu_kb())
             bot.answer_callback_query(callback_query["id"])
         
         elif data.startswith("ig_session:"):
@@ -193,7 +198,7 @@ def register_ig_menu_handlers(bot, session_factory) -> None:
                 ).order_by(InstagramSession.created_at.desc()).all()
                 
                 if not sessions:
-                    bot.send_message(chat_id, "📭 У вас нет сохранённых IG-сессий.", reply_markup=instagram_menu_kb())
+                    bot.send_message(chat_id, "📭 У вас нет сохранённых IG-сессий.", reply_markup=get_ig_menu_kb())
                     bot.answer_callback_query(callback_query["id"])
                     return
                 
@@ -230,7 +235,7 @@ def register_ig_menu_handlers(bot, session_factory) -> None:
                     username = ig_session.username
                     session.delete(ig_session)
                     session.commit()
-                    bot.send_message(chat_id, f"✅ IG-сессия @{username} удалена.", reply_markup=instagram_menu_kb())
+                    bot.send_message(chat_id, f"✅ IG-сессия @{username} удалена.", reply_markup=get_ig_menu_kb())
                 else:
                     bot.send_message(chat_id, "❌ Сессия не найдена.")
                 
@@ -245,7 +250,7 @@ def register_ig_menu_handlers(bot, session_factory) -> None:
         if text and text.strip().lower() == "/cancel":
             if chat_id in bot.fsm_states:
                 del bot.fsm_states[chat_id]
-            bot.send_message(chat_id, "❌ Добавление сессии отменено.", reply_markup=instagram_menu_kb())
+            bot.send_message(chat_id, "❌ Добавление сессии отменено.", reply_markup=get_ig_menu_kb())
             return
         
         if chat_id not in bot.fsm_states:
@@ -291,7 +296,7 @@ def register_ig_menu_handlers(bot, session_factory) -> None:
                         fernet=fernet,
                     )
                 del bot.fsm_states[chat_id]
-                bot.send_message(chat_id, f"✅ Сессия @{ig_username} импортирована (id={obj.id}).", reply_markup=instagram_menu_kb())
+                bot.send_message(chat_id, f"✅ Сессия @{ig_username} импортирована (id={obj.id}).", reply_markup=get_ig_menu_kb())
                 return
             
             elif mode == "login":
@@ -399,7 +404,7 @@ def register_ig_menu_handlers(bot, session_factory) -> None:
                 )
             
             del bot.fsm_states[chat_id]
-            bot.send_message(chat_id, f"✅ Сессия @{ig_username} создана (id={obj.id}).", reply_markup=instagram_menu_kb())
+            bot.send_message(chat_id, f"✅ Сессия @{ig_username} создана (id={obj.id}).", reply_markup=get_ig_menu_kb())
 
     # Register handlers
     bot.ig_menu_process_message = process_message

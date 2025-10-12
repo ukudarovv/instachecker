@@ -140,6 +140,93 @@ class TelegramBot:
             print(f"Error editing message: {e}")
             return False
     
+    def process_web_app_data(self, message: Dict[str, Any], session_factory) -> None:
+        """Process data from Telegram Mini App."""
+        try:
+            chat_id = message["chat"]["id"]
+            user_id = message["from"]["id"]
+            web_app_data = message.get("web_app_data", {})
+            data_string = web_app_data.get("data", "{}")
+            
+            print(f"📱 Received Web App data from user {user_id}")
+            
+            # Parse JSON data
+            try:
+                data = json.loads(data_string)
+            except json.JSONDecodeError as e:
+                print(f"❌ Invalid JSON from Web App: {e}")
+                self.send_message(chat_id, "❌ Ошибка обработки данных из Mini App")
+                return
+            
+            # Handle Instagram cookies from Mini App
+            if data.get("action") == "instagram_cookies":
+                cookies = data.get("cookies", [])
+                
+                if not cookies or len(cookies) == 0:
+                    self.send_message(chat_id, "❌ Не удалось получить cookies из Mini App")
+                    return
+                
+                # Check for sessionid
+                has_sessionid = any(c.get('name') == 'sessionid' for c in cookies)
+                if not has_sessionid:
+                    self.send_message(
+                        chat_id,
+                        "⚠️ В cookies отсутствует sessionid.\n\n"
+                        "Это означает, что вы не полностью вошли в Instagram.\n"
+                        "Попробуйте снова."
+                    )
+                    return
+                
+                # Import required modules
+                try:
+                    from .utils.access import get_or_create_user
+                    from .services.ig_sessions import save_session
+                    from .utils.encryptor import OptionalFernet
+                    from .config import get_settings
+                    from .keyboards import instagram_menu_kb
+                except ImportError:
+                    from utils.access import get_or_create_user
+                    from services.ig_sessions import save_session
+                    from utils.encryptor import OptionalFernet
+                    from config import get_settings
+                    from keyboards import instagram_menu_kb
+                
+                settings = get_settings()
+                fernet = OptionalFernet(settings.encryption_key)
+                
+                # Extract or ask for username
+                ig_username = data.get('username', 'webapp_user')
+                
+                # Save session
+                with session_factory() as s:
+                    user = get_or_create_user(s, type('User', (), {
+                        'id': user_id,
+                        'username': message.get("from", {}).get("username", "")
+                    })())
+                    
+                    obj = save_session(
+                        session=s,
+                        user_id=user.id,
+                        ig_username=ig_username,
+                        cookies_json=cookies,
+                        fernet=fernet,
+                    )
+                
+                self.send_message(
+                    chat_id,
+                    f"✅ Сессия из Mini App сохранена! (id={obj.id})\n\n"
+                    f"🍪 Получено {len(cookies)} cookies\n"
+                    f"📱 Username: @{ig_username}\n\n"
+                    f"🎉 Теперь можете проверять аккаунты через Instagram!",
+                    reply_markup=instagram_menu_kb(mini_app_url=settings.ig_mini_app_url if settings.ig_mini_app_url else None)
+                )
+                
+                print(f"✅ Instagram session saved from Mini App for user {user_id}")
+                
+        except Exception as e:
+            print(f"❌ Error processing Web App data: {e}")
+            self.send_message(chat_id, f"❌ Ошибка обработки данных: {str(e)}")
+    
     def answer_callback_query(self, callback_query_id: str, text: str = None, show_alert: bool = False) -> bool:
         """Answer callback query."""
         data = {
@@ -1568,7 +1655,13 @@ def main():
                     bot.last_update_id = update["update_id"]
                     
                     if "message" in update:
-                        bot.process_message(update["message"], session_factory)
+                        message = update["message"]
+                        
+                        # Check for web_app_data (from Mini App)
+                        if "web_app_data" in message:
+                            bot.process_web_app_data(message, session_factory)
+                        else:
+                            bot.process_message(message, session_factory)
                     elif "callback_query" in update:
                         bot.process_callback_query(update["callback_query"], session_factory)
             

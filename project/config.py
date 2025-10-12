@@ -34,6 +34,7 @@ class Settings:
         self.ig_2fa_timeout_ms: int = int(os.getenv("IG_2FA_TIMEOUT", "300000"))
         self.ig_screenshot_header_selector: str = os.getenv("IG_SCREENSHOT_HEADER_SELECTOR", "header")
         self.ig_screenshot_fallback_selector: str = os.getenv("IG_SCREENSHOT_FALLBACK_SELECTOR", "main")
+        self.ig_mini_app_url: str = os.getenv("IG_MINI_APP_URL", "")  # URL for Telegram Mini App
 
         # RapidAPI settings
         self.rapidapi_host: str = os.getenv("RAPIDAPI_HOST", "instagram210.p.rapidapi.com")

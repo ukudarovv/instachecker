@@ -180,19 +180,34 @@ def proxy_card_kb(proxy_id: int) -> dict:
     }
 
 
-def instagram_menu_kb() -> dict:
+def instagram_menu_kb(mini_app_url: str = None) -> dict:
     """
     Create Instagram menu keyboard.
+    
+    Args:
+        mini_app_url: URL for Telegram Mini App (optional)
     
     Returns:
         dict with Instagram menu keyboard
     """
+    keyboard = [
+        [{"text": "Добавить IG-сессию"}, {"text": "Мои IG-сессии"}]
+    ]
+    
+    # Add Mini App button if URL is provided
+    if mini_app_url:
+        keyboard.append([{
+            "text": "🔐 Войти через Mini App",
+            "web_app": {"url": mini_app_url}
+        }])
+    
+    keyboard.extend([
+        [{"text": "Проверить через IG"}],
+        [{"text": "Назад в меню"}]
+    ])
+    
     return {
-        "keyboard": [
-            [{"text": "Добавить IG-сессию"}, {"text": "Мои IG-сессии"}],
-            [{"text": "Проверить через IG"}],
-            [{"text": "Назад в меню"}]
-        ],
+        "keyboard": keyboard,
         "resize_keyboard": True,
         "one_time_keyboard": False
     }
