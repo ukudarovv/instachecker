@@ -64,10 +64,24 @@ def register_ig_menu_handlers(bot, session_factory) -> None:
                     bot.send_message(chat_id, "📭 У вас нет сохранённых IG-сессий.", reply_markup=instagram_menu_kb())
                     return
                 
-                lines = []
+                # Create inline keyboard with sessions list
+                keyboard = []
                 for s in sessions:
-                    lines.append(f"• id={s.id}, @{s.username}, active={s.is_active}, created={s.created_at}")
-                bot.send_message(chat_id, "\n".join(lines), reply_markup=instagram_menu_kb())
+                    status_icon = "✅" if s.is_active else "❌"
+                    date_str = s.created_at.strftime("%d.%m.%Y %H:%M") if s.created_at else "N/A"
+                    keyboard.append([{
+                        "text": f"{status_icon} @{s.username} ({date_str})",
+                        "callback_data": f"ig_session:{s.id}"
+                    }])
+                
+                # Add back button
+                keyboard.append([{"text": "⬅ Назад", "callback_data": "ig_back"}])
+                
+                bot.send_message(
+                    chat_id, 
+                    f"📋 Ваши IG-сессии ({len(sessions)}):",
+                    reply_markup={"inline_keyboard": keyboard}
+                )
 
         elif text == "Добавить IG-сессию":
             bot.send_message(
@@ -105,6 +119,101 @@ def register_ig_menu_handlers(bot, session_factory) -> None:
                 bot.fsm_states[chat_id] = {"state": "waiting_username", "mode": "login"}
             
             bot.answer_callback_query(callback_query["id"])
+        
+        elif data == "ig_back":
+            # Return to Instagram menu
+            bot.send_message(chat_id, "Раздел «Instagram»", reply_markup=instagram_menu_kb())
+            bot.answer_callback_query(callback_query["id"])
+        
+        elif data.startswith("ig_session:"):
+            session_id = int(data.split(":")[1])
+            # Show session details with delete option
+            with session_factory() as session:
+                user = get_or_create_user(session, callback_query["from"])
+                ig_session = session.query(InstagramSession).filter(
+                    InstagramSession.id == session_id,
+                    InstagramSession.user_id == user.id
+                ).first()
+                
+                if not ig_session:
+                    bot.send_message(chat_id, "❌ Сессия не найдена.")
+                    bot.answer_callback_query(callback_query["id"])
+                    return
+                
+                status_icon = "✅" if ig_session.is_active else "❌"
+                date_str = ig_session.created_at.strftime("%d.%m.%Y %H:%M") if ig_session.created_at else "N/A"
+                
+                message_text = (
+                    f"📋 Детали IG-сессии:\n\n"
+                    f"• ID: {ig_session.id}\n"
+                    f"• Username: @{ig_session.username}\n"
+                    f"• Статус: {status_icon} {'Активна' if ig_session.is_active else 'Неактивна'}\n"
+                    f"• Создана: {date_str}"
+                )
+                
+                keyboard = [
+                    [{"text": "🗑 Удалить", "callback_data": f"ig_delete:{session_id}"}],
+                    [{"text": "⬅ Назад к списку", "callback_data": "ig_sessions"}]
+                ]
+                
+                bot.send_message(
+                    chat_id,
+                    message_text,
+                    reply_markup={"inline_keyboard": keyboard}
+                )
+                bot.answer_callback_query(callback_query["id"])
+        
+        elif data == "ig_sessions":
+            # Show sessions list again
+            with session_factory() as session:
+                user = get_or_create_user(session, callback_query["from"])
+                sessions = session.query(InstagramSession).filter(
+                    InstagramSession.user_id == user.id
+                ).order_by(InstagramSession.created_at.desc()).all()
+                
+                if not sessions:
+                    bot.send_message(chat_id, "📭 У вас нет сохранённых IG-сессий.", reply_markup=instagram_menu_kb())
+                    bot.answer_callback_query(callback_query["id"])
+                    return
+                
+                # Create inline keyboard with sessions list
+                keyboard = []
+                for s in sessions:
+                    status_icon = "✅" if s.is_active else "❌"
+                    date_str = s.created_at.strftime("%d.%m.%Y %H:%M") if s.created_at else "N/A"
+                    keyboard.append([{
+                        "text": f"{status_icon} @{s.username} ({date_str})",
+                        "callback_data": f"ig_session:{s.id}"
+                    }])
+                
+                # Add back button
+                keyboard.append([{"text": "⬅ Назад", "callback_data": "ig_back"}])
+                
+                bot.send_message(
+                    chat_id, 
+                    f"📋 Ваши IG-сессии ({len(sessions)}):",
+                    reply_markup={"inline_keyboard": keyboard}
+                )
+                bot.answer_callback_query(callback_query["id"])
+        
+        elif data.startswith("ig_delete:"):
+            session_id = int(data.split(":")[1])
+            with session_factory() as session:
+                user = get_or_create_user(session, callback_query["from"])
+                ig_session = session.query(InstagramSession).filter(
+                    InstagramSession.id == session_id,
+                    InstagramSession.user_id == user.id
+                ).first()
+                
+                if ig_session:
+                    username = ig_session.username
+                    session.delete(ig_session)
+                    session.commit()
+                    bot.send_message(chat_id, f"✅ IG-сессия @{username} удалена.", reply_markup=instagram_menu_kb())
+                else:
+                    bot.send_message(chat_id, "❌ Сессия не найдена.")
+                
+                bot.answer_callback_query(callback_query["id"])
 
     def process_instagram_flow(message: dict, session_factory) -> None:
         """Process Instagram session flow messages."""
