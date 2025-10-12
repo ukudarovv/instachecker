@@ -20,7 +20,11 @@ def _proxy_kwargs_from_url(proxy_url: Optional[str]):
     return {"server": f"{u.scheme}://{u.hostname}:{u.port}", **auth}
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=2, min=2, max=10))
+@retry(
+    stop=stop_after_attempt(2), 
+    wait=wait_exponential(multiplier=3, min=3, max=15),
+    reraise=True
+)
 async def playwright_login_and_get_cookies(
     ig_username: str,
     ig_password: str,
@@ -86,7 +90,9 @@ async def playwright_login_and_get_cookies(
         
         page = await context.new_page()
         try:
-            await page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=login_timeout_ms)
+            # Set longer timeout for navigation
+            print(f"🌐 Navigating to Instagram login page...")
+            await page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=max(login_timeout_ms, 30000))
             
             # Wait for page to fully load
             await page.wait_for_timeout(2000)
@@ -95,18 +101,28 @@ async def playwright_login_and_get_cookies(
             print(f"🔐 Logging in as @{ig_username}...")
             
             # Focus and type username slowly
-            username_input = await page.wait_for_selector('input[name="username"]', timeout=10000)
-            await username_input.click()
-            await page.wait_for_timeout(500)
-            await username_input.type(ig_username, delay=100)  # Type with 100ms delay between chars
-            await page.wait_for_timeout(500)
+            try:
+                username_input = await page.wait_for_selector('input[name="username"]', timeout=15000)
+                await username_input.click()
+                await page.wait_for_timeout(500)
+                await username_input.type(ig_username, delay=100)  # Type with 100ms delay between chars
+                await page.wait_for_timeout(500)
+                print(f"✅ Username entered")
+            except Exception as e:
+                print(f"❌ Failed to enter username: {e}")
+                raise Exception("Could not find username input field")
             
             # Focus and type password slowly
-            password_input = await page.wait_for_selector('input[name="password"]', timeout=10000)
-            await password_input.click()
-            await page.wait_for_timeout(500)
-            await password_input.type(ig_password, delay=100)
-            await page.wait_for_timeout(1000)
+            try:
+                password_input = await page.wait_for_selector('input[name="password"]', timeout=15000)
+                await password_input.click()
+                await page.wait_for_timeout(500)
+                await password_input.type(ig_password, delay=100)
+                await page.wait_for_timeout(1000)
+                print(f"✅ Password entered")
+            except Exception as e:
+                print(f"❌ Failed to enter password: {e}")
+                raise Exception("Could not find password input field")
             
             # Click login button
             print("🖱️ Clicking login button...")
