@@ -223,8 +223,6 @@ def api_menu_kb() -> dict:
     return {
         "keyboard": [
             [{"text": "Мои API ключи"}, {"text": "Добавить API ключ"}],
-            [{"text": "Проверка через API (все)"}],
-            [{"text": "Проверка (API + скриншот)"}],
             [{"text": "Назад в меню"}]
         ],
         "resize_keyboard": True,
