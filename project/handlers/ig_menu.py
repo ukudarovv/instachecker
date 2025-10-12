@@ -26,6 +26,14 @@ def register_ig_menu_handlers(bot, session_factory) -> None:
         text = message.get("text", "")
         chat_id = message["chat"]["id"]
         
+        # Handle "Проверить через IG" by delegating to ig_simple_check
+        if text == "Проверить через IG":
+            if hasattr(bot, 'ig_simple_check_process_message'):
+                bot.ig_simple_check_process_message(message, session_factory)
+            else:
+                bot.send_message(chat_id, "⚠️ Обработчик проверки не зарегистрирован.")
+            return
+        
         if text == "Instagram":
             with session_factory() as session:
                 user = get_or_create_user(session, message["from"])

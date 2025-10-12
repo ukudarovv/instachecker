@@ -1,5 +1,6 @@
 """Simple Instagram checking handlers with screenshots."""
 
+import os
 from sqlalchemy.orm import sessionmaker
 try:
     from ..utils.access import get_or_create_user, ensure_active
@@ -141,7 +142,3 @@ def register_ig_simple_check_handlers(bot, session_factory) -> None:
 
     # Register handlers
     bot.ig_simple_check_process_message = process_message
-
-
-# Import os for file operations
-import os
