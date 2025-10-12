@@ -58,6 +58,7 @@ async def check_and_refresh_session(
             
             # Attempt login
             try:
+                print(f"🔐 Attempting login for @{ig_username}")
                 await page.fill('input[name="username"]', ig_username)
                 await page.fill('input[name="password"]', ig_password)
                 await page.click('button[type="submit"]')
@@ -65,20 +66,55 @@ async def check_and_refresh_session(
                 # Wait for navigation after login
                 await page.wait_for_timeout(3000)
                 
+                # Check current URL to see what happened
+                current_url = page.url
+                print(f"🔍 URL after login attempt: {current_url}")
+                
                 # Check if login was successful
-                try:
-                    await page.wait_for_selector('nav, a[href="/accounts/edit/"], [data-testid="user-avatar"]', timeout=10000)
-                    print("✅ Login successful")
-                    
-                    # Get new cookies from the page context
-                    context = page.context
-                    new_cookies = await context.cookies()
-                    print(f"🍪 Retrieved {len(new_cookies)} new cookies after login")
-                    return True, new_cookies
-                    
-                except PWTimeoutError:
-                    print("❌ Login failed - might require 2FA or wrong credentials")
-                    return False, []
+                if "accounts/login" in current_url:
+                    # Still on login page - check for error messages
+                    try:
+                        error_selectors = [
+                            '[role="alert"]',
+                            '.error',
+                            '[data-testid="error"]',
+                            'text=Incorrect username or password',
+                            'text=Please wait a few minutes',
+                            'text=Try again later'
+                        ]
+                        
+                        for selector in error_selectors:
+                            try:
+                                error_element = await page.locator(selector).first
+                                if await error_element.count() > 0:
+                                    error_text = await error_element.text_content()
+                                    print(f"❌ Login error: {error_text}")
+                                    return False, []
+                            except:
+                                continue
+                        
+                        print("❌ Login failed - still on login page")
+                        return False, []
+                        
+                    except Exception as e:
+                        print(f"❌ Login failed - error checking: {e}")
+                        return False, []
+                else:
+                    # Successfully navigated away from login page
+                    try:
+                        await page.wait_for_selector('nav, a[href="/accounts/edit/"], [data-testid="user-avatar"]', timeout=5000)
+                        print("✅ Login successful")
+                        
+                        # Get new cookies from the page context
+                        context = page.context
+                        new_cookies = await context.cookies()
+                        print(f"🍪 Retrieved {len(new_cookies)} new cookies after login")
+                        return True, new_cookies
+                        
+                    except PWTimeoutError:
+                        # Might need 2FA or other verification
+                        print("⚠️ Login might require 2FA or additional verification")
+                        return False, []
                     
             except Exception as e:
                 print(f"❌ Login error: {e}")

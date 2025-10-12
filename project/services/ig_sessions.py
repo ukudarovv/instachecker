@@ -55,6 +55,63 @@ def get_active_session(session: Session, user_id: int) -> Optional[InstagramSess
     )
 
 
+def is_session_expired(ig_session: InstagramSession, fernet: OptionalFernet) -> bool:
+    """Check if Instagram session cookies are expired."""
+    try:
+        cookies = decode_cookies(fernet, ig_session.cookies)
+        
+        # Look for sessionid cookie which is crucial for Instagram
+        sessionid_cookie = None
+        for cookie in cookies:
+            if cookie.get('name') == 'sessionid':
+                sessionid_cookie = cookie
+                break
+        
+        if not sessionid_cookie:
+            print("❌ No sessionid cookie found - session invalid")
+            return True
+        
+        # Check if sessionid has expired
+        expires = sessionid_cookie.get('expires', -1)
+        if expires != -1 and expires > 0:
+            import time
+            current_time = int(time.time())
+            if current_time >= expires:
+                print(f"❌ Sessionid cookie expired (expires: {expires}, current: {current_time})")
+                return True
+        
+        print("✅ Sessionid cookie is valid")
+        return False
+        
+    except Exception as e:
+        print(f"❌ Error checking session validity: {e}")
+        return True
+
+
+def mark_session_inactive(session: Session, ig_session: InstagramSession) -> None:
+    """Mark Instagram session as inactive."""
+    ig_session.is_active = False
+    session.commit()
+    print(f"⚠️ Marked session @{ig_session.username} as inactive")
+
+
+def get_valid_session(session: Session, user_id: int, fernet: OptionalFernet) -> Optional[InstagramSession]:
+    """Get valid Instagram session for user, checking cookie expiration."""
+    ig_session = get_active_session(session, user_id)
+    
+    if not ig_session:
+        print("❌ No active session found")
+        return None
+    
+    if is_session_expired(ig_session, fernet):
+        print(f"⚠️ Session @{ig_session.username} is expired, marking as inactive")
+        mark_session_inactive(session, ig_session)
+        return None
+    
+    print(f"✅ Valid session found: @{ig_session.username}")
+    return ig_session
+
+
 def decode_cookies(fernet: OptionalFernet, cookies_enc: str) -> List[Dict[str, Any]]:
     """Decode encrypted cookies to JSON list."""
     return json.loads(fernet.decrypt(cookies_enc))
