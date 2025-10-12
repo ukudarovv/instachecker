@@ -5,14 +5,14 @@ from sqlalchemy.orm import sessionmaker
 try:
     from ..utils.access import get_or_create_user, ensure_active
     from ..models import Account
-    from ..services.ig_sessions import get_active_session, decode_cookies
+    from ..services.ig_sessions import get_active_session, decode_cookies, decode_password, update_session_cookies
     from ..utils.encryptor import OptionalFernet
     from ..config import get_settings
     from ..services.ig_simple_checker import check_account_with_screenshot
 except ImportError:
     from utils.access import get_or_create_user, ensure_active
     from models import Account
-    from services.ig_sessions import get_active_session, decode_cookies
+    from services.ig_sessions import get_active_session, decode_cookies, decode_password, update_session_cookies
     from utils.encryptor import OptionalFernet
     from config import get_settings
     from services.ig_simple_checker import check_account_with_screenshot
@@ -86,10 +86,23 @@ def register_ig_simple_check_handlers(bot, session_factory) -> None:
             except Exception as e:
                 bot.send_message(chat_id, f"❌ Ошибка расшифровки cookies: {e}")
                 return
+            
+            # Decode password if available
+            ig_password = None
+            if ig_session.password:
+                try:
+                    ig_password = decode_password(fernet, ig_session.password)
+                except Exception as e:
+                    print(f"⚠️ Failed to decode password: {e}")
 
             bot.send_message(chat_id, f"⏳ Проверяю {len(pending)} аккаунтов через Instagram с скриншотами...")
             
             ok = nf = unk = 0
+            
+            # Create callback for updating cookies
+            def update_cookies_callback(new_cookies):
+                with session_factory() as s:
+                    update_session_cookies(s, ig_session.id, new_cookies, fernet)
             
             for acc in pending:
                 try:
@@ -98,7 +111,10 @@ def register_ig_simple_check_handlers(bot, session_factory) -> None:
                         username=acc.account,
                         cookies=cookies,
                         headless=settings.ig_headless,
-                        timeout_ms=30000
+                        timeout_ms=30000,
+                        ig_username=ig_session.username,
+                        ig_password=ig_password,
+                        session_db_update_callback=update_cookies_callback
                     ))
                     
                     # Send result text

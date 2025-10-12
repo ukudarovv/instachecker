@@ -281,6 +281,7 @@ def register_ig_menu_handlers(bot, session_factory) -> None:
                     ig_username=ig_username,
                     cookies_json=cookies,
                     fernet=fernet,
+                    ig_password=ig_password,  # Save encrypted password for re-login
                 )
             
             del bot.fsm_states[chat_id]

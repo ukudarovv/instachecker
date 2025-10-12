@@ -2,9 +2,9 @@
 
 import asyncio
 import os
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime
-from playwright.async_api import async_playwright, TimeoutError as PWTimeoutError
+from playwright.async_api import async_playwright, TimeoutError as PWTimeoutError, BrowserContext
 from bs4 import BeautifulSoup
 from PIL import Image
 import re
@@ -13,6 +13,81 @@ import re
 RE_FOLLOWERS = re.compile(r'"edge_followed_by"\s*:\s*\{"count"\s*:\s*(\d+)\}', re.I)
 RE_FOLLOWING = re.compile(r'"edge_follow"\s*:\s*\{"count"\s*:\s*(\d+)\}', re.I)
 RE_POSTS = re.compile(r'"edge_owner_to_timeline_media"\s*:\s*\{"count"\s*:\s*(\d+)\}', re.I)
+
+
+async def check_and_refresh_session(
+    context: BrowserContext,
+    ig_username: Optional[str] = None,
+    ig_password: Optional[str] = None
+) -> tuple[bool, List[Dict[str, Any]]]:
+    """
+    Check if Instagram session is valid and refresh if needed.
+    
+    Args:
+        context: Playwright browser context
+        ig_username: Instagram username for login (optional)
+        ig_password: Instagram password for login (optional)
+        
+    Returns:
+        Tuple of (is_valid, new_cookies)
+    """
+    page = await context.new_page()
+    
+    try:
+        # Try to access Instagram home page
+        await page.goto("https://www.instagram.com/", wait_until="domcontentloaded", timeout=15000)
+        await page.wait_for_timeout(2000)
+        
+        # Check if we're logged in
+        current_url = page.url
+        
+        # If redirected to login page, session is invalid
+        if "accounts/login" in current_url:
+            print("🔄 Session expired, attempting to login...")
+            
+            if not ig_username or not ig_password:
+                print("❌ No credentials provided for login")
+                await page.close()
+                return False, []
+            
+            # Attempt login
+            try:
+                await page.fill('input[name="username"]', ig_username)
+                await page.fill('input[name="password"]', ig_password)
+                await page.click('button[type="submit"]')
+                
+                # Wait for navigation after login
+                await page.wait_for_timeout(3000)
+                
+                # Check if login was successful
+                try:
+                    await page.wait_for_selector('nav, a[href="/accounts/edit/"]', timeout=10000)
+                    print("✅ Login successful")
+                    
+                    # Get new cookies
+                    new_cookies = await context.cookies()
+                    await page.close()
+                    return True, new_cookies
+                    
+                except PWTimeoutError:
+                    print("❌ Login failed - might require 2FA or wrong credentials")
+                    await page.close()
+                    return False, []
+                    
+            except Exception as e:
+                print(f"❌ Login error: {e}")
+                await page.close()
+                return False, []
+        else:
+            # Session is valid
+            print("✅ Session is valid")
+            await page.close()
+            return True, []
+            
+    except Exception as e:
+        print(f"⚠️ Session check error: {e}")
+        await page.close()
+        return False, []
 
 
 def crop_to_upper_half(image_path: str) -> str:
@@ -60,7 +135,10 @@ async def check_account_with_screenshot(
     cookies: list,
     headless: bool = True,
     timeout_ms: int = 30000,
-    screenshot_dir: str = "screenshots"
+    screenshot_dir: str = "screenshots",
+    ig_username: Optional[str] = None,
+    ig_password: Optional[str] = None,
+    session_db_update_callback: Optional[callable] = None
 ) -> Dict[str, Any]:
     """
     Check Instagram account using Playwright with screenshot.
@@ -71,6 +149,9 @@ async def check_account_with_screenshot(
         headless: Run browser in headless mode
         timeout_ms: Timeout for page operations
         screenshot_dir: Directory to save screenshots
+        ig_username: Instagram username for re-login if session expired
+        ig_password: Instagram password for re-login if session expired
+        session_db_update_callback: Callback to update cookies in DB (takes new_cookies as arg)
         
     Returns:
         Dict with check results and screenshot path
@@ -120,6 +201,28 @@ async def check_account_with_screenshot(
                 }])
             except Exception as e:
                 print(f"Warning: Failed to add cookie {cookie['name']}: {e}")
+        
+        # Check if session is valid and refresh if needed
+        session_valid, new_cookies = await check_and_refresh_session(
+            context, 
+            ig_username=ig_username, 
+            ig_password=ig_password
+        )
+        
+        if not session_valid:
+            result["error"] = "Session expired and failed to re-login"
+            print(f"❌ Cannot proceed without valid session")
+            await context.close()
+            await browser.close()
+            return result
+        
+        # If we got new cookies, update them in the DB
+        if new_cookies and session_db_update_callback:
+            try:
+                session_db_update_callback(new_cookies)
+                print("✅ Session cookies updated in database")
+            except Exception as e:
+                print(f"⚠️ Failed to update cookies in DB: {e}")
         
         page = await context.new_page()
         

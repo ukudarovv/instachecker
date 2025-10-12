@@ -90,6 +90,7 @@ class InstagramSession(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
     username = Column(String, nullable=False, index=True)   # IG username, под которым логинились
+    password = Column(Text, nullable=True)                  # Encrypted IG password for re-login
     cookies = Column(Text, nullable=False)                  # JSON cookies (зашифр. или в плейнтекст, см. encryptor)
     is_active = Column(Boolean, default=True, index=True)
     created_at = Column(DateTime, server_default=func.now())

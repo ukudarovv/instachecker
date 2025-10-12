@@ -359,8 +359,8 @@ class TelegramBot:
                     self.edit_message_text(chat_id, message_id, proxy_text, proxy_card_kb(p.id))
                     self.answer_callback_query(callback_query["id"])
             
-            elif callback_data.startswith("ig_mode:"):
-                # Instagram mode selection
+            elif callback_data.startswith("ig_mode:") or callback_data.startswith("ig_session:") or callback_data.startswith("ig_delete:") or callback_data == "ig_back" or callback_data == "ig_sessions":
+                # Instagram callbacks
                 if hasattr(self, 'ig_menu_process_callback_query'):
                     self.ig_menu_process_callback_query(callback_query, session_factory)
                 else:
