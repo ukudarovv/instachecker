@@ -19,36 +19,40 @@ except ImportError:
 
 
 def _format_result(result: dict) -> str:
-    """Format check result for display."""
-    lines = [f"@{result['username']}"]
+    """Format check result for display in old bot format."""
+    username = result['username']
     
+    # Build account info in old bot format
+    account_info = f"""Имя пользователя: <a href="https://www.instagram.com/{username}/">{username}</a>"""
+    
+    # Add profile data if available
     if result.get("full_name"):
-        lines.append(f"Имя: {result['full_name']}")
+        account_info += f"\nИмя: {result['full_name']}"
     
     if result.get("followers") is not None:
-        lines.append(f"Подписчики: {result['followers']:,}")
+        account_info += f"\nПодписчики: {result['followers']:,}"
     
     if result.get("following") is not None:
-        lines.append(f"Подписки: {result['following']:,}")
+        account_info += f"\nПодписки: {result['following']:,}"
     
     if result.get("posts") is not None:
-        lines.append(f"Посты: {result['posts']:,}")
+        account_info += f"\nПосты: {result['posts']:,}"
     
-    # Status
+    # Status in old bot format
     if result.get("exists") is True:
         if result.get("is_private"):
-            lines.append("Статус: 🔒 приватный (активный)")
+            account_info += "\nСтатус: Аккаунт разблокирован✅ (приватный)"
         else:
-            lines.append("Статус: ✅ найден")
+            account_info += "\nСтатус: Аккаунт разблокирован✅"
     elif result.get("exists") is False:
-        lines.append("Статус: ❌ не найден")
+        account_info += "\nСтатус: Заблокирован❌"
     else:
-        lines.append("Статус: ❓ не удалось определить")
+        account_info += "\nСтатус: ❓ не удалось определить"
     
     if result.get("error"):
-        lines.append(f"Ошибка: {result['error']}")
+        account_info += f"\nОшибка: {result['error']}"
     
-    return "\n".join(lines)
+    return account_info
 
 
 def register_ig_simple_check_handlers(bot, session_factory) -> None:
@@ -128,9 +132,9 @@ def register_ig_simple_check_handlers(bot, session_factory) -> None:
                         session_db_update_callback=update_cookies_callback
                     ))
                     
-                    # Send result text
+                    # Send result text with HTML formatting
                     result_text = _format_result(result)
-                    bot.send_message(chat_id, result_text)
+                    bot.send_message(chat_id, result_text, parse_mode="HTML")
                     
                     # Send screenshot if available
                     if result.get("screenshot_path") and os.path.exists(result["screenshot_path"]):
