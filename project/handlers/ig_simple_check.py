@@ -115,22 +115,22 @@ def register_ig_simple_check_handlers(bot, session_factory) -> None:
                 with session_factory() as s:
                     update_session_cookies(s, ig_session.id, new_cookies, fernet)
             
-                for acc in pending:
-                    try:
-                        import asyncio
-                        result = asyncio.run(check_account_with_screenshot(
-                            username=acc.account,
-                            cookies=cookies,
-                            headless=settings.ig_headless,
-                            timeout_ms=30000,
-                            ig_username=ig_session.username,
-                            ig_password=ig_password,
-                            session_db_update_callback=update_cookies_callback
-                        ))
-                        
-                        # Send result text with account data
-                        result_text = _format_result(result, acc)
-                        bot.send_message(chat_id, result_text)
+            for acc in pending:
+                try:
+                    import asyncio
+                    result = asyncio.run(check_account_with_screenshot(
+                        username=acc.account,
+                        cookies=cookies,
+                        headless=settings.ig_headless,
+                        timeout_ms=30000,
+                        ig_username=ig_session.username,
+                        ig_password=ig_password,
+                        session_db_update_callback=update_cookies_callback
+                    ))
+                    
+                    # Send result text with account data
+                    result_text = _format_result(result, acc)
+                    bot.send_message(chat_id, result_text)
                     
                     # Send screenshot if available
                     if result.get("screenshot_path") and os.path.exists(result["screenshot_path"]):
