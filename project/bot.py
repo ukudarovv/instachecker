@@ -1214,7 +1214,7 @@ class TelegramBot:
                                         Статус: Аккаунт разблокирован✅"""
                                     
                                     # Send result text
-                                    self.send_message(chat_id, caption, parse_mode="HTML")
+                                    self.send_message(chat_id, caption)
                                 
                                 # Send screenshot if available
                                 if result.get("screenshot_path") and os.path.exists(result["screenshot_path"]):
@@ -1460,7 +1460,7 @@ class TelegramBot:
                                 if info.get("error"):
                                     caption += f"\nОшибка: {info['error']}"
                                 
-                                self.send_message(chat_id, caption, parse_mode="HTML")
+                                self.send_message(chat_id, caption)
                                 
                                 if info.get("screenshot_path") and os.path.exists(info["screenshot_path"]):
                                     try:

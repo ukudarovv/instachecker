@@ -130,7 +130,7 @@ def register_ig_simple_check_handlers(bot, session_factory) -> None:
                     
                     # Send result text with account data
                     result_text = _format_result(result, acc)
-                    bot.send_message(chat_id, result_text, parse_mode="HTML")
+                    bot.send_message(chat_id, result_text)
                     
                     # Send screenshot if available
                     if result.get("screenshot_path") and os.path.exists(result["screenshot_path"]):

@@ -123,7 +123,7 @@ async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accou
                                         Завершено за: 1 дней
                                         Конец работ: {acc.to_date.strftime("%d.%m.%Y") if acc.to_date else "N/A"}
                                         Статус: Аккаунт разблокирован✅"""
-                                    await bot.send_message(user.id, message, parse_mode="HTML")
+                                    await bot.send_message(user.id, message)
                                     
                                     # Send screenshot if available
                                     if result.get("screenshot_path"):

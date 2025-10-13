@@ -93,7 +93,7 @@ def register_check_via_ig_handlers(bot, session_factory) -> None:
                             username=acc.account,
                             timeout_sec=12,
                         ))
-                        bot.send_message(chat_id, _fmt_result(info, acc), parse_mode="HTML")
+                        bot.send_message(chat_id, _fmt_result(info, acc))
                         
                         if info.get("exists") is True:
                             a = s2.query(Account).get(acc.id)
