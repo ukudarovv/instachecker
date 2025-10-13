@@ -133,10 +133,10 @@ async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accou
                                         completed_days = max(1, min(completed_days, acc.period or 1))
                                     
                                     message = f"""Имя пользователя: <a href="https://www.instagram.com/{acc.account}/">{acc.account}</a>
-Начало работ: {acc.from_date.strftime("%d.%m.%Y") if acc.from_date else "N/A"}
+Начало работ: {acc.from_date.strftime("%Y-%m-%d") if acc.from_date else "N/A"}
 Заявлено: {acc.period} дней
 Завершено за: {completed_days} дней
-Конец работ: {acc.to_date.strftime("%d.%m.%Y") if acc.to_date else "N/A"}
+Конец работ: {acc.to_date.strftime("%Y-%m-%d") if acc.to_date else "N/A"}
 Статус: Аккаунт разблокирован✅"""
                                     await bot.send_message(user.id, message)
                                     

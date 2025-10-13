@@ -40,10 +40,10 @@ def _fmt_result(d, account=None) -> str:
             completed_days = max(1, min(completed_days, account.period or 1))
         
         result += f"""
-Начало работ: {account.from_date.strftime("%d.%m.%Y") if account.from_date else "N/A"}
+Начало работ: {account.from_date.strftime("%Y-%m-%d") if account.from_date else "N/A"}
 Заявлено: {account.period} дней
 Завершено за: {completed_days} дней
-Конец работ: {account.to_date.strftime("%d.%m.%Y") if account.to_date else "N/A"}"""
+Конец работ: {account.to_date.strftime("%Y-%m-%d") if account.to_date else "N/A"}"""
     
     # Status in old bot format
     if d.get("exists") is True:

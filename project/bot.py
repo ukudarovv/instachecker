@@ -1237,10 +1237,10 @@ class TelegramBot:
                                     
                                     # Format result in old bot format
                                     caption = f"""Имя пользователя: <a href="https://www.instagram.com/{result['username']}/">{result['username']}</a>
-Начало работ: {acc.from_date.strftime("%d.%m.%Y") if acc.from_date else "N/A"}
+Начало работ: {acc.from_date.strftime("%Y-%m-%d") if acc.from_date else "N/A"}
 Заявлено: {acc.period} дней
 Завершено за: {completed_days} дней
-Конец работ: {acc.to_date.strftime("%d.%m.%Y") if acc.to_date else "N/A"}
+Конец работ: {acc.to_date.strftime("%Y-%m-%d") if acc.to_date else "N/A"}
 Статус: Аккаунт разблокирован✅"""
                                     
                                     # Send result text
@@ -1494,10 +1494,10 @@ class TelegramBot:
                                 
                                 # Format result in old bot format
                                 caption = f"""Имя пользователя: <a href="https://www.instagram.com/{info['username']}/">{info['username']}</a>
-Начало работ: {a.from_date.strftime("%d.%m.%Y") if a.from_date else "N/A"}
+Начало работ: {a.from_date.strftime("%Y-%m-%d") if a.from_date else "N/A"}
 Заявлено: {a.period} дней
 Завершено за: {completed_days} дней
-Конец работ: {a.to_date.strftime("%d.%m.%Y") if a.to_date else "N/A"}"""
+Конец работ: {a.to_date.strftime("%Y-%m-%d") if a.to_date else "N/A"}"""
                                 
                                 if info["exists"] is True:
                                     caption += "\nСтатус: Аккаунт разблокирован✅"
