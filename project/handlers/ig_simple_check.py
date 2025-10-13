@@ -23,7 +23,7 @@ def _format_result(result: dict) -> str:
     username = result['username']
     
     # Build account info in old bot format
-    account_info = f"""Имя пользователя: <a href="https://www.instagram.com/{username}/">{username}</a>"""
+    account_info = f"""Имя пользователя: @https://www.instagram.com/{username}/"""
     
     # Add profile data if available
     if result.get("full_name"):
@@ -132,9 +132,9 @@ def register_ig_simple_check_handlers(bot, session_factory) -> None:
                         session_db_update_callback=update_cookies_callback
                     ))
                     
-                    # Send result text with HTML formatting
+                    # Send result text
                     result_text = _format_result(result)
-                    bot.send_message(chat_id, result_text, parse_mode="HTML")
+                    bot.send_message(chat_id, result_text)
                     
                     # Send screenshot if available
                     if result.get("screenshot_path") and os.path.exists(result["screenshot_path"]):
