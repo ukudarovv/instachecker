@@ -4,3 +4,6 @@ DB_URL=sqlite:///bot.db
 LOG_LEVEL=INFO
 TZ=Asia/Aqtobe
 IG_MINI_APP_URL=
+
+# API Keys Configuration
+API_DAILY_LIMIT=950

@@ -31,13 +31,33 @@ except ImportError:
 
 def _fmt_key(k: APIKey) -> str:
     """Format API key for display."""
+    try:
+        from ..config import get_settings
+    except ImportError:
+        from config import get_settings
+    
+    settings = get_settings()
     # Mask the key
     masked = k.key[:4] + "..." + k.key[-4:] if k.key and len(k.key) > 8 else "***"
+    
+    # Calculate usage percentage
+    usage = k.qty_req or 0
+    limit = settings.api_daily_limit
+    percentage = (usage / limit * 100) if limit > 0 else 0
+    
+    # Usage status emoji
+    if usage >= limit:
+        usage_emoji = "🔴"  # Full
+    elif usage >= limit * 0.8:
+        usage_emoji = "🟡"  # Almost full
+    else:
+        usage_emoji = "🟢"  # Good
+    
     return (
         f"🔑 id={k.id}\n"
         f"• key: {masked}\n"
         f"• is_work: {'✅' if k.is_work else '❌'}\n"
-        f"• qty_req (сегодня): {k.qty_req or 0}\n"
+        f"• usage: {usage_emoji} {usage}/{limit} ({percentage:.1f}%)\n"
         f"• ref_date: {k.ref_date or 'N/A'}"
     )
 
