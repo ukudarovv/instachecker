@@ -999,8 +999,19 @@ class TelegramBot:
                 # API key FSM state
                 elif state == "waiting_api_key":
                     key_value = (text or "").strip()
+                    
+                    # Check for cancel command
+                    if key_value.lower() in ['/cancel', 'отмена', 'cancel']:
+                        del self.fsm_states[user_id]
+                        try:
+                            from .keyboards import api_menu_kb
+                        except ImportError:
+                            from keyboards import api_menu_kb
+                        self.send_message(chat_id, "❌ Добавление API ключа отменено.", api_menu_kb())
+                        return
+                    
                     if len(key_value) < 20:
-                        self.send_message(chat_id, "⚠️ Ключ слишком короткий. Пришлите действительный ключ.")
+                        self.send_message(chat_id, "⚠️ Ключ слишком короткий. Пришлите действительный ключ.\n\nДля отмены напишите: /cancel")
                         return
                     
                     self.send_message(chat_id, "⏳ Проверяю ключ тестовым запросом...")
@@ -1353,7 +1364,7 @@ class TelegramBot:
                     
                     elif text == "Добавить API ключ":
                         self.fsm_states[user_id] = {"state": "waiting_api_key"}
-                        self.send_message(chat_id, "Пришлите ваш RapidAPI ключ (строка).")
+                        self.send_message(chat_id, "Пришлите ваш RapidAPI ключ (строка).\n\nДля отмены напишите: /cancel")
                     
                     elif text == "Проверка через API (все)":
                         self.send_message(chat_id, "⏳ Проверяю аккаунты через RapidAPI...")

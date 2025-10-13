@@ -88,15 +88,22 @@ def register_api_menu_handlers(dp: Dispatcher, SessionLocal: sessionmaker) -> No
     @dp.message_handler(Text(equals="Добавить API ключ"))
     async def add_api_key_start(message: types.Message, state: FSMContext):
         """Start adding API key flow."""
-        await message.answer("Пришлите ваш RapidAPI ключ (строка).")
+        await message.answer("Пришлите ваш RapidAPI ключ (строка).\n\nДля отмены напишите: /cancel")
         await AddApiKeyStates.waiting_for_key.set()
 
     @dp.message_handler(state=AddApiKeyStates.waiting_for_key, content_types=types.ContentTypes.TEXT)
     async def add_api_key_finish(message: types.Message, state: FSMContext):
         """Finish adding API key."""
         key_value = (message.text or "").strip()
+        
+        # Check for cancel command
+        if key_value.lower() in ['/cancel', 'отмена', 'cancel']:
+            await state.finish()
+            await message.answer("❌ Добавление API ключа отменено.", reply_markup=api_menu_kb())
+            return
+        
         if len(key_value) < 20:
-            await message.answer("⚠️ Ключ слишком короткий. Пришлите действительный ключ.")
+            await message.answer("⚠️ Ключ слишком короткий. Пришлите действительный ключ.\n\nДля отмены напишите: /cancel")
             return
         
         with SessionLocal() as s:
