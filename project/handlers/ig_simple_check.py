@@ -36,7 +36,10 @@ def _format_result(result: dict) -> str:
     
     # Status
     if result.get("exists") is True:
-        lines.append("Статус: ✅ найден")
+        if result.get("is_private"):
+            lines.append("Статус: 🔒 приватный (активный)")
+        else:
+            lines.append("Статус: ✅ найден")
     elif result.get("exists") is False:
         lines.append("Статус: ❌ не найден")
     else:

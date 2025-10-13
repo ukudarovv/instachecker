@@ -287,10 +287,10 @@ async def check_account_with_screenshot(
             # Check if profile exists - multiple methods
             try:
                 # Method 1: Look for "Sorry, this page isn't available" or similar
+                # Note: "This Account is Private" is NOT a not-found indicator - private accounts are still active
                 not_found_selectors = [
                     "text=Sorry, this page isn't available",
                     "text=The link you followed may be broken",
-                    "text=This Account is Private",
                     "[data-testid='error-page']",
                     "h2:has-text('Sorry')"
                 ]
@@ -355,15 +355,17 @@ async def check_account_with_screenshot(
             
             # Determine if profile exists
             if result["exists"] is None:
+                # Check if account is private (already handled in parse_profile_data)
+                if result.get("is_private"):
+                    result["exists"] = True
+                    print(f"🔒 Profile @{username} is private - marking as active")
                 # Check if we have any profile data
-                has_data = any([
+                elif any([
                     result["full_name"],
                     result["followers"] is not None,
                     result["following"] is not None,
                     result["posts"] is not None
-                ])
-                
-                if has_data:
+                ]):
                     result["exists"] = True
                     print(f"✅ Profile @{username} found with data")
                 else:
@@ -395,6 +397,13 @@ async def check_account_with_screenshot(
 
 def parse_profile_data(username: str, html: str, soup: BeautifulSoup, result: Dict[str, Any]) -> Dict[str, Any]:
     """Parse profile data from HTML."""
+    
+    # Check if account is private - if so, mark as active
+    if "This Account is Private" in html:
+        result["exists"] = True
+        result["is_private"] = True
+        print(f"🔒 Profile @{username} is private - marking as active")
+        return result
     
     # Look for full name in meta tags
     try:
