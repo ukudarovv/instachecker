@@ -132,8 +132,8 @@ async def check_and_refresh_session(
 def crop_to_upper_half(image_path: str) -> str:
     """
     Crop image to show only upper part with custom margins.
-    - Vertical: upper 50% minus 30% from bottom = 20% of total height
-    - Horizontal: center 60% (removes 20% from each side)
+    - Vertical: upper 50% minus 30% from bottom = 35% of total height
+    - Horizontal: 45% width (removes 35% from left, 20% from right)
     
     Args:
         image_path: Path to the original image
@@ -151,17 +151,18 @@ def crop_to_upper_half(image_path: str) -> str:
         bottom_crop = int(upper_half_height * 0.35)  # Remove 30% from bottom of upper half
         final_height = upper_half_height - bottom_crop  # This gives us 35% of total height
         
-        # Calculate horizontal crop (remove 20% from each side)
-        horizontal_crop = int(width * 0.20)  # 20% from each side
-        left = horizontal_crop
-        right = width - horizontal_crop
+        # Calculate horizontal crop (remove 35% from left, 20% from right)
+        left_crop = int(width * 0.35)  # 35% from left
+        right_crop = int(width * 0.20)  # 20% from right
+        left = left_crop
+        right = width - right_crop
         
         # Crop (left, top, right, bottom)
         cropped_img = img.crop((left, 0, right, final_height))
         
         # Save cropped image (overwrite original)
         cropped_img.save(image_path)
-        print(f"✂️ Image cropped (center 60% width, top 35% height): {image_path}")
+        print(f"✂️ Image cropped (45% width from center-right, top 35% height): {image_path}")
         
         return image_path
     except Exception as e:
