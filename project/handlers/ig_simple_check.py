@@ -23,27 +23,27 @@ def _format_result(result: dict, account=None) -> str:
     username = result['username']
     
     # Build account info in old bot format with dates and period
-    account_info = f"""Имя пользователя: {username}"""
+    account_info = f"""Имя пользователя: <a href="https://www.instagram.com/{username}/">{username}</a>"""
     
     # Add dates and period if account data is available
     if account:
         from datetime import datetime
         account_info += f"""
-                                        Начало работ: {account.from_date.strftime("%d.%m.%Y") if account.from_date else "N/A"}
-                                        Заявлено: {account.period} дней
-                                        Завершено за: 1 дней
-                                        Конец работ: {account.to_date.strftime("%d.%m.%Y") if account.to_date else "N/A"}"""
+                        Начало работ: {account.from_date.strftime("%d.%m.%Y") if account.from_date else "N/A"}
+                        Заявлено: {account.period} дней
+                        Завершено за: 1 дней
+                        Конец работ: {account.to_date.strftime("%d.%m.%Y") if account.to_date else "N/A"}"""
     
     # Status in old bot format
     if result.get("exists") is True:
         if result.get("is_private"):
-            account_info += "\n                                        Статус: Аккаунт разблокирован✅"
+            account_info += "\nСтатус: Аккаунт разблокирован✅"
         else:
-            account_info += "\n                                        Статус: Аккаунт разблокирован✅"
+            account_info += "\nСтатус: Аккаунт разблокирован✅"
     elif result.get("exists") is False:
-        account_info += "\n                                        Статус: Заблокирован❌"
+        account_info += "\nСтатус: Заблокирован❌"
     else:
-        account_info += "\n                                        Статус: ❓ не удалось определить"
+        account_info += "\nСтатус: ❓ не удалось определить"
     
     if result.get("error"):
         account_info += f"\nОшибка: {result['error']}"
@@ -130,7 +130,7 @@ def register_ig_simple_check_handlers(bot, session_factory) -> None:
                     
                     # Send result text with account data
                     result_text = _format_result(result, acc)
-                    bot.send_message(chat_id, result_text)
+                    bot.send_message(chat_id, result_text, parse_mode="HTML")
                     
                     # Send screenshot if available
                     if result.get("screenshot_path") and os.path.exists(result["screenshot_path"]):

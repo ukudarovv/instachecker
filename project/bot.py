@@ -1206,7 +1206,7 @@ class TelegramBot:
                                 # Only send message if account exists
                                 if result.get("exists") is True:
                                     # Format result in old bot format
-                                    caption = f"""Имя пользователя: {result['username']}
+                                    caption = f"""Имя пользователя: <a href="https://www.instagram.com/{result['username']}/">{result['username']}</a>
                                         Начало работ: {acc.from_date.strftime("%d.%m.%Y") if acc.from_date else "N/A"}
                                         Заявлено: {acc.period} дней
                                         Завершено за: 1 дней
@@ -1214,7 +1214,7 @@ class TelegramBot:
                                         Статус: Аккаунт разблокирован✅"""
                                     
                                     # Send result text
-                                    self.send_message(chat_id, caption)
+                                    self.send_message(chat_id, caption, parse_mode="HTML")
                                 
                                 # Send screenshot if available
                                 if result.get("screenshot_path") and os.path.exists(result["screenshot_path"]):
@@ -1444,7 +1444,7 @@ class TelegramBot:
                                     unk_count += 1
                                 
                                 # Format result in old bot format
-                                caption = f"""Имя пользователя: {info['username']}
+                                caption = f"""Имя пользователя: <a href="https://www.instagram.com/{info['username']}/">{info['username']}</a>
                                         Начало работ: {a.from_date.strftime("%d.%m.%Y") if a.from_date else "N/A"}
                                         Заявлено: {a.period} дней
                                         Завершено за: 1 дней
@@ -1460,7 +1460,7 @@ class TelegramBot:
                                 if info.get("error"):
                                     caption += f"\nОшибка: {info['error']}"
                                 
-                                self.send_message(chat_id, caption)
+                                self.send_message(chat_id, caption, parse_mode="HTML")
                                 
                                 if info.get("screenshot_path") and os.path.exists(info["screenshot_path"]):
                                     try:

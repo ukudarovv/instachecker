@@ -117,13 +117,13 @@ async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accou
                             with SessionLocal() as s:
                                 user = s.query(User).get(acc.user_id)
                                 if user:
-                                    message = f"""Имя пользователя: {acc.account}
+                                    message = f"""Имя пользователя: <a href="https://www.instagram.com/{acc.account}/">{acc.account}</a>
                                         Начало работ: {acc.from_date.strftime("%d.%m.%Y") if acc.from_date else "N/A"}
                                         Заявлено: {acc.period} дней
                                         Завершено за: 1 дней
                                         Конец работ: {acc.to_date.strftime("%d.%m.%Y") if acc.to_date else "N/A"}
                                         Статус: Аккаунт разблокирован✅"""
-                                    await bot.send_message(user.id, message)
+                                    await bot.send_message(user.id, message, parse_mode="HTML")
                                     
                                     # Send screenshot if available
                                     if result.get("screenshot_path"):
