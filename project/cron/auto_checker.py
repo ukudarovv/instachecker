@@ -117,12 +117,7 @@ async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accou
                             with SessionLocal() as s:
                                 user = s.query(User).get(acc.user_id)
                                 if user:
-                                    message = (
-                                        f"🎉 Автопроверка!\n\n"
-                                        f"✅ Аккаунт @{acc.account} найден и активирован!\n"
-                                        f"• Дата старта: {acc.from_date}\n"
-                                        f"• Период: {acc.period} дней"
-                                    )
+                                    message = f"Имя пользователя: {acc.account}\nСтатус: Аккаунт разблокирован✅"
                                     await bot.send_message(user.id, message)
                                     
                                     # Send screenshot if available
