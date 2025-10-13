@@ -5,14 +5,14 @@ from sqlalchemy.orm import sessionmaker
 try:
     from ..utils.access import get_or_create_user, ensure_active
     from ..models import Account
-    from ..services.ig_sessions import get_valid_session, decode_cookies, decode_password, update_session_cookies
+    from ..services.ig_sessions import get_priority_valid_session, decode_cookies, decode_password, update_session_cookies
     from ..utils.encryptor import OptionalFernet
     from ..config import get_settings
     from ..services.ig_simple_checker import check_account_with_screenshot
 except ImportError:
     from utils.access import get_or_create_user, ensure_active
     from models import Account
-    from services.ig_sessions import get_valid_session, decode_cookies, decode_password, update_session_cookies
+    from services.ig_sessions import get_priority_valid_session, decode_cookies, decode_password, update_session_cookies
     from utils.encryptor import OptionalFernet
     from config import get_settings
     from services.ig_simple_checker import check_account_with_screenshot
@@ -69,7 +69,7 @@ def register_ig_simple_check_handlers(bot, session_factory) -> None:
                     bot.send_message(chat_id, "⛔ Доступ пока не выдан.")
                     return
                 
-                ig_session = get_valid_session(session, user.id, fernet)
+                ig_session = get_priority_valid_session(session, user.id, fernet)
                 if not ig_session:
                     bot.send_message(
                         chat_id, 

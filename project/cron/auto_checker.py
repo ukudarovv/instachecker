@@ -7,13 +7,13 @@ from sqlalchemy.orm import sessionmaker
 try:
     from ..models import Account, User
     from ..services.hybrid_checker import check_account_hybrid
-    from ..services.ig_sessions import get_active_session
+    from ..services.ig_sessions import get_priority_valid_session
     from ..utils.encryptor import OptionalFernet
     from ..config import get_settings
 except ImportError:
     from models import Account, User
     from services.hybrid_checker import check_account_hybrid
-    from services.ig_sessions import get_active_session
+    from services.ig_sessions import get_priority_valid_session
     from utils.encryptor import OptionalFernet
     from config import get_settings
 
@@ -84,12 +84,12 @@ async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accou
             nonlocal checked, found, not_found, errors
             
             try:
-                # Get user's active Instagram session
+                # Get user's priority Instagram session
                 with SessionLocal() as s:
-                    ig_session = get_active_session(s, acc.user_id)
+                    ig_session = get_priority_valid_session(s, acc.user_id, fernet)
                 
                 if not ig_session:
-                    print(f"[AUTO-CHECK] Skipping @{acc.account} - no active IG session for user {acc.user_id}")
+                    print(f"[AUTO-CHECK] Skipping @{acc.account} - no valid IG session for user {acc.user_id}")
                     return
                 
                 print(f"[AUTO-CHECK] Checking @{acc.account}...")

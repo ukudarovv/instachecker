@@ -55,6 +55,47 @@ def get_active_session(session: Session, user_id: int) -> Optional[InstagramSess
     )
 
 
+def get_all_active_sessions(session: Session, user_id: int) -> List[InstagramSession]:
+    """Get all active Instagram sessions for user, ordered by priority (created_at ASC)."""
+    return (
+        session.query(InstagramSession)
+        .filter(InstagramSession.user_id == user_id, InstagramSession.is_active == True)
+        .order_by(InstagramSession.created_at.asc())  # First created = highest priority
+        .all()
+    )
+
+
+def get_priority_valid_session(session: Session, user_id: int, fernet: OptionalFernet) -> Optional[InstagramSession]:
+    """
+    Get the first valid session by priority order.
+    Uses first session until it fails, then switches to next one.
+    """
+    sessions = get_all_active_sessions(session, user_id)
+    
+    if not sessions:
+        print("❌ No active sessions found")
+        return None
+    
+    print(f"🔍 Checking {len(sessions)} active sessions by priority...")
+    
+    for i, ig_session in enumerate(sessions, 1):
+        print(f"📋 Priority {i}: @{ig_session.username} (created: {ig_session.created_at})")
+        
+        if is_session_expired(ig_session, fernet):
+            print(f"⚠️ Session @{ig_session.username} is expired, marking as inactive")
+            mark_session_inactive(session, ig_session)
+            continue
+        
+        print(f"✅ Using priority session: @{ig_session.username}")
+        # Update last_used to track usage
+        ig_session.last_used = datetime.utcnow()
+        session.commit()
+        return ig_session
+    
+    print("❌ No valid sessions found")
+    return None
+
+
 def is_session_expired(ig_session: InstagramSession, fernet: OptionalFernet) -> bool:
     """Check if Instagram session cookies are expired."""
     try:

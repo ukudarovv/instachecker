@@ -4,14 +4,14 @@ from sqlalchemy.orm import sessionmaker
 try:
     from ..utils.access import get_or_create_user, ensure_active
     from ..models import Account
-    from ..services.ig_sessions import get_active_session
+    from ..services.ig_sessions import get_priority_valid_session
     from ..utils.encryptor import OptionalFernet
     from ..config import get_settings
     from ..services.checker_ig_session import check_username_via_ig_session
 except ImportError:
     from utils.access import get_or_create_user, ensure_active
     from models import Account
-    from services.ig_sessions import get_active_session
+    from services.ig_sessions import get_priority_valid_session
     from utils.encryptor import OptionalFernet
     from config import get_settings
     from services.checker_ig_session import check_username_via_ig_session
@@ -64,7 +64,7 @@ def register_check_via_ig_handlers(bot, session_factory) -> None:
                     bot.send_message(chat_id, "⛔ Доступ пока не выдан.")
                     return
                 
-                ig_session = get_active_session(session, user.id)
+                ig_session = get_priority_valid_session(session, user.id, fernet)
                 if not ig_session:
                     bot.send_message(chat_id, "⚠️ Нет активной IG-сессии. Сначала добавьте её.")
                     return
