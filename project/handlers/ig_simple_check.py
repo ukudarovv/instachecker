@@ -23,7 +23,7 @@ def _format_result(result: dict) -> str:
     username = result['username']
     
     # Build account info in old bot format
-    account_info = f"""Имя пользователя: @https://www.instagram.com/{username}/"""
+    account_info = f"""Имя пользователя: https://www.instagram.com/{username}/"""
     
     # Add profile data if available
     if result.get("full_name"):
