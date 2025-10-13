@@ -24,10 +24,10 @@ def _fmt_result(d, account=None) -> str:
     # Add dates and period if account data is available
     if account:
         result += f"""
-                    Начало работ: {account.from_date.strftime("%d.%m.%Y") if account.from_date else "N/A"}
-                    Заявлено: {account.period} дней
-                    Завершено за: 1 дней
-                    Конец работ: {account.to_date.strftime("%d.%m.%Y") if account.to_date else "N/A"}"""
+Начало работ: {account.from_date.strftime("%d.%m.%Y") if account.from_date else "N/A"}
+Заявлено: {account.period} дней
+Завершено за: 1 дней
+Конец работ: {account.to_date.strftime("%d.%m.%Y") if account.to_date else "N/A"}"""
     
     # Status in old bot format
     if d.get("exists") is True:

@@ -29,10 +29,10 @@ def _format_result(result: dict, account=None) -> str:
     if account:
         from datetime import datetime
         account_info += f"""
-                        Начало работ: {account.from_date.strftime("%d.%m.%Y") if account.from_date else "N/A"}
-                        Заявлено: {account.period} дней
-                        Завершено за: 1 дней
-                        Конец работ: {account.to_date.strftime("%d.%m.%Y") if account.to_date else "N/A"}"""
+Начало работ: {account.from_date.strftime("%d.%m.%Y") if account.from_date else "N/A"}
+Заявлено: {account.period} дней
+Завершено за: 1 дней
+Конец работ: {account.to_date.strftime("%d.%m.%Y") if account.to_date else "N/A"}"""
     
     # Status in old bot format
     if result.get("exists") is True:

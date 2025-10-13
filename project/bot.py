@@ -1222,11 +1222,11 @@ class TelegramBot:
                                 if result.get("exists") is True:
                                     # Format result in old bot format
                                     caption = f"""Имя пользователя: <a href="https://www.instagram.com/{result['username']}/">{result['username']}</a>
-                                        Начало работ: {acc.from_date.strftime("%d.%m.%Y") if acc.from_date else "N/A"}
-                                        Заявлено: {acc.period} дней
-                                        Завершено за: 1 дней
-                                        Конец работ: {acc.to_date.strftime("%d.%m.%Y") if acc.to_date else "N/A"}
-                                        Статус: Аккаунт разблокирован✅"""
+Начало работ: {acc.from_date.strftime("%d.%m.%Y") if acc.from_date else "N/A"}
+Заявлено: {acc.period} дней
+Завершено за: 1 дней
+Конец работ: {acc.to_date.strftime("%d.%m.%Y") if acc.to_date else "N/A"}
+Статус: Аккаунт разблокирован✅"""
                                     
                                     # Send result text
                                     self.send_message(chat_id, caption)
@@ -1464,17 +1464,17 @@ class TelegramBot:
                                 
                                 # Format result in old bot format
                                 caption = f"""Имя пользователя: <a href="https://www.instagram.com/{info['username']}/">{info['username']}</a>
-                                        Начало работ: {a.from_date.strftime("%d.%m.%Y") if a.from_date else "N/A"}
-                                        Заявлено: {a.period} дней
-                                        Завершено за: 1 дней
-                                        Конец работ: {a.to_date.strftime("%d.%m.%Y") if a.to_date else "N/A"}"""
+Начало работ: {a.from_date.strftime("%d.%m.%Y") if a.from_date else "N/A"}
+Заявлено: {a.period} дней
+Завершено за: 1 дней
+Конец работ: {a.to_date.strftime("%d.%m.%Y") if a.to_date else "N/A"}"""
                                 
                                 if info["exists"] is True:
-                                    caption += "\n                                        Статус: Аккаунт разблокирован✅"
+                                    caption += "\nСтатус: Аккаунт разблокирован✅"
                                 elif info["exists"] is False:
-                                    caption += "\n                                        Статус: Заблокирован❌"
+                                    caption += "\nСтатус: Заблокирован❌"
                                 else:
-                                    caption += "\n                                        Статус: ❓ не удалось определить"
+                                    caption += "\nСтатус: ❓ не удалось определить"
                                 
                                 if info.get("error"):
                                     caption += f"\nОшибка: {info['error']}"
