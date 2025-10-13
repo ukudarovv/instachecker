@@ -838,7 +838,7 @@ class TelegramBot:
                         if check_result.get("screenshot_path") and os.path.exists(check_result["screenshot_path"]):
                             try:
                                 screenshot_path = check_result["screenshot_path"]
-                                self.send_photo(chat_id, screenshot_path, f"📸 @{username}")
+                                self.send_photo(chat_id, screenshot_path, f'📸 <a href="https://www.instagram.com/{username}/">@{username}</a>')
                                 # Delete screenshot after sending to save disk space
                                 try:
                                     os.remove(screenshot_path)
@@ -1250,7 +1250,7 @@ class TelegramBot:
                                 if result.get("screenshot_path") and os.path.exists(result["screenshot_path"]):
                                     try:
                                         screenshot_path = result["screenshot_path"]
-                                        self.send_photo(chat_id, screenshot_path, f"📸 Скриншот @{acc.account}")
+                                        self.send_photo(chat_id, screenshot_path, f'📸 Скриншот <a href="https://www.instagram.com/{acc.account}/">@{acc.account}</a>')
                                         # Delete screenshot after sending to save disk space
                                         try:
                                             os.remove(screenshot_path)
@@ -1514,7 +1514,7 @@ class TelegramBot:
                                 if info.get("screenshot_path") and os.path.exists(info["screenshot_path"]):
                                     try:
                                         screenshot_path = info["screenshot_path"]
-                                        self.send_photo(chat_id, screenshot_path, f"📸 Скриншот @{a.account}")
+                                        self.send_photo(chat_id, screenshot_path, f'📸 Скриншот <a href="https://www.instagram.com/{a.account}/">@{a.account}</a>')
                                         # Delete screenshot after sending to save disk space
                                         try:
                                             os.remove(screenshot_path)

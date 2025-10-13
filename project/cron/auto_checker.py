@@ -145,7 +145,7 @@ async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accou
                                         import os
                                         if os.path.exists(result["screenshot_path"]):
                                             try:
-                                                await bot.send_photo(user.id, result["screenshot_path"], f"📸 @{acc.account}")
+                                                await bot.send_photo(user.id, result["screenshot_path"], f'📸 <a href="https://www.instagram.com/{acc.account}/">@{acc.account}</a>')
                                                 # Delete screenshot after sending
                                                 os.remove(result["screenshot_path"])
                                                 print(f"[AUTO-CHECK] 📸 Screenshot sent and deleted for @{acc.account}")

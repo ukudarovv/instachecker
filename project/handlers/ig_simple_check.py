@@ -151,7 +151,7 @@ def register_ig_simple_check_handlers(bot, session_factory) -> None:
                     if result.get("screenshot_path") and os.path.exists(result["screenshot_path"]):
                         try:
                             screenshot_path = result["screenshot_path"]
-                            bot.send_photo(chat_id, screenshot_path, caption=f"📸 Скриншот @{acc.account}")
+                            bot.send_photo(chat_id, screenshot_path, caption=f'📸 Скриншот <a href="https://www.instagram.com/{acc.account}/">@{acc.account}</a>')
                             # Delete screenshot after sending to save disk space
                             try:
                                 os.remove(screenshot_path)
