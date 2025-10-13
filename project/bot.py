@@ -1205,19 +1205,13 @@ class TelegramBot:
                                 
                                 # Only send message if account exists
                                 if result.get("exists") is True:
-                                    # Format result for existing accounts
-                                    lines = [f"@{result['username']}"]
-                                    if result.get("full_name"): 
-                                        lines.append(f"Имя: {result['full_name']}")
-                                    if result.get("followers") is not None: 
-                                        lines.append(f"Подписчики: {result['followers']:,}")
-                                    if result.get("following") is not None: 
-                                        lines.append(f"Подписки: {result['following']:,}")
-                                    if result.get("posts") is not None: 
-                                        lines.append(f"Посты: {result['posts']:,}")
-                                    lines.append("Статус: ✅ найден")
+                                    # Format result in simple format
+                                    caption = f"Имя пользователя: {result['username']}\n"
                                     
-                                    caption = "\n".join(lines)
+                                    if result.get("is_private"):
+                                        caption += "Статус: Аккаунт разблокирован✅ (приватный)"
+                                    else:
+                                        caption += "Статус: Аккаунт разблокирован✅"
                                     
                                     # Send result text
                                     self.send_message(chat_id, caption)
@@ -1449,30 +1443,22 @@ class TelegramBot:
                                 else:
                                     unk_count += 1
                                 
-                                mark = "✅" if info["exists"] is True else ("❌" if info["exists"] is False else "❓")
-                                lines = [f"{mark} @{info['username']}"]
+                                # Format result in simple format
+                                caption = f"Имя пользователя: {info['username']}\n"
                                 
-                                if info.get("full_name"):
-                                    lines.append(f"Имя: {info['full_name']}")
-                                if info.get("followers") is not None:
-                                    lines.append(f"Подписчики: {info['followers']:,}")
-                                if info.get("following") is not None:
-                                    lines.append(f"Подписки: {info['following']:,}")
-                                if info.get("posts") is not None:
-                                    lines.append(f"Посты: {info['posts']:,}")
-                                
-                                check_via = info.get("checked_via", "unknown")
-                                if check_via == "api+instagram":
-                                    lines.append("🔍 Проверено: API + Instagram")
-                                elif check_via == "api":
-                                    lines.append("🔍 Проверено: API")
-                                elif check_via == "instagram_only":
-                                    lines.append("🔍 Проверено: Instagram")
+                                if info["exists"] is True:
+                                    if info.get("is_private"):
+                                        caption += "Статус: Аккаунт разблокирован✅ (приватный)"
+                                    else:
+                                        caption += "Статус: Аккаунт разблокирован✅"
+                                elif info["exists"] is False:
+                                    caption += "Статус: Заблокирован❌"
+                                else:
+                                    caption += "Статус: ❓ не удалось определить"
                                 
                                 if info.get("error"):
-                                    lines.append(f"⚠️ {info['error']}")
+                                    caption += f"\nОшибка: {info['error']}"
                                 
-                                caption = "\n".join(lines)
                                 self.send_message(chat_id, caption)
                                 
                                 if info.get("screenshot_path") and os.path.exists(info["screenshot_path"]):

@@ -18,23 +18,23 @@ except ImportError:
 
 
 def _fmt_result(d) -> str:
-    """Format check result for display."""
-    lines = [f"@{d['username']}"]
-    if d.get("full_name"): 
-        lines.append(f"Имя: {d['full_name']}")
-    if d.get("followers") is not None: 
-        lines.append(f"Подписчики: {d['followers']}")
-    if d.get("following") is not None: 
-        lines.append(f"Подписки: {d['following']}")
-    if d.get("posts") is not None: 
-        lines.append(f"Посты: {d['posts']}")
-    if d.get("exists") is True: 
-        lines.append("Статус: ✅ найден")
-    elif d.get("exists") is False: 
-        lines.append("Статус: ❌ не найден")
-    else: 
-        lines.append("Статус: ❓ не удалось определить")
-    return "\n".join(lines)
+    """Format check result for display in simple format."""
+    result = f"Имя пользователя: {d['username']}\n"
+    
+    if d.get("exists") is True:
+        if d.get("is_private"):
+            result += "Статус: Аккаунт разблокирован✅ (приватный)"
+        else:
+            result += "Статус: Аккаунт разблокирован✅"
+    elif d.get("exists") is False:
+        result += "Статус: Заблокирован❌"
+    else:
+        result += "Статус: ❓ не удалось определить"
+    
+    if d.get("error"):
+        result += f"\nОшибка: {d['error']}"
+    
+    return result
 
 
 def register_check_via_ig_handlers(bot, session_factory) -> None:
