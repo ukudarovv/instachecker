@@ -59,21 +59,22 @@ class AsyncBotWrapper:
     ) -> bool:
         """Send photo to chat."""
         url = f"{self.api_url}/sendPhoto"
-        data = {"chat_id": chat_id}
-        
-        if caption:
-            data["caption"] = caption
-            data["parse_mode"] = parse_mode
         
         try:
+            from aiohttp import FormData
+            
+            form_data = FormData()
+            form_data.add_field('chat_id', str(chat_id))
+            
+            if caption:
+                form_data.add_field('caption', caption)
+                form_data.add_field('parse_mode', parse_mode)
+            
             with open(photo_path, 'rb') as photo:
+                form_data.add_field('photo', photo, filename='screenshot.png', content_type='image/png')
+                
                 async with aiohttp.ClientSession() as session:
-                    async with session.post(
-                        url, 
-                        data=data, 
-                        files={'photo': photo}, 
-                        timeout=30
-                    ) as response:
+                    async with session.post(url, data=form_data, timeout=30) as response:
                         response.raise_for_status()
                         result = await response.json()
                         return result.get("ok", False)
@@ -90,21 +91,22 @@ class AsyncBotWrapper:
     ) -> bool:
         """Send document to chat."""
         url = f"{self.api_url}/sendDocument"
-        data = {"chat_id": chat_id}
-        
-        if caption:
-            data["caption"] = caption
-            data["parse_mode"] = parse_mode
         
         try:
+            from aiohttp import FormData
+            
+            form_data = FormData()
+            form_data.add_field('chat_id', str(chat_id))
+            
+            if caption:
+                form_data.add_field('caption', caption)
+                form_data.add_field('parse_mode', parse_mode)
+            
             with open(document_path, 'rb') as document:
+                form_data.add_field('document', document, filename='document.pdf', content_type='application/pdf')
+                
                 async with aiohttp.ClientSession() as session:
-                    async with session.post(
-                        url, 
-                        data=data, 
-                        files={'document': document}, 
-                        timeout=30
-                    ) as response:
+                    async with session.post(url, data=form_data, timeout=30) as response:
                         response.raise_for_status()
                         result = await response.json()
                         return result.get("ok", False)
