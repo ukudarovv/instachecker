@@ -27,11 +27,26 @@ def _format_result(result: dict, account=None) -> str:
     
     # Add dates and period if account data is available
     if account:
-        from datetime import datetime
+        from datetime import datetime, date
+        
+        # Calculate real days completed
+        completed_days = 1  # Default fallback
+        if account.from_date:
+            if isinstance(account.from_date, datetime):
+                start_date = account.from_date.date()
+            else:
+                start_date = account.from_date
+            
+            current_date = date.today()
+            completed_days = (current_date - start_date).days + 1  # +1 to include start day
+            
+            # Ensure completed_days is at least 1 and not more than period
+            completed_days = max(1, min(completed_days, account.period or 1))
+        
         account_info += f"""
 Начало работ: {account.from_date.strftime("%d.%m.%Y") if account.from_date else "N/A"}
 Заявлено: {account.period} дней
-Завершено за: 1 дней
+Завершено за: {completed_days} дней
 Конец работ: {account.to_date.strftime("%d.%m.%Y") if account.to_date else "N/A"}"""
     
     # Status in old bot format

@@ -1220,11 +1220,26 @@ class TelegramBot:
                                 
                                 # Only send message if account exists
                                 if result.get("exists") is True:
+                                    # Calculate real days completed
+                                    completed_days = 1  # Default fallback
+                                    if acc.from_date:
+                                        from datetime import date
+                                        if isinstance(acc.from_date, datetime):
+                                            start_date = acc.from_date.date()
+                                        else:
+                                            start_date = acc.from_date
+                                        
+                                        current_date = date.today()
+                                        completed_days = (current_date - start_date).days + 1  # +1 to include start day
+                                        
+                                        # Ensure completed_days is at least 1 and not more than period
+                                        completed_days = max(1, min(completed_days, acc.period or 1))
+                                    
                                     # Format result in old bot format
                                     caption = f"""Имя пользователя: <a href="https://www.instagram.com/{result['username']}/">{result['username']}</a>
 Начало работ: {acc.from_date.strftime("%d.%m.%Y") if acc.from_date else "N/A"}
 Заявлено: {acc.period} дней
-Завершено за: 1 дней
+Завершено за: {completed_days} дней
 Конец работ: {acc.to_date.strftime("%d.%m.%Y") if acc.to_date else "N/A"}
 Статус: Аккаунт разблокирован✅"""
                                     
@@ -1462,11 +1477,26 @@ class TelegramBot:
                                 else:
                                     unk_count += 1
                                 
+                                # Calculate real days completed
+                                completed_days = 1  # Default fallback
+                                if a.from_date:
+                                    from datetime import date
+                                    if isinstance(a.from_date, datetime):
+                                        start_date = a.from_date.date()
+                                    else:
+                                        start_date = a.from_date
+                                    
+                                    current_date = date.today()
+                                    completed_days = (current_date - start_date).days + 1  # +1 to include start day
+                                    
+                                    # Ensure completed_days is at least 1 and not more than period
+                                    completed_days = max(1, min(completed_days, a.period or 1))
+                                
                                 # Format result in old bot format
                                 caption = f"""Имя пользователя: <a href="https://www.instagram.com/{info['username']}/">{info['username']}</a>
 Начало работ: {a.from_date.strftime("%d.%m.%Y") if a.from_date else "N/A"}
 Заявлено: {a.period} дней
-Завершено за: 1 дней
+Завершено за: {completed_days} дней
 Конец работ: {a.to_date.strftime("%d.%m.%Y") if a.to_date else "N/A"}"""
                                 
                                 if info["exists"] is True:
