@@ -17,19 +17,28 @@ except ImportError:
     from services.checker_ig_session import check_username_via_ig_session
 
 
-def _fmt_result(d) -> str:
-    """Format check result for display in simple format."""
-    result = f"Имя пользователя: {d['username']}\n"
+def _fmt_result(d, account=None) -> str:
+    """Format check result for display in old bot format."""
+    result = f"Имя пользователя: {d['username']}"
     
+    # Add dates and period if account data is available
+    if account:
+        result += f"""
+                                        Начало работ: {account.from_date.strftime("%d.%m.%Y") if account.from_date else "N/A"}
+                                        Заявлено: {account.period} дней
+                                        Завершено за: 1 дней
+                                        Конец работ: {account.to_date.strftime("%d.%m.%Y") if account.to_date else "N/A"}"""
+    
+    # Status in old bot format
     if d.get("exists") is True:
         if d.get("is_private"):
-            result += "Статус: Аккаунт разблокирован✅ (приватный)"
+            result += "\n                                        Статус: Аккаунт разблокирован✅"
         else:
-            result += "Статус: Аккаунт разблокирован✅"
+            result += "\n                                        Статус: Аккаунт разблокирован✅"
     elif d.get("exists") is False:
-        result += "Статус: Заблокирован❌"
+        result += "\n                                        Статус: Заблокирован❌"
     else:
-        result += "Статус: ❓ не удалось определить"
+        result += "\n                                        Статус: ❓ не удалось определить"
     
     if d.get("error"):
         result += f"\nОшибка: {d['error']}"
@@ -84,7 +93,7 @@ def register_check_via_ig_handlers(bot, session_factory) -> None:
                             username=acc.account,
                             timeout_sec=12,
                         ))
-                        bot.send_message(chat_id, _fmt_result(info))
+                        bot.send_message(chat_id, _fmt_result(info, acc))
                         
                         if info.get("exists") is True:
                             a = s2.query(Account).get(acc.id)

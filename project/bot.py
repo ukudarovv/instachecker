@@ -1205,13 +1205,13 @@ class TelegramBot:
                                 
                                 # Only send message if account exists
                                 if result.get("exists") is True:
-                                    # Format result in simple format
-                                    caption = f"Имя пользователя: {result['username']}\n"
-                                    
-                                    if result.get("is_private"):
-                                        caption += "Статус: Аккаунт разблокирован✅ (приватный)"
-                                    else:
-                                        caption += "Статус: Аккаунт разблокирован✅"
+                                    # Format result in old bot format
+                                    caption = f"""Имя пользователя: {result['username']}
+                                        Начало работ: {acc.from_date.strftime("%d.%m.%Y") if acc.from_date else "N/A"}
+                                        Заявлено: {acc.period} дней
+                                        Завершено за: 1 дней
+                                        Конец работ: {acc.to_date.strftime("%d.%m.%Y") if acc.to_date else "N/A"}
+                                        Статус: Аккаунт разблокирован✅"""
                                     
                                     # Send result text
                                     self.send_message(chat_id, caption)
@@ -1443,18 +1443,19 @@ class TelegramBot:
                                 else:
                                     unk_count += 1
                                 
-                                # Format result in simple format
-                                caption = f"Имя пользователя: {info['username']}\n"
+                                # Format result in old bot format
+                                caption = f"""Имя пользователя: {info['username']}
+                                        Начало работ: {a.from_date.strftime("%d.%m.%Y") if a.from_date else "N/A"}
+                                        Заявлено: {a.period} дней
+                                        Завершено за: 1 дней
+                                        Конец работ: {a.to_date.strftime("%d.%m.%Y") if a.to_date else "N/A"}"""
                                 
                                 if info["exists"] is True:
-                                    if info.get("is_private"):
-                                        caption += "Статус: Аккаунт разблокирован✅ (приватный)"
-                                    else:
-                                        caption += "Статус: Аккаунт разблокирован✅"
+                                    caption += "\n                                        Статус: Аккаунт разблокирован✅"
                                 elif info["exists"] is False:
-                                    caption += "Статус: Заблокирован❌"
+                                    caption += "\n                                        Статус: Заблокирован❌"
                                 else:
-                                    caption += "Статус: ❓ не удалось определить"
+                                    caption += "\n                                        Статус: ❓ не удалось определить"
                                 
                                 if info.get("error"):
                                     caption += f"\nОшибка: {info['error']}"
