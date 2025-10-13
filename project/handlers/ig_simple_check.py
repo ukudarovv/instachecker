@@ -22,21 +22,8 @@ def _format_result(result: dict) -> str:
     """Format check result for display in old bot format."""
     username = result['username']
     
-    # Build account info in old bot format
-    account_info = f"""Имя пользователя: https://www.instagram.com/{username}/"""
-    
-    # Add profile data if available
-    if result.get("full_name"):
-        account_info += f"\nИмя: {result['full_name']}"
-    
-    if result.get("followers") is not None:
-        account_info += f"\nПодписчики: {result['followers']:,}"
-    
-    if result.get("following") is not None:
-        account_info += f"\nПодписки: {result['following']:,}"
-    
-    if result.get("posts") is not None:
-        account_info += f"\nПосты: {result['posts']:,}"
+    # Build account info in old bot format - only essential info
+    account_info = f"""Имя пользователя: {username}"""
     
     # Status in old bot format
     if result.get("exists") is True:
