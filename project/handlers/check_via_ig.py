@@ -122,7 +122,7 @@ def register_check_via_ig_handlers(bot, session_factory) -> None:
                         else:
                             unk += 1
                     except Exception as e:
-                        bot.send_message(chat_id, f"❌ Ошибка при проверке @{acc.account}: {str(e)}")
+                        bot.send_message(chat_id, f"❌ Ошибка при проверке <a href=\"https://www.instagram.com/{acc.account}/\">@{acc.account}</a>: {str(e)}")
                         unk += 1
             
             bot.send_message(chat_id, f"Готово: найдено — {ok}, не найдено — {nf}, неизвестно — {unk}.")

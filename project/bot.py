@@ -793,7 +793,7 @@ class TelegramBot:
                     if not ig_session:
                         self.send_message(chat_id, 
                             f"✅ Аккаунт добавлен.\n"
-                            f"• Имя: @{acc.account}\n"
+                            f"• Имя: <a href=\"https://www.instagram.com/{acc.account}/\">@{acc.account}</a>\n"
                             f"• Дата старта: {acc.from_date}\n"
                             f"• Период (дней): {acc.period}\n"
                             f"• До: {acc.to_date}\n\n"
@@ -826,7 +826,7 @@ class TelegramBot:
                         
                         message_text = (
                             f"✅ Аккаунт добавлен.\n"
-                            f"• Имя: @{acc.account}\n"
+                            f"• Имя: <a href=\"https://www.instagram.com/{acc.account}/\">@{acc.account}</a>\n"
                             f"• Дата старта: {acc.from_date}\n"
                             f"• Период (дней): {acc.period}\n"
                             f"• До: {acc.to_date}\n\n"
@@ -852,7 +852,7 @@ class TelegramBot:
                     except asyncio.TimeoutError:
                         self.send_message(chat_id, 
                             f"✅ Аккаунт добавлен.\n"
-                            f"• Имя: @{acc.account}\n"
+                            f"• Имя: <a href=\"https://www.instagram.com/{acc.account}/\">@{acc.account}</a>\n"
                             f"• Дата старта: {acc.from_date}\n"
                             f"• Период (дней): {acc.period}\n"
                             f"• До: {acc.to_date}\n\n"
@@ -862,7 +862,7 @@ class TelegramBot:
                     except Exception as e:
                         self.send_message(chat_id, 
                             f"✅ Аккаунт добавлен.\n"
-                            f"• Имя: @{acc.account}\n"
+                            f"• Имя: <a href=\"https://www.instagram.com/{acc.account}/\">@{acc.account}</a>\n"
                             f"• Дата старта: {acc.from_date}\n"
                             f"• Период (дней): {acc.period}\n"
                             f"• До: {acc.to_date}\n\n"
@@ -1313,7 +1313,7 @@ class TelegramBot:
                                     unk += 1
                             
                             except Exception as e:
-                                self.send_message(chat_id, f"❌ Ошибка при проверке @{acc.account}: {str(e)}")
+                                self.send_message(chat_id, f"❌ Ошибка при проверке <a href=\"https://www.instagram.com/{acc.account}/\">@{acc.account}</a>: {str(e)}")
                                 unk += 1
                         
                         # Final summary

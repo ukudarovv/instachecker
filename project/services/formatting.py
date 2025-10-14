@@ -13,7 +13,7 @@ def format_account_card(acc: Account) -> str:
     status = "✅ Завершён" if acc.done else "🕒 На проверке / В работе"
     return (
         "👤 Аккаунт\n"
-        f"• username: @{acc.account}\n"
+        f"• username: <a href=\"https://www.instagram.com/{acc.account}/\">@{acc.account}</a>\n"
         f"• с: {acc.from_date}\n"
         f"• период (дней): {acc.period}\n"
         f"• до: {acc.to_date}\n"

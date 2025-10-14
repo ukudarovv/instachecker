@@ -560,7 +560,7 @@ def register_user_management_handlers(bot, session_factory):
             start_num = (acc_page - 1) * ACCOUNTS_PER_PAGE + 1
             
             for idx, acc in enumerate(accounts, start_num):
-                accounts_text += f"{idx}. <b>@{acc.account}</b>\n"
+                accounts_text += f"{idx}. <b><a href=\"https://www.instagram.com/{acc.account}/\">@{acc.account}</a></b>\n"
                 
                 if acc.from_date:
                     accounts_text += f"   📅 С: {acc.from_date}"
