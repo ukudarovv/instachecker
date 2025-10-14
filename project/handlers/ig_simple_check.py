@@ -40,8 +40,8 @@ def _format_result(result: dict, account=None) -> str:
             current_date = date.today()
             completed_days = (current_date - start_date).days + 1  # +1 to include start day
             
-            # Ensure completed_days is at least 1 and not more than period
-            completed_days = max(1, min(completed_days, account.period or 1))
+            # Ensure completed_days is at least 1
+            completed_days = max(1, completed_days)
         
         account_info += f"""
 Начало работ: {account.from_date.strftime("%d.%m.%Y") if account.from_date else "N/A"}

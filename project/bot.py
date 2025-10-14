@@ -1306,8 +1306,8 @@ class TelegramBot:
                                         current_date = date.today()
                                         completed_days = (current_date - start_date).days + 1  # +1 to include start day
                                         
-                                        # Ensure completed_days is at least 1 and not more than period
-                                        completed_days = max(1, min(completed_days, acc.period or 1))
+                                        # Ensure completed_days is at least 1
+                                        completed_days = max(1, completed_days)
                                     
                                     # Format result in old bot format
                                     caption = f"""Имя пользователя: <a href="https://www.instagram.com/{result['username']}/">{result['username']}</a>
@@ -1562,8 +1562,8 @@ class TelegramBot:
                                     current_date = date.today()
                                     completed_days = (current_date - start_date).days + 1  # +1 to include start day
                                     
-                                    # Ensure completed_days is at least 1 and not more than period
-                                    completed_days = max(1, min(completed_days, a.period or 1))
+                                    # Ensure completed_days is at least 1
+                                    completed_days = max(1, completed_days)
                                 
                                 # Format result in old bot format
                                 caption = f"""Имя пользователя: <a href="https://www.instagram.com/{info['username']}/">{info['username']}</a>

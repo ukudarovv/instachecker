@@ -129,8 +129,8 @@ async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accou
                                         current_date = date.today()
                                         completed_days = (current_date - start_date).days + 1  # +1 to include start day
                                         
-                                        # Ensure completed_days is at least 1 and not more than period
-                                        completed_days = max(1, min(completed_days, acc.period or 1))
+                                        # Ensure completed_days is at least 1
+                                        completed_days = max(1, completed_days)
                                     
                                     message = f"""Имя пользователя: <a href="https://www.instagram.com/{acc.account}/">{acc.account}</a>
 Начало работ: {acc.from_date.strftime("%d.%m.%Y") if acc.from_date else "N/A"}
