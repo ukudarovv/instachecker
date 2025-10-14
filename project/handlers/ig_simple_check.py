@@ -101,86 +101,101 @@ def register_ig_simple_check_handlers(bot, session_factory) -> None:
                     Account.user_id == user.id, 
                     Account.done == False
                 ).all()
+                
+                user_id = user.id
 
             if not pending:
                 bot.send_message(chat_id, "📭 Нет аккаунтов на проверке.")
                 return
 
-            # Decode cookies
-            try:
-                cookies = decode_cookies(fernet, ig_session.cookies)
-            except Exception as e:
-                bot.send_message(chat_id, f"❌ Ошибка расшифровки cookies: {e}")
-                return
+            # Run check in separate thread to avoid blocking
+            import threading
             
-            # Decode password if available
-            ig_password = None
-            if ig_session.password:
+            def run_ig_check():
+                """Run Instagram check in separate thread."""
                 try:
-                    ig_password = decode_password(fernet, ig_session.password)
-                except Exception as e:
-                    print(f"⚠️ Failed to decode password: {e}")
-
-            bot.send_message(chat_id, f"⏳ Проверяю {len(pending)} аккаунтов через Instagram с скриншотами...")
-            
-            ok = nf = unk = 0
-            
-            # Create callback for updating cookies
-            def update_cookies_callback(new_cookies):
-                with session_factory() as s:
-                    update_session_cookies(s, ig_session.id, new_cookies, fernet)
-            
-            for acc in pending:
-                try:
-                    import asyncio
-                    result = asyncio.run(check_account_with_screenshot(
-                        username=acc.account,
-                        cookies=cookies,
-                        headless=settings.ig_headless,
-                        timeout_ms=30000,
-                        ig_username=ig_session.username,
-                        ig_password=ig_password,
-                        session_db_update_callback=update_cookies_callback
-                    ))
+                    # Decode cookies
+                    try:
+                        cookies = decode_cookies(fernet, ig_session.cookies)
+                    except Exception as e:
+                        bot.send_message(chat_id, f"❌ Ошибка расшифровки cookies: {e}")
+                        return
                     
-                    # Send result text with account data
-                    result_text = _format_result(result, acc)
-                    bot.send_message(chat_id, result_text)
-                    
-                    # Send screenshot if available
-                    if result.get("screenshot_path") and os.path.exists(result["screenshot_path"]):
+                    # Decode password if available
+                    ig_password = None
+                    if ig_session.password:
                         try:
-                            screenshot_path = result["screenshot_path"]
-                            bot.send_photo(chat_id, screenshot_path, caption=f'📸 Скриншот <a href="https://www.instagram.com/{acc.account}/">@{acc.account}</a>')
-                            # Delete screenshot after sending to save disk space
-                            try:
-                                os.remove(screenshot_path)
-                                print(f"🗑️ Screenshot deleted: {screenshot_path}")
-                            except Exception as del_err:
-                                print(f"Warning: Failed to delete screenshot: {del_err}")
+                            ig_password = decode_password(fernet, ig_session.password)
                         except Exception as e:
-                            print(f"Failed to send photo: {e}")
+                            print(f"⚠️ Failed to decode password: {e}")
                     
-                    # Update account status
-                    if result.get("exists") is True:
-                        with session_factory() as s2:
-                            account = s2.query(Account).get(acc.id)
-                            if account:
-                                account.done = True
-                                s2.commit()
-                        ok += 1
-                    elif result.get("exists") is False:
-                        nf += 1
-                    else:
-                        unk += 1
-                        
+                    ok = nf = unk = 0
+                    
+                    # Create callback for updating cookies
+                    def update_cookies_callback(new_cookies):
+                        with session_factory() as s:
+                            update_session_cookies(s, ig_session.id, new_cookies, fernet)
+                    
+                    for acc in pending:
+                        try:
+                            import asyncio
+                            result = asyncio.run(check_account_with_screenshot(
+                                username=acc.account,
+                                cookies=cookies,
+                                headless=settings.ig_headless,
+                                timeout_ms=30000,
+                                ig_username=ig_session.username,
+                                ig_password=ig_password,
+                                session_db_update_callback=update_cookies_callback
+                            ))
+                            
+                            # Send result text with account data
+                            result_text = _format_result(result, acc)
+                            bot.send_message(chat_id, result_text)
+                            
+                            # Send screenshot if available
+                            if result.get("screenshot_path") and os.path.exists(result["screenshot_path"]):
+                                try:
+                                    screenshot_path = result["screenshot_path"]
+                                    bot.send_photo(chat_id, screenshot_path, caption=f'📸 Скриншот <a href="https://www.instagram.com/{acc.account}/">@{acc.account}</a>')
+                                    # Delete screenshot after sending to save disk space
+                                    try:
+                                        os.remove(screenshot_path)
+                                        print(f"🗑️ Screenshot deleted: {screenshot_path}")
+                                    except Exception as del_err:
+                                        print(f"Warning: Failed to delete screenshot: {del_err}")
+                                except Exception as e:
+                                    print(f"Failed to send photo: {e}")
+                            
+                            # Update account status
+                            if result.get("exists") is True:
+                                with session_factory() as s2:
+                                    account = s2.query(Account).get(acc.id)
+                                    if account:
+                                        account.done = True
+                                        s2.commit()
+                                ok += 1
+                            elif result.get("exists") is False:
+                                nf += 1
+                            else:
+                                unk += 1
+                                
+                        except Exception as e:
+                            bot.send_message(chat_id, f"❌ Ошибка при проверке <a href=\"https://www.instagram.com/{acc.account}/\">@{acc.account}</a>: {str(e)}")
+                            unk += 1
+                    
+                    # Final summary
+                    summary = f"🎯 Готово!\n\n📊 Результаты:\n• Найдено: {ok}\n• Не найдено: {nf}\n• Ошибки: {unk}"
+                    bot.send_message(chat_id, summary)
+                    
                 except Exception as e:
-                    bot.send_message(chat_id, f"❌ Ошибка при проверке <a href=\"https://www.instagram.com/{acc.account}/\">@{acc.account}</a>: {str(e)}")
-                    unk += 1
+                    bot.send_message(chat_id, f"❌ Критическая ошибка при проверке: {str(e)}")
+                    print(f"Error in IG check thread: {e}")
             
-            # Final summary
-            summary = f"🎯 Готово!\n\n📊 Результаты:\n• Найдено: {ok}\n• Не найдено: {nf}\n• Ошибки: {unk}"
-            bot.send_message(chat_id, summary)
+            # Start check in background thread
+            bot.send_message(chat_id, f"⏳ Запускаю проверку {len(pending)} аккаунтов через Instagram в фоновом режиме...")
+            check_thread = threading.Thread(target=run_ig_check, daemon=True)
+            check_thread.start()
 
     # Register handlers
     bot.ig_simple_check_process_message = process_message

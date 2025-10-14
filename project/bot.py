@@ -141,6 +141,20 @@ class TelegramBot:
             print(f"Error editing message: {e}")
             return False
     
+    def delete_message(self, chat_id: int, message_id: int) -> bool:
+        """Delete message."""
+        data = {
+            "chat_id": chat_id,
+            "message_id": message_id
+        }
+        
+        try:
+            response = requests.post(f"{self.api_url}/deleteMessage", json=data)
+            return response.json().get("ok", False)
+        except requests.RequestException as e:
+            print(f"Error deleting message: {e}")
+            return False
+    
     def process_web_app_data(self, message: Dict[str, Any], session_factory) -> None:
         """Process data from Telegram Mini App."""
         try:
@@ -314,14 +328,17 @@ class TelegramBot:
                 
                 items, total_pages = get_accounts_page(session, user.id, done=True, page=page)
                 
-                # Edit the existing message with new content
+                # Delete the previous message (could be account card or old list)
+                self.delete_message(chat_id, message_id)
+                
+                # Send new list
                 list_text = "📋 Активные аккаунты:\n\nВыберите аккаунт:"
                 combined_keyboard = {
                     "inline_keyboard": accounts_list_kb("ainfo", items)["inline_keyboard"] + 
                                     pagination_kb("apg", page, total_pages)["inline_keyboard"]
                 }
                 
-                self.edit_message_text(chat_id, message_id, list_text, combined_keyboard)
+                self.send_message(chat_id, list_text, combined_keyboard)
                 self.answer_callback_query(callback_query["id"])
                 
             elif callback_data.startswith("ipg:"):
@@ -336,14 +353,17 @@ class TelegramBot:
                 
                 items, total_pages = get_accounts_page(session, user.id, done=False, page=page)
                 
-                # Edit the existing message with new content
+                # Delete the previous message (could be account card or old list)
+                self.delete_message(chat_id, message_id)
+                
+                # Send new list
                 list_text = "🕒 Аккаунты на проверке:\n\nВыберите аккаунт:"
                 combined_keyboard = {
                     "inline_keyboard": accounts_list_kb("iinfo", items)["inline_keyboard"] + 
                                     pagination_kb("ipg", page, total_pages)["inline_keyboard"]
                 }
                 
-                self.edit_message_text(chat_id, message_id, list_text, combined_keyboard)
+                self.send_message(chat_id, list_text, combined_keyboard)
                 self.answer_callback_query(callback_query["id"])
                 
             elif callback_data.startswith("ainfo:") or callback_data.startswith("iinfo:"):
@@ -366,6 +386,9 @@ class TelegramBot:
                 if not acc:
                     self.answer_callback_query(callback_query["id"], "Не найдено/нет доступа", show_alert=True)
                     return
+                
+                # Delete the list message
+                self.delete_message(chat_id, message_id)
                 
                 txt = format_account_card(acc)
                 self.send_message(chat_id, txt, account_card_kb(acc_id, back_prefix, page))
@@ -396,14 +419,30 @@ class TelegramBot:
                 self.answer_callback_query(callback_query["id"])
                 
             elif callback_data.startswith("delc:"):
-                # Confirm delete
+                # Confirm delete - edit current message
                 acc_id = int(callback_data.split(":")[1])
                 try:
                     from .keyboards import confirm_delete_kb
+                    from .services.accounts import get_account_by_id
                 except ImportError:
                     from keyboards import confirm_delete_kb
+                    from services.accounts import get_account_by_id
                 
-                self.send_message(chat_id, "Удалить аккаунт безвозвратно?", confirm_delete_kb(acc_id, "apg", 1))
+                # Determine back_prefix from account status
+                acc = get_account_by_id(session, user.id, acc_id)
+                if not acc:
+                    self.answer_callback_query(callback_query["id"], "Не найдено/нет доступа", show_alert=True)
+                    return
+                
+                back_prefix = "apg" if acc.done else "ipg"
+                
+                # Edit message to show confirmation
+                self.edit_message_text(
+                    chat_id, 
+                    message_id, 
+                    "❓ Удалить аккаунт безвозвратно?", 
+                    confirm_delete_kb(acc_id, back_prefix, 1)
+                )
                 self.answer_callback_query(callback_query["id"])
                 
             elif callback_data.startswith("delok:"):
@@ -413,23 +452,89 @@ class TelegramBot:
                 page = int(page_s)
                 
                 try:
-                    from .services.accounts import get_account_by_id, delete_account
+                    from .services.accounts import get_account_by_id, delete_account, get_accounts_page
+                    from .keyboards import accounts_list_kb, pagination_kb
                 except ImportError:
-                    from services.accounts import get_account_by_id, delete_account
+                    from services.accounts import get_account_by_id, delete_account, get_accounts_page
+                    from keyboards import accounts_list_kb, pagination_kb
                 
                 acc = get_account_by_id(session, user.id, acc_id)
                 if not acc:
                     self.answer_callback_query(callback_query["id"], "Не найдено/нет доступа", show_alert=True)
                     return
                 
+                username = acc.account
+                is_done = acc.done  # Remember if account was active or pending
                 delete_account(session, acc)
-                self.send_message(chat_id, "✅ Удалено.")
-                self.send_message(chat_id, "Вернитесь в список через кнопку «Активные аккаунты» или «Аккаунты на проверке».")
-                self.answer_callback_query(callback_query["id"])
+                
+                # Delete confirmation message
+                self.delete_message(chat_id, message_id)
+                
+                # Show popup notification
+                self.answer_callback_query(callback_query["id"], f"✅ Аккаунт @{username} удален", show_alert=True)
+                
+                # Show the appropriate list again
+                items, total_pages = get_accounts_page(session, user.id, done=is_done, page=1)
+                
+                if items:
+                    # Determine list type and callback prefix
+                    if is_done:
+                        list_text = "📋 Активные аккаунты:\n\nВыберите аккаунт:"
+                        callback_prefix = "ainfo"
+                        page_prefix = "apg"
+                    else:
+                        list_text = "🕒 Аккаунты на проверке:\n\nВыберите аккаунт:"
+                        callback_prefix = "iinfo"
+                        page_prefix = "ipg"
+                    
+                    combined_keyboard = {
+                        "inline_keyboard": accounts_list_kb(callback_prefix, items)["inline_keyboard"] + 
+                                        pagination_kb(page_prefix, 1, total_pages)["inline_keyboard"]
+                    }
+                    self.send_message(chat_id, list_text, combined_keyboard)
+                else:
+                    # No more accounts in this category
+                    try:
+                        from .utils.access import ensure_admin
+                        from .keyboards import main_menu
+                    except ImportError:
+                        from utils.access import ensure_admin
+                        from keyboards import main_menu
+                    
+                    is_admin = ensure_admin(user)
+                    if is_done:
+                        self.send_message(chat_id, "📭 Активных аккаунтов больше нет.", main_menu(is_admin=is_admin))
+                    else:
+                        self.send_message(chat_id, "📭 Аккаунтов на проверке больше нет.", main_menu(is_admin=is_admin))
                 
             elif callback_data.startswith("delno:"):
-                # Cancel delete
-                self.send_message(chat_id, "Отмена удаления.")
+                # Cancel delete - restore account card
+                _, acc_id_s, back_prefix, page_s = callback_data.split(":")
+                acc_id = int(acc_id_s)
+                page = int(page_s)
+                
+                try:
+                    from .services.accounts import get_account_by_id
+                    from .services.formatting import format_account_card
+                    from .keyboards import account_card_kb
+                except ImportError:
+                    from services.accounts import get_account_by_id
+                    from services.formatting import format_account_card
+                    from keyboards import account_card_kb
+                
+                acc = get_account_by_id(session, user.id, acc_id)
+                if not acc:
+                    self.answer_callback_query(callback_query["id"], "Не найдено/нет доступа", show_alert=True)
+                    return
+                
+                # Restore account card
+                txt = format_account_card(acc)
+                self.edit_message_text(
+                    chat_id,
+                    message_id,
+                    txt,
+                    account_card_kb(acc_id, back_prefix, page)
+                )
                 self.answer_callback_query(callback_query["id"])
                 
             elif callback_data.startswith("prx_off:") or callback_data.startswith("prx_on:") or callback_data.startswith("prx_pinc:") or callback_data.startswith("prx_pdec:") or callback_data.startswith("prx_del:"):
@@ -804,7 +909,7 @@ class TelegramBot:
                     # Clear FSM state
                     del self.fsm_states[user_id]
                     
-                    # Auto-check account via hybrid method
+                    # Auto-check account via hybrid method in separate thread
                     try:
                         from .services.hybrid_checker import check_account_hybrid
                         from .services.ig_sessions import get_active_session
@@ -824,86 +929,75 @@ class TelegramBot:
                     
                     keyboard = main_menu(is_admin=ensure_admin(user))
                     
+                    # Send immediate confirmation
+                    self.send_message(chat_id, 
+                        f"✅ Аккаунт добавлен.\n"
+                        f"• Имя: <a href=\"https://www.instagram.com/{acc.account}/\">@{acc.account}</a>\n"
+                        f"• Дата старта: {acc.from_date}\n"
+                        f"• Период (дней): {acc.period}\n"
+                        f"• До: {acc.to_date}",
+                        keyboard
+                    )
+                    
                     # Check if we have any way to verify
                     if not ig_session:
                         self.send_message(chat_id, 
-                            f"✅ Аккаунт добавлен.\n"
-                            f"• Имя: <a href=\"https://www.instagram.com/{acc.account}/\">@{acc.account}</a>\n"
-                            f"• Дата старта: {acc.from_date}\n"
-                            f"• Период (дней): {acc.period}\n"
-                            f"• До: {acc.to_date}\n\n"
                             "⚠️ Нет Instagram сессии для автоматической проверки.\n"
-                            "Добавьте IG-сессию через меню 'Instagram' для проверки.",
-                            keyboard
+                            "Добавьте IG-сессию через меню 'Instagram' для проверки."
                         )
                         return
                     
-                    # Perform hybrid check
-                    import asyncio
+                    # Run check in background thread
+                    import threading
                     
-                    async def check_with_timeout():
-                        with session_factory() as s2:
-                            return await check_account_hybrid(
-                                session=s2,
-                                user_id=user.id,
-                                username=username,
-                                ig_session=ig_session,
-                                fernet=fernet
-                            )
-                    
-                    try:
-                        # Set timeout for the check (30 seconds)
-                        check_result = asyncio.run(asyncio.wait_for(check_with_timeout(), timeout=30.0))
-                        
-                        # Build single message with account info and status
-                        status_mark = "✅" if check_result["exists"] is True else ("❌" if check_result["exists"] is False else "❓")
-                        status_text = "Аккаунт найден и отмечен как активный!" if check_result["exists"] is True else "Аккаунт не найден"
-                        
-                        message_text = (
-                            f"✅ Аккаунт добавлен.\n"
-                            f"• Имя: <a href=\"https://www.instagram.com/{acc.account}/\">@{acc.account}</a>\n"
-                            f"• Дата старта: {acc.from_date}\n"
-                            f"• Период (дней): {acc.period}\n"
-                            f"• До: {acc.to_date}\n\n"
-                            f"{status_mark} {status_text}"
-                        )
-                        
-                        self.send_message(chat_id, message_text, keyboard)
-                        
-                        # Send screenshot if available
-                        if check_result.get("screenshot_path") and os.path.exists(check_result["screenshot_path"]):
-                            try:
-                                screenshot_path = check_result["screenshot_path"]
-                                self.send_photo(chat_id, screenshot_path, f'📸 <a href="https://www.instagram.com/{username}/">@{username}</a>')
-                                # Delete screenshot after sending to save disk space
+                    def run_auto_check():
+                        """Run auto-check in separate thread."""
+                        try:
+                            import asyncio
+                            
+                            async def check_with_timeout():
+                                with session_factory() as s2:
+                                    return await check_account_hybrid(
+                                        session=s2,
+                                        user_id=user.id,
+                                        username=username,
+                                        ig_session=ig_session,
+                                        fernet=fernet
+                                    )
+                            
+                            # Set timeout for the check (30 seconds)
+                            check_result = asyncio.run(asyncio.wait_for(check_with_timeout(), timeout=30.0))
+                            
+                            # Send result
+                            status_mark = "✅" if check_result["exists"] is True else ("❌" if check_result["exists"] is False else "❓")
+                            status_text = "Аккаунт найден и отмечен как активный!" if check_result["exists"] is True else "Аккаунт не найден"
+                            
+                            self.send_message(chat_id, f"{status_mark} {status_text}")
+                            
+                            # Send screenshot if available
+                            if check_result.get("screenshot_path") and os.path.exists(check_result["screenshot_path"]):
                                 try:
-                                    os.remove(screenshot_path)
-                                    print(f"🗑️ Screenshot deleted: {screenshot_path}")
-                                except Exception as del_err:
-                                    print(f"Warning: Failed to delete screenshot: {del_err}")
-                            except Exception as e:
-                                print(f"Failed to send photo: {e}")
+                                    screenshot_path = check_result["screenshot_path"]
+                                    self.send_photo(chat_id, screenshot_path, f'📸 <a href="https://www.instagram.com/{username}/">@{username}</a>')
+                                    # Delete screenshot after sending
+                                    try:
+                                        os.remove(screenshot_path)
+                                        print(f"🗑️ Screenshot deleted: {screenshot_path}")
+                                    except Exception as del_err:
+                                        print(f"Warning: Failed to delete screenshot: {del_err}")
+                                except Exception as e:
+                                    print(f"Failed to send photo: {e}")
+                        
+                        except asyncio.TimeoutError:
+                            self.send_message(chat_id, "⚠️ Проверка превысила время ожидания (30 сек).")
+                        except Exception as e:
+                            self.send_message(chat_id, f"⚠️ Ошибка при проверке: {str(e)}")
+                            print(f"Error in auto-check thread: {e}")
                     
-                    except asyncio.TimeoutError:
-                        self.send_message(chat_id, 
-                            f"✅ Аккаунт добавлен.\n"
-                            f"• Имя: <a href=\"https://www.instagram.com/{acc.account}/\">@{acc.account}</a>\n"
-                            f"• Дата старта: {acc.from_date}\n"
-                            f"• Период (дней): {acc.period}\n"
-                            f"• До: {acc.to_date}\n\n"
-                            "⚠️ Проверка превысила время ожидания (30 сек).",
-                            keyboard
-                        )
-                    except Exception as e:
-                        self.send_message(chat_id, 
-                            f"✅ Аккаунт добавлен.\n"
-                            f"• Имя: <a href=\"https://www.instagram.com/{acc.account}/\">@{acc.account}</a>\n"
-                            f"• Дата старта: {acc.from_date}\n"
-                            f"• Период (дней): {acc.period}\n"
-                            f"• До: {acc.to_date}\n\n"
-                            f"⚠️ Ошибка при проверке: {str(e)}",
-                        keyboard
-                    )
+                    # Start check in background
+                    self.send_message(chat_id, "⏳ Запускаю автопроверку в фоновом режиме...")
+                    check_thread = threading.Thread(target=run_auto_check, daemon=True)
+                    check_thread.start()
                 
                 elif state == "waiting_for_add_days":
                     # Process add days input
@@ -1464,8 +1558,6 @@ class TelegramBot:
                         self.send_message(chat_id, "Пришлите ваш RapidAPI ключ (строка).", api_add_cancel_kb())
                     
                     elif text == "Проверка через API (все)":
-                        self.send_message(chat_id, "⏳ Проверяю аккаунты через RapidAPI...")
-                        
                         try:
                             from .models import Account
                             from .services.check_via_api import check_account_exists_via_api
@@ -1479,30 +1571,42 @@ class TelegramBot:
                         if not accs:
                             self.send_message(chat_id, "📭 Нет аккаунтов на проверке.")
                         else:
-                            ok_count = nf_count = unk_count = 0
-                            import asyncio
-                            for a in accs:
-                                with session_factory() as s2:
-                                    info = asyncio.run(check_account_exists_via_api(s2, user.id, a.account))
-                                
-                                if info["exists"] is True:
-                                    ok_count += 1
-                                elif info["exists"] is False:
-                                    nf_count += 1
-                                else:
-                                    unk_count += 1
-                                
-                                mark = "✅" if info["exists"] is True else ("❌" if info["exists"] is False else "❓")
-                                error_msg = f" — {info.get('error')}" if info.get('error') else " — ok"
-                                self.send_message(chat_id, f"{mark} @{info['username']}{error_msg}")
+                            # Run API check in separate thread
+                            import threading
                             
-                            self.send_message(chat_id, 
-                                f"Готово: найдено — {ok_count}, не найдено — {nf_count}, неизвестно — {unk_count}."
-                            )
+                            def run_api_check():
+                                """Run API check in separate thread."""
+                                try:
+                                    ok_count = nf_count = unk_count = 0
+                                    import asyncio
+                                    for a in accs:
+                                        with session_factory() as s2:
+                                            info = asyncio.run(check_account_exists_via_api(s2, user.id, a.account))
+                                        
+                                        if info["exists"] is True:
+                                            ok_count += 1
+                                        elif info["exists"] is False:
+                                            nf_count += 1
+                                        else:
+                                            unk_count += 1
+                                        
+                                        mark = "✅" if info["exists"] is True else ("❌" if info["exists"] is False else "❓")
+                                        error_msg = f" — {info.get('error')}" if info.get('error') else " — ok"
+                                        self.send_message(chat_id, f"{mark} @{info['username']}{error_msg}")
+                                    
+                                    self.send_message(chat_id, 
+                                        f"Готово: найдено — {ok_count}, не найдено — {nf_count}, неизвестно — {unk_count}."
+                                    )
+                                except Exception as e:
+                                    self.send_message(chat_id, f"❌ Ошибка при проверке: {str(e)}")
+                                    print(f"Error in API check thread: {e}")
+                            
+                            # Start check in background
+                            self.send_message(chat_id, f"⏳ Запускаю проверку {len(accs)} аккаунтов через RapidAPI в фоновом режиме...")
+                            check_thread = threading.Thread(target=run_api_check, daemon=True)
+                            check_thread.start()
                     
                     elif text == "Проверка (API + скриншот)":
-                        self.send_message(chat_id, "⏳ Проверяю аккаунты через API + Instagram (со скриншотами)...")
-                        
                         try:
                             from .models import Account
                             from .services.hybrid_checker import check_account_hybrid
@@ -1532,74 +1636,88 @@ class TelegramBot:
                                 "Добавьте IG-сессию через меню 'Instagram' для получения скриншотов."
                             )
                         else:
-                            ok_count = nf_count = unk_count = 0
-                            import asyncio
-                            for a in accs:
-                                with session_factory() as s2:
-                                    info = asyncio.run(check_account_hybrid(
-                                        session=s2,
-                                        user_id=user.id,
-                                        username=a.account,
-                                        ig_session=ig_session,
-                                        fernet=fernet
-                                    ))
-                                
-                                if info["exists"] is True:
-                                    ok_count += 1
-                                elif info["exists"] is False:
-                                    nf_count += 1
-                                else:
-                                    unk_count += 1
-                                
-                                # Calculate real days completed
-                                completed_days = 1  # Default fallback
-                                if a.from_date:
-                                    if isinstance(a.from_date, datetime):
-                                        start_date = a.from_date.date()
-                                    else:
-                                        start_date = a.from_date
-                                    
-                                    current_date = date.today()
-                                    completed_days = (current_date - start_date).days + 1  # +1 to include start day
-                                    
-                                    # Ensure completed_days is at least 1
-                                    completed_days = max(1, completed_days)
-                                
-                                # Format result in old bot format
-                                caption = f"""Имя пользователя: <a href="https://www.instagram.com/{info['username']}/">{info['username']}</a>
+                            # Run hybrid check in separate thread
+                            import threading
+                            
+                            def run_hybrid_check():
+                                """Run hybrid check in separate thread."""
+                                try:
+                                    ok_count = nf_count = unk_count = 0
+                                    import asyncio
+                                    for a in accs:
+                                        with session_factory() as s2:
+                                            info = asyncio.run(check_account_hybrid(
+                                                session=s2,
+                                                user_id=user.id,
+                                                username=a.account,
+                                                ig_session=ig_session,
+                                                fernet=fernet
+                                            ))
+                                        
+                                        if info["exists"] is True:
+                                            ok_count += 1
+                                        elif info["exists"] is False:
+                                            nf_count += 1
+                                        else:
+                                            unk_count += 1
+                                        
+                                        # Calculate real days completed
+                                        completed_days = 1  # Default fallback
+                                        if a.from_date:
+                                            if isinstance(a.from_date, datetime):
+                                                start_date = a.from_date.date()
+                                            else:
+                                                start_date = a.from_date
+                                            
+                                            current_date = date.today()
+                                            completed_days = (current_date - start_date).days + 1  # +1 to include start day
+                                            
+                                            # Ensure completed_days is at least 1
+                                            completed_days = max(1, completed_days)
+                                        
+                                        # Format result in old bot format
+                                        caption = f"""Имя пользователя: <a href="https://www.instagram.com/{info['username']}/">{info['username']}</a>
 Начало работ: {a.from_date.strftime("%d.%m.%Y") if a.from_date else "N/A"}
 Заявлено: {a.period} дней
 Завершено за: {completed_days} дней
 Конец работ: {a.to_date.strftime("%d.%m.%Y") if a.to_date else "N/A"}"""
-                                
-                                if info["exists"] is True:
-                                    caption += "\nСтатус: Аккаунт разблокирован✅"
-                                elif info["exists"] is False:
-                                    caption += "\nСтатус: Заблокирован❌"
-                                else:
-                                    caption += "\nСтатус: ❓ не удалось определить"
-                                
-                                if info.get("error"):
-                                    caption += f"\nОшибка: {info['error']}"
-                                
-                                self.send_message(chat_id, caption)
-                                
-                                if info.get("screenshot_path") and os.path.exists(info["screenshot_path"]):
-                                    try:
-                                        screenshot_path = info["screenshot_path"]
-                                        self.send_photo(chat_id, screenshot_path, f'📸 Скриншот <a href="https://www.instagram.com/{a.account}/">@{a.account}</a>')
-                                        # Delete screenshot after sending to save disk space
-                                        try:
-                                            os.remove(screenshot_path)
-                                            print(f"🗑️ Screenshot deleted: {screenshot_path}")
-                                        except Exception as del_err:
-                                            print(f"Warning: Failed to delete screenshot: {del_err}")
-                                    except Exception as e:
-                                        print(f"Failed to send photo: {e}")
+                                        
+                                        if info["exists"] is True:
+                                            caption += "\nСтатус: Аккаунт разблокирован✅"
+                                        elif info["exists"] is False:
+                                            caption += "\nСтатус: Заблокирован❌"
+                                        else:
+                                            caption += "\nСтатус: ❓ не удалось определить"
+                                        
+                                        if info.get("error"):
+                                            caption += f"\nОшибка: {info['error']}"
+                                        
+                                        self.send_message(chat_id, caption)
+                                        
+                                        if info.get("screenshot_path") and os.path.exists(info["screenshot_path"]):
+                                            try:
+                                                screenshot_path = info["screenshot_path"]
+                                                self.send_photo(chat_id, screenshot_path, f'📸 Скриншот <a href="https://www.instagram.com/{a.account}/">@{a.account}</a>')
+                                                # Delete screenshot after sending to save disk space
+                                                try:
+                                                    os.remove(screenshot_path)
+                                                    print(f"🗑️ Screenshot deleted: {screenshot_path}")
+                                                except Exception as del_err:
+                                                    print(f"Warning: Failed to delete screenshot: {del_err}")
+                                            except Exception as e:
+                                                print(f"Failed to send photo: {e}")
+                                    
+                                    self.send_message(chat_id, 
+                                        f"🎯 Готово!\n\n📊 Результаты:\n• Найдено: {ok_count}\n• Не найдено: {nf_count}\n• Ошибки: {unk_count}"
+                                    )
+                                except Exception as e:
+                                    self.send_message(chat_id, f"❌ Ошибка при проверке: {str(e)}")
+                                    print(f"Error in hybrid check thread: {e}")
                             
-                            self.send_message(chat_id, 
-                                f"🎯 Готово!\n\n📊 Результаты:\n• Найдено: {ok_count}\n• Не найдено: {nf_count}\n• Ошибки: {unk_count}"
-                            )
+                            # Start check in background
+                            self.send_message(chat_id, f"⏳ Запускаю гибридную проверку {len(accs)} аккаунтов в фоновом режиме...")
+                            check_thread = threading.Thread(target=run_hybrid_check, daemon=True)
+                            check_thread.start()
 
             elif text == "Прокси":
                 if not ensure_active(user):
