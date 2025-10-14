@@ -44,7 +44,8 @@ async def check_username_with_details(
     wait_selector: str,
     fallback_selector: str,
     headless: bool,
-    timeout_ms: int
+    timeout_ms: int,
+    dark_theme: bool = True
 ) -> Dict[str, Any]:
     """
     Advanced username checking with profile parsing and screenshots.
@@ -128,6 +129,7 @@ async def check_username_with_details(
                 fallback_selector=fallback_selector,
                 headless=headless,
                 timeout_ms=timeout_ms,
+                dark_theme=dark_theme
             )
             if spath:
                 logger.info(f"✅ Скриншот сохранен: {spath}")

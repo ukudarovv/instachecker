@@ -18,6 +18,78 @@ def _proxy_kwargs_from_url(proxy_url: str):
     return {"server": f"{u.scheme}://{u.hostname}:{u.port}", **auth}
 
 
+async def _apply_dark_theme(page):
+    """Применяет темную тему к странице Instagram."""
+    dark_theme_css = """
+    /* Основной фон */
+    body, html {
+        background-color: #000000 !important;
+        color: #ffffff !important;
+    }
+    
+    /* Контейнеры и секции */
+    div, section, article, header, main {
+        background-color: #000000 !important;
+        color: #ffffff !important;
+    }
+    
+    /* Текст */
+    span, p, h1, h2, h3, h4, h5, h6, a {
+        color: #ffffff !important;
+        background-color: transparent !important;
+    }
+    
+    /* Ссылки */
+    a {
+        color: #ffffff !important;
+    }
+    
+    /* Кнопки */
+    button {
+        background-color: #333333 !important;
+        color: #ffffff !important;
+        border-color: #555555 !important;
+    }
+    
+    /* Специфичные селекторы для Instagram */
+    [style*="background-color"] {
+        background-color: #000000 !important;
+    }
+    
+    [style*="color"] {
+        color: #ffffff !important;
+    }
+    
+    /* Убираем белые фоны */
+    * {
+        background-color: #000000 !important;
+        color: #ffffff !important;
+    }
+    
+    /* Исключения для изображений */
+    img, svg {
+        background-color: transparent !important;
+    }
+    
+    /* Профиль хедер */
+    header section {
+        background-color: #000000 !important;
+    }
+    
+    /* Статистика профиля */
+    ul li {
+        color: #ffffff !important;
+    }
+    
+    /* Имя пользователя и описание */
+    h1, h2 {
+        color: #ffffff !important;
+    }
+    """
+    
+    await page.add_style_tag(content=dark_theme_css)
+
+
 async def screenshot_profile_header(
     username: str,
     proxy_url: str,
@@ -25,13 +97,17 @@ async def screenshot_profile_header(
     fallback_selector: str,
     headless: bool = True,
     timeout_ms: int = 15000,
-    save_path: Optional[str] = None
+    save_path: Optional[str] = None,
+    dark_theme: bool = True
 ) -> Optional[str]:
     """
     Открывает https://www.instagram.com/<username>/ через указанный прокси,
     ждёт селектор 'wait_selector', делает скрин элемента.
     Если не вышло — пробует 'fallback_selector'.
     Возвращает путь к PNG или None.
+    
+    Args:
+        dark_theme: Если True, применяет темную тему (черный фон, белый текст)
     """
     url = f"https://www.instagram.com/{username.strip('@')}/"
     proxy_kwargs = _proxy_kwargs_from_url(proxy_url)
@@ -48,6 +124,11 @@ async def screenshot_profile_header(
         page = await context.new_page()
         try:
             await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+            
+            # Применяем темную тему, если требуется
+            if dark_theme:
+                await _apply_dark_theme(page)
+            
             # Пытаемся целиться в «шапку» профиля
             try:
                 elem = page.locator(wait_selector).first

@@ -73,7 +73,7 @@ def register_ig_menu_handlers(bot, session_factory) -> None:
                 keyboard = []
                 for s in sessions:
                     status_icon = "✅" if s.is_active else "❌"
-                    date_str = s.created_at.strftime("%Y-%m-%d %H:%M") if s.created_at else "N/A"
+                    date_str = s.created_at.strftime("%d.%m.%Y %H:%M") if s.created_at else "N/A"
                     keyboard.append([{
                         "text": f"{status_icon} @{s.username} ({date_str})",
                         "callback_data": f"ig_session:{s.id}"
@@ -167,7 +167,7 @@ def register_ig_menu_handlers(bot, session_factory) -> None:
                     return
                 
                 status_icon = "✅" if ig_session.is_active else "❌"
-                date_str = ig_session.created_at.strftime("%Y-%m-%d %H:%M") if ig_session.created_at else "N/A"
+                date_str = ig_session.created_at.strftime("%d.%m.%Y %H:%M") if ig_session.created_at else "N/A"
                 
                 message_text = (
                     f"📋 Детали IG-сессии:\n\n"
@@ -206,7 +206,7 @@ def register_ig_menu_handlers(bot, session_factory) -> None:
                 keyboard = []
                 for s in sessions:
                     status_icon = "✅" if s.is_active else "❌"
-                    date_str = s.created_at.strftime("%Y-%m-%d %H:%M") if s.created_at else "N/A"
+                    date_str = s.created_at.strftime("%d.%m.%Y %H:%M") if s.created_at else "N/A"
                     keyboard.append([{
                         "text": f"{status_icon} @{s.username} ({date_str})",
                         "callback_data": f"ig_session:{s.id}"

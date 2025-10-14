@@ -24,6 +24,7 @@ class Settings:
         self.screenshot_timeout_ms: int = int(os.getenv("SCREENSHOT_TIMEOUT", "15000"))
         self.screenshot_wait_selector: str = os.getenv("SCREENSHOT_WAIT_SELECTOR", "header")
         self.screenshot_fallback_selector: str = os.getenv("SCREENSHOT_FALLBACK_SELECTOR", "main")
+        self.screenshot_dark_theme: bool = os.getenv("SCREENSHOT_DARK_THEME", "true").lower() == "true"
 
         # Encryption
         self.encryption_key: str = os.getenv("ENCRYPTION_KEY", "")
