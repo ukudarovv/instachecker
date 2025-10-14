@@ -262,6 +262,22 @@ def api_add_cancel_kb() -> dict:
     }
 
 
+def proxy_add_cancel_kb() -> dict:
+    """
+    Create proxy addition keyboard with cancel button.
+    
+    Returns:
+        dict with cancel keyboard for proxy addition
+    """
+    return {
+        "keyboard": [
+            [{"text": "❌ Отмена"}]
+        ],
+        "resize_keyboard": True,
+        "one_time_keyboard": False
+    }
+
+
 def api_key_card_kb(key_id: int) -> dict:
     """
     Create API key card keyboard.

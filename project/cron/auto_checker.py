@@ -120,7 +120,7 @@ async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accou
                                     # Calculate real days completed
                                     completed_days = 1  # Default fallback
                                     if acc.from_date:
-                                        from datetime import date
+                                        from datetime import date, datetime
                                         if isinstance(acc.from_date, datetime):
                                             start_date = acc.from_date.date()
                                         else:

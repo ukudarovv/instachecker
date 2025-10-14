@@ -129,11 +129,44 @@ async def check_and_refresh_session(
         return False, []
 
 
+async def _apply_dark_theme_simple(page):
+    """Применяет темную тему к странице Instagram для простого чекера."""
+    try:
+        # Ждем полной загрузки страницы
+        await page.wait_for_load_state('networkidle')
+        
+        # Добавляем небольшую задержку для полной отрисовки
+        await page.wait_for_timeout(1000)
+        
+        # Применяем стили через JavaScript для более надежного результата
+        await page.evaluate("""
+            () => {
+                // Применяем стили ко всем элементам
+                const allElements = document.querySelectorAll('*');
+                allElements.forEach(el => {
+                    if (el.tagName !== 'IMG' && el.tagName !== 'SVG') {
+                        el.style.setProperty('background-color', '#000000', 'important');
+                        el.style.setProperty('color', '#ffffff', 'important');
+                    }
+                });
+                
+                // Специально для body и html
+                document.body.style.setProperty('background-color', '#000000', 'important');
+                document.body.style.setProperty('color', '#ffffff', 'important');
+                document.documentElement.style.setProperty('background-color', '#000000', 'important');
+                document.documentElement.style.setProperty('color', '#ffffff', 'important');
+            }
+        """)
+        print("🌙 Dark theme applied to page")
+    except Exception as e:
+        print(f"⚠️ Failed to apply dark theme: {e}")
+
+
 def crop_to_upper_half(image_path: str) -> str:
     """
     Crop image to show only upper part with custom margins.
     - Vertical: upper 50% minus 30% from bottom = 35% of total height
-    - Horizontal: 45% width (removes 35% from left, 20% from right)
+    - Horizontal: 60% width (removes 20% from left, 20% from right)
     
     Args:
         image_path: Path to the original image
@@ -146,23 +179,21 @@ def crop_to_upper_half(image_path: str) -> str:
         img = Image.open(image_path)
         width, height = img.size
         
-        # Calculate vertical crop
+        # Calculate vertical crop (как было - 35% сверху)
         upper_half_height = height // 2  # 50% of total height
         bottom_crop = int(upper_half_height * 0.35)  # Remove 30% from bottom of upper half
         final_height = upper_half_height - bottom_crop  # This gives us 35% of total height
         
-        # Calculate horizontal crop (remove 35% from left, 20% from right)
-        left_crop = int(width * 0.35)  # 35% from left
-        right_crop = int(width * 0.20)  # 20% from right
-        left = left_crop
-        right = width - right_crop
+        # Calculate horizontal crop (60% width, centered - убираем по 20% с боков)
+        left_crop = int(width * 0.20)  # Remove 20% from left
+        right_crop = int(width * 0.20)  # Remove 20% from right
         
         # Crop (left, top, right, bottom)
-        cropped_img = img.crop((left, 0, right, final_height))
+        cropped_img = img.crop((left_crop, 0, width - right_crop, final_height))
         
         # Save cropped image (overwrite original)
         cropped_img.save(image_path)
-        print(f"✂️ Image cropped (45% width from center-right, top 35% height): {image_path}")
+        print(f"✂️ Image cropped (60% width centered, top 35% height): {image_path}")
         
         return image_path
     except Exception as e:
@@ -339,6 +370,9 @@ async def check_account_with_screenshot(
             screenshot_path = os.path.join(screenshot_dir, screenshot_filename)
             
             try:
+                # Apply dark theme before screenshot
+                await _apply_dark_theme_simple(page)
+                
                 # Take screenshot of the main content area
                 await page.screenshot(
                     path=screenshot_path,

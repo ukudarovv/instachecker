@@ -4,6 +4,7 @@ import time
 import json
 import os
 import requests
+from datetime import datetime, date
 from typing import Dict, Any
 
 try:
@@ -940,6 +941,16 @@ class TelegramBot:
                     self.send_message(chat_id, txt, account_card_kb(acc.id, state_data.get("back_prefix", "apg"), state_data.get("page", 1)))
                 
                 elif state == "waiting_for_proxy_url":
+                    # Check for cancel
+                    if text == "❌ Отмена":
+                        del self.fsm_states[user_id]
+                        try:
+                            from .keyboards import proxies_menu_kb
+                        except ImportError:
+                            from keyboards import proxies_menu_kb
+                        self.send_message(chat_id, "Добавление прокси отменено.", proxies_menu_kb())
+                        return
+                    
                     # Process proxy URL input
                     try:
                         from .services.proxy_utils import parse_proxy_url
@@ -950,22 +961,51 @@ class TelegramBot:
                     
                     data = parse_proxy_url(text)
                     if not data:
-                        self.send_message(chat_id, "⚠️ Неверный формат. Повторите.")
+                        try:
+                            from .keyboards import proxy_add_cancel_kb
+                        except ImportError:
+                            from keyboards import proxy_add_cancel_kb
+                        self.send_message(chat_id, "⚠️ Неверный формат. Повторите.", proxy_add_cancel_kb())
                         return
                     
                     self.fsm_states[user_id]["proxy"] = data
                     self.fsm_states[user_id]["state"] = "waiting_for_proxy_priority"
-                    self.send_message(chat_id, "Укажите приоритет (1..10), где 1 — самый высокий:")
+                    
+                    # Import keyboard
+                    try:
+                        from .keyboards import proxy_add_cancel_kb
+                    except ImportError:
+                        from keyboards import proxy_add_cancel_kb
+                    
+                    self.send_message(chat_id, "Укажите приоритет (1..10), где 1 — самый высокий:", proxy_add_cancel_kb())
                 
                 elif state == "waiting_for_proxy_priority":
+                    # Check for cancel
+                    if text == "❌ Отмена":
+                        del self.fsm_states[user_id]
+                        try:
+                            from .keyboards import proxies_menu_kb
+                        except ImportError:
+                            from keyboards import proxies_menu_kb
+                        self.send_message(chat_id, "Добавление прокси отменено.", proxies_menu_kb())
+                        return
+                    
                     # Process proxy priority input
                     if not text.isdigit():
-                        self.send_message(chat_id, "Нужно число 1..10.")
+                        try:
+                            from .keyboards import proxy_add_cancel_kb
+                        except ImportError:
+                            from keyboards import proxy_add_cancel_kb
+                        self.send_message(chat_id, "Нужно число 1..10.", proxy_add_cancel_kb())
                         return
                     
                     prio = int(text)
                     if not (1 <= prio <= 10):
-                        self.send_message(chat_id, "Диапазон 1..10.")
+                        try:
+                            from .keyboards import proxy_add_cancel_kb
+                        except ImportError:
+                            from keyboards import proxy_add_cancel_kb
+                        self.send_message(chat_id, "Диапазон 1..10.", proxy_add_cancel_kb())
                         return
                     
                     proxy = self.fsm_states[user_id].get("proxy")
@@ -1223,7 +1263,6 @@ class TelegramBot:
                                     # Calculate real days completed
                                     completed_days = 1  # Default fallback
                                     if acc.from_date:
-                                        from datetime import date
                                         if isinstance(acc.from_date, datetime):
                                             start_date = acc.from_date.date()
                                         else:
@@ -1480,7 +1519,6 @@ class TelegramBot:
                                 # Calculate real days completed
                                 completed_days = 1  # Default fallback
                                 if a.from_date:
-                                    from datetime import date
                                     if isinstance(a.from_date, datetime):
                                         start_date = a.from_date.date()
                                     else:
@@ -1578,12 +1616,20 @@ class TelegramBot:
                     return
                 # Start FSM for adding proxy
                 self.fsm_states[user_id] = {"state": "waiting_for_proxy_url"}
+                
+                # Import keyboard
+                try:
+                    from .keyboards import proxy_add_cancel_kb
+                except ImportError:
+                    from keyboards import proxy_add_cancel_kb
+                
                 self.send_message(chat_id, 
                     "Введите прокси в формате:\n"
                     "`scheme://[user:pass@]host:port`\n"
                     "Примеры:\n"
                     "`http://1.2.3.4:8080`\n"
-                    "`socks5://user:pass@5.6.7.8:1080`"
+                    "`socks5://user:pass@5.6.7.8:1080`",
+                    proxy_add_cancel_kb()
                 )
 
             elif text == "Тестировать прокси":

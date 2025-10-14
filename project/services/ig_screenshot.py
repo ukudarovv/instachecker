@@ -20,6 +20,12 @@ def _proxy_kwargs_from_url(proxy_url: str):
 
 async def _apply_dark_theme(page):
     """Применяет темную тему к странице Instagram."""
+    # Ждем полной загрузки страницы
+    await page.wait_for_load_state('networkidle')
+    
+    # Добавляем небольшую задержку для полной отрисовки
+    await page.wait_for_timeout(2000)
+    
     dark_theme_css = """
     /* Основной фон */
     body, html {
@@ -88,6 +94,26 @@ async def _apply_dark_theme(page):
     """
     
     await page.add_style_tag(content=dark_theme_css)
+    
+    # Дополнительно применяем стили через JavaScript для более надежного результата
+    await page.evaluate("""
+        () => {
+            // Применяем стили ко всем элементам
+            const allElements = document.querySelectorAll('*');
+            allElements.forEach(el => {
+                if (el.tagName !== 'IMG' && el.tagName !== 'SVG') {
+                    el.style.setProperty('background-color', '#000000', 'important');
+                    el.style.setProperty('color', '#ffffff', 'important');
+                }
+            });
+            
+            // Специально для body и html
+            document.body.style.setProperty('background-color', '#000000', 'important');
+            document.body.style.setProperty('color', '#ffffff', 'important');
+            document.documentElement.style.setProperty('background-color', '#000000', 'important');
+            document.documentElement.style.setProperty('color', '#ffffff', 'important');
+        }
+    """)
 
 
 async def screenshot_profile_header(
@@ -125,10 +151,6 @@ async def screenshot_profile_header(
         try:
             await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
             
-            # Применяем темную тему, если требуется
-            if dark_theme:
-                await _apply_dark_theme(page)
-            
             # Пытаемся целиться в «шапку» профиля
             try:
                 elem = page.locator(wait_selector).first
@@ -136,6 +158,10 @@ async def screenshot_profile_header(
             except PWTimeoutError:
                 elem = page.locator(fallback_selector).first
                 await elem.wait_for(timeout=timeout_ms)
+            
+            # Применяем темную тему после загрузки элементов, если требуется
+            if dark_theme:
+                await _apply_dark_theme(page)
 
             spath = save_path or f"/tmp/ig_{username}_header.png"
             await elem.screenshot(path=spath, type="png")
