@@ -167,15 +167,50 @@ class TelegramBot:
                     self.send_message(chat_id, "❌ Не удалось получить cookies из Mini App")
                     return
                 
-                # Check for sessionid
-                has_sessionid = any(c.get('name') == 'sessionid' for c in cookies)
-                if not has_sessionid:
-                    self.send_message(
-                        chat_id,
-                        "⚠️ В cookies отсутствует sessionid.\n\n"
-                        "Это означает, что вы не полностью вошли в Instagram.\n"
-                        "Попробуйте снова."
-                    )
+                # Validate and normalize cookies
+                try:
+                    if not isinstance(cookies, list):
+                        self.send_message(chat_id, "❌ Неверный формат cookies из Mini App")
+                        return
+                    
+                    # Normalize cookies - ensure all have required fields
+                    normalized_cookies = []
+                    for cookie in cookies:
+                        if not isinstance(cookie, dict) or "name" not in cookie or "value" not in cookie:
+                            continue  # Skip invalid cookies
+                        
+                        normalized_cookie = {
+                            "name": cookie["name"],
+                            "value": cookie["value"],
+                            "domain": cookie.get("domain", ".instagram.com"),
+                            "path": cookie.get("path", "/"),
+                        }
+                        
+                        # Keep optional fields if present
+                        for field in ["expires", "httpOnly", "secure", "sameSite"]:
+                            if field in cookie:
+                                normalized_cookie[field] = cookie[field]
+                        
+                        normalized_cookies.append(normalized_cookie)
+                    
+                    cookies = normalized_cookies
+                    
+                    # Check for sessionid
+                    has_sessionid = any(c.get('name') == 'sessionid' for c in cookies)
+                    if not has_sessionid:
+                        self.send_message(
+                            chat_id,
+                            "⚠️ В cookies отсутствует sessionid.\n\n"
+                            "Это означает, что вы не полностью вошли в Instagram.\n"
+                            "Попробуйте снова."
+                        )
+                        return
+                    
+                    print(f"✅ Validated {len(cookies)} cookies from Mini App, sessionid present")
+                    
+                except Exception as e:
+                    print(f"❌ Error validating cookies from Mini App: {e}")
+                    self.send_message(chat_id, f"❌ Ошибка валидации cookies: {str(e)}")
                     return
                 
                 # Import required modules

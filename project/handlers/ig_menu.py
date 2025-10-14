@@ -127,17 +127,50 @@ def register_ig_menu_handlers(bot, session_factory) -> None:
                 return
             
             elif mode == "cookies":
+                # Send improved export script using cookieStore API
+                export_script = (
+                    "(async()=>{"
+                    "try{"
+                    "const c=await cookieStore.getAll({domain:'instagram.com'});"
+                    "const f=c.map(x=>({name:x.name,value:x.value,domain:x.domain,path:x.path,"
+                    "expires:x.expires?Math.floor(x.expires/1000):-1,secure:x.secure||false}));"
+                    "await navigator.clipboard.writeText(JSON.stringify(f,null,2));"
+                    "alert('✅ '+f.length+' cookies скопированы!\\n'+f.find(x=>x.name==='sessionid')?'sessionid: ✅':'sessionid: ❌ НЕТ!');"
+                    "}catch(e){"
+                    "alert('❌ cookieStore API не работает.\\nИспользуйте расширение EditThisCookie!\\n\\nИли см. GET_ALL_COOKIES_GUIDE.md');"
+                    "}"
+                    "})()"
+                )
+                
                 bot.send_message(
                     chat_id, 
-                    "📋 Пришлите cookies в формате JSON.\n\n"
-                    "**Как получить cookies:**\n"
-                    "1. Откройте Instagram в браузере и войдите\n"
-                    "2. Откройте консоль (F12)\n"
-                    "3. Во вкладке Application → Cookies → instagram.com\n"
-                    "4. Экспортируйте все cookies в JSON\n\n"
-                    "Минимально нужны: name, value, domain, path\n\n"
-                    "Для отмены напишите: /cancel"
+                    "📋 <b>Импорт cookies из браузера</b>\n\n"
+                    "🌟 <b>РЕКОМЕНДУЕТСЯ: Через расширение браузера</b>\n\n"
+                    "1️⃣ Установите расширение:\n"
+                    "   • Chrome/Edge: <b>EditThisCookie</b>\n"
+                    "   • Firefox: <b>Cookie-Editor</b>\n\n"
+                    "2️⃣ Откройте instagram.com и войдите\n"
+                    "3️⃣ Нажмите на иконку расширения\n"
+                    "4️⃣ Нажмите <b>Export</b> → выберите JSON\n"
+                    "5️⃣ Вставьте сюда в бот\n\n"
+                    "🔧 <b>Альтернатива: Через скрипт</b>\n"
+                    "   (скрипт в следующем сообщении)\n\n"
+                    "⚠️ <b>Важно:</b> Нужны ВСЕ cookies, включая sessionid!\n\n"
+                    "📖 Подробная инструкция: GET_ALL_COOKIES_GUIDE.md"
                 )
+                
+                bot.send_message(
+                    chat_id,
+                    f"<b>📝 Скрипт для консоли (если нет расширения):</b>\n\n"
+                    f"1. Откройте instagram.com, войдите\n"
+                    f"2. F12 → Console\n"
+                    f"3. Вставьте скрипт:\n\n"
+                    f"<code>{export_script}</code>\n\n"
+                    "⚠️ Если скрипт не работает → установите расширение EditThisCookie\n\n"
+                    "✅ После экспорта cookies будут в буфере обмена\n\n"
+                    "❌ Для отмены: /cancel"
+                )
+                
                 bot.fsm_states[chat_id] = {"state": "waiting_cookies", "mode": "cookies"}
                 
             elif mode == "login":
@@ -269,9 +302,71 @@ def register_ig_menu_handlers(bot, session_factory) -> None:
             try:
                 cookies = json.loads(text)
                 if not isinstance(cookies, list):
-                    raise ValueError("Cookies должны быть списком")
+                    raise ValueError("Cookies должны быть списком (массивом)")
+                
+                # Validate cookies format
+                valid_cookies = []
+                for i, cookie in enumerate(cookies):
+                    if not isinstance(cookie, dict):
+                        raise ValueError(f"Cookie #{i+1} должен быть объектом, а не {type(cookie).__name__}")
+                    
+                    if "name" not in cookie:
+                        raise ValueError(f"Cookie #{i+1} не содержит поле 'name'")
+                    
+                    if "value" not in cookie:
+                        raise ValueError(f"Cookie #{i+1} '{cookie.get('name', '?')}' не содержит поле 'value'")
+                    
+                    # Add default fields if missing
+                    validated_cookie = {
+                        "name": cookie["name"],
+                        "value": cookie["value"],
+                        "domain": cookie.get("domain", ".instagram.com"),
+                        "path": cookie.get("path", "/"),
+                    }
+                    
+                    # Keep optional fields if present
+                    for field in ["expires", "httpOnly", "secure", "sameSite"]:
+                        if field in cookie:
+                            validated_cookie[field] = cookie[field]
+                    
+                    valid_cookies.append(validated_cookie)
+                
+                cookies = valid_cookies
+                
+                # Check for sessionid - most important cookie
+                has_sessionid = any(c.get('name') == 'sessionid' for c in cookies)
+                if not has_sessionid:
+                    bot.send_message(
+                        chat_id,
+                        "⚠️ **Важное предупреждение!**\n\n"
+                        "В cookies отсутствует **sessionid** - основной cookie для авторизации Instagram.\n\n"
+                        "Без sessionid вход в Instagram НЕ СРАБОТАЕТ.\n\n"
+                        "Убедитесь, что вы:\n"
+                        "1. Вошли в Instagram в браузере\n"
+                        "2. Экспортировали ВСЕ cookies с instagram.com\n"
+                        "3. Используете правильный скрипт или расширение\n\n"
+                        "Попробуйте снова или используйте расширение EditThisCookie."
+                    )
+                    return
+                
+                print(f"✅ Validated {len(cookies)} cookies, sessionid present")
+                
+            except json.JSONDecodeError as e:
+                bot.send_message(
+                    chat_id, 
+                    f"⚠️ Неверный JSON формат: {str(e)}\n\n"
+                    "Убедитесь что:\n"
+                    "• Это валидный JSON\n"
+                    "• Начинается с [ и заканчивается ]\n"
+                    "• Все кавычки правильно закрыты\n\n"
+                    "Попробуйте использовать скрипт из инструкции выше."
+                )
+                return
+            except ValueError as e:
+                bot.send_message(chat_id, f"⚠️ Ошибка формата: {str(e)}\n\nПроверьте формат cookies и попробуйте снова.")
+                return
             except Exception as e:
-                bot.send_message(chat_id, f"⚠️ Неверный JSON: {str(e)}\n\nПришлите **список** cookie-объектов.")
+                bot.send_message(chat_id, f"⚠️ Ошибка: {str(e)}\n\nПришлите **список** cookie-объектов в JSON формате.")
                 return
             
             # Ask for IG username to label the session

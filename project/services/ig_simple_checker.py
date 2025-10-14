@@ -269,12 +269,26 @@ async def check_account_with_screenshot(
                     "value": cookie["value"],
                     "domain": cookie.get("domain", ".instagram.com"),
                     "path": cookie.get("path", "/"),
-                    "expires": cookie.get("expires", -1)
                 }
+                
+                # Handle expires field - Playwright needs unix timestamp or omit the field
+                if "expires" in cookie and cookie["expires"] not in [-1, None, ""]:
+                    # If expires is a valid timestamp, use it
+                    cookie_data["expires"] = cookie["expires"]
+                # Otherwise, omit expires field for session cookies
+                
+                # Add optional fields if present
+                if "httpOnly" in cookie:
+                    cookie_data["httpOnly"] = cookie["httpOnly"]
+                if "secure" in cookie:
+                    cookie_data["secure"] = cookie["secure"]
+                if "sameSite" in cookie and cookie["sameSite"] in ["Strict", "Lax", "None"]:
+                    cookie_data["sameSite"] = cookie["sameSite"]
+                
                 await context.add_cookies([cookie_data])
-                print(f"✅ Added cookie: {cookie['name']}")
+                print(f"✅ Added cookie: {cookie['name']} (domain: {cookie_data['domain']})")
             except Exception as e:
-                print(f"❌ Failed to add cookie {cookie['name']}: {e}")
+                print(f"❌ Failed to add cookie {cookie.get('name', 'unknown')}: {e}")
         
         page = await context.new_page()
         
