@@ -320,15 +320,34 @@ async def check_account_with_screenshot(
             # Navigate to profile
             await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
             
-            # Wait for page to load
-            await page.wait_for_timeout(2000)
+            # Wait longer for page to load and render
+            await page.wait_for_timeout(3000)
             
-            # Double-check that we're still logged in
+            # Log current URL for debugging
+            print(f"🔍 Current URL after navigation to profile: {page.url}")
+            
+            # Double-check that we're still logged in AND we're on the profile page
             current_url = page.url
             if "accounts/login" in current_url:
                 result["error"] = "Session lost during navigation - redirected to login"
                 print(f"❌ Lost session during navigation to @{username}")
                 return result
+            
+            # Check if redirected to home page (Instagram sometimes does this for suspicious activity)
+            if current_url == "https://www.instagram.com/" or current_url == "https://www.instagram.com":
+                print(f"⚠️ Redirected to home page for @{username}, retrying...")
+                # Add delay and retry
+                await page.wait_for_timeout(2000)
+                await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+                await page.wait_for_timeout(3000)
+                current_url = page.url
+                print(f"🔍 URL after retry: {current_url}")
+                
+                # If still redirected, might be rate limited
+                if current_url == "https://www.instagram.com/" or current_url == "https://www.instagram.com":
+                    result["error"] = "Redirected to home page - possible rate limit"
+                    print(f"❌ Still redirected to home for @{username} - possible rate limit")
+                    return result
             
             # Check if profile exists - multiple methods
             try:
