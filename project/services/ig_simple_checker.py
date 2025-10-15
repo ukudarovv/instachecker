@@ -251,13 +251,34 @@ async def check_account_with_screenshot(
             args=[
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
-                "--disable-dev-shm-usage"
+                "--disable-dev-shm-usage",
+                "--disable-web-security",
+                "--disable-features=VizDisplayCompositor",
+                "--disable-background-timer-throttling",
+                "--disable-backgrounding-occluded-windows",
+                "--disable-renderer-backgrounding"
             ]
         )
         
+        # Random User-Agent to avoid detection
+        import random
+        user_agents = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        ]
+        
         context = await browser.new_context(
             viewport={"width": 1280, "height": 900},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            user_agent=random.choice(user_agents),
+            extra_http_headers={
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.5",
+                "Accept-Encoding": "gzip, deflate",
+                "Connection": "keep-alive",
+                "Upgrade-Insecure-Requests": "1",
+            }
         )
         
         # Add cookies to context
@@ -317,14 +338,56 @@ async def check_account_with_screenshot(
         try:
             print(f"🔍 Checking @{username}...")
             
-            # Navigate to profile
-            await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
-            
-            # Wait longer for page to load and render
-            await page.wait_for_timeout(3000)
-            
-            # Log current URL for debugging
-            print(f"🔍 Current URL after navigation to profile: {page.url}")
+            # Navigate to profile with retry logic for redirects
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    print(f"🔍 Attempt {attempt + 1}/{max_retries} to navigate to @{username}")
+                    
+                    # Clear any existing redirects
+                    await page.evaluate("() => { window.history.replaceState(null, '', '/'); }")
+                    
+                    # Navigate with longer timeout and different strategy
+                    await page.goto(url, wait_until="networkidle", timeout=timeout_ms)
+                    
+                    # Wait longer for page to load and render
+                    await page.wait_for_timeout(5000)  # Increased to 5 seconds
+                    
+                    # Log current URL for debugging
+                    current_url = page.url
+                    print(f"🔍 Current URL after navigation: {current_url}")
+                    
+                    # Check if we got stuck in redirects
+                    if current_url != url and "instagram.com" in current_url and username not in current_url:
+                        print(f"⚠️ Redirected away from profile page: {current_url}")
+                        if attempt < max_retries - 1:
+                            print(f"🔄 Retrying in 10 seconds...")
+                            await page.wait_for_timeout(10000)
+                            continue
+                        else:
+                            result["error"] = f"Too many redirects - final URL: {current_url}"
+                            return result
+                    
+                    # If we got here, navigation was successful
+                    break
+                    
+                except Exception as e:
+                    if "ERR_TOO_MANY_REDIRECTS" in str(e):
+                        print(f"⚠️ Too many redirects on attempt {attempt + 1}: {e}")
+                        if attempt < max_retries - 1:
+                            print(f"🔄 Waiting 15 seconds before retry...")
+                            await page.wait_for_timeout(15000)
+                            continue
+                        else:
+                            result["error"] = f"ERR_TOO_MANY_REDIRECTS after {max_retries} attempts"
+                            return result
+                    else:
+                        print(f"❌ Navigation error: {e}")
+                        if attempt < max_retries - 1:
+                            await page.wait_for_timeout(5000)
+                            continue
+                        else:
+                            raise e
             
             # Double-check that we're still logged in AND we're on the profile page
             current_url = page.url

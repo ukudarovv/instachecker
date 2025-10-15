@@ -187,13 +187,14 @@ async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accou
                 print(f"[AUTO-CHECK] ❌ Error checking @{acc.account}: {str(e)}")
         
         # Run all checks in parallel with semaphore to limit concurrency
-        semaphore = asyncio.Semaphore(2)  # Max 2 parallel checks (reduced from 3)
+        semaphore = asyncio.Semaphore(1)  # Max 1 parallel check to avoid rate limits
         
         async def check_with_semaphore(acc):
             async with semaphore:
                 await check_single_account(acc)
-                # Increased delay between checks to avoid rate limits (3s instead of 2s)
-                await asyncio.sleep(3)
+                # Much longer delay between checks to avoid rate limits and redirects
+                print(f"[AUTO-CHECK] ⏳ Waiting 30 seconds before next check...")
+                await asyncio.sleep(30)  # 30 seconds between checks
         
         # Create tasks for all accounts
         tasks = [check_with_semaphore(acc) for acc in pending_accounts]
