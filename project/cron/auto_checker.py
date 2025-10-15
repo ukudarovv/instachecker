@@ -106,10 +106,23 @@ async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accou
                 
                 checked += 1
                 
-                # Update statistics
+                # Update statistics and handle results
                 if result.get("exists") is True:
                     found += 1
-                    print(f"[AUTO-CHECK] ✅ @{acc.account} - FOUND")
+                    print(f"[AUTO-CHECK] ✅ @{acc.account} - FOUND (verified via {result.get('checked_via', 'unknown')})")
+                    
+                    # Mark account as done ONLY if truly found
+                    with SessionLocal() as s:
+                        account = s.query(Account).filter(
+                            Account.user_id == acc.user_id,
+                            Account.account == acc.account
+                        ).first()
+                        if account:
+                            account.done = True
+                            from datetime import date
+                            account.date_of_finish = date.today()
+                            s.commit()
+                            print(f"[AUTO-CHECK] ✅ Marked @{acc.account} as done")
                     
                     # Send notification to user if bot is provided
                     if bot:
@@ -156,10 +169,18 @@ async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accou
                 
                 elif result.get("exists") is False:
                     not_found += 1
-                    print(f"[AUTO-CHECK] ❌ @{acc.account} - NOT FOUND")
+                    error_detail = result.get("error", "")
+                    if "api_found_but_instagram_not_found" in error_detail:
+                        print(f"[AUTO-CHECK] ❌ @{acc.account} - NOT FOUND (API said exists, but Instagram confirms NOT FOUND)")
+                    else:
+                        print(f"[AUTO-CHECK] ❌ @{acc.account} - NOT FOUND")
+                    
+                    # Keep account as not done (done=False) - will be checked again later
+                    print(f"[AUTO-CHECK] ⏳ @{acc.account} remains pending (done=False)")
                 else:
                     errors += 1
                     print(f"[AUTO-CHECK] ❓ @{acc.account} - ERROR: {result.get('error', 'unknown')}")
+                    # Keep as not done on error too
                 
             except Exception as e:
                 errors += 1

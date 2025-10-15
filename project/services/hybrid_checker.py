@@ -120,7 +120,7 @@ async def check_account_hybrid(
         result["checked_via"] = "api"
         return result
     
-    # Step 3: Account exists - get screenshot if IG session available
+    # Step 3: Account exists via API - VERIFY with Instagram if session available
     if api_result["exists"] is True and ig_session and fernet:
         result["checked_via"] = "api+instagram"
         try:
@@ -132,19 +132,36 @@ async def check_account_hybrid(
                 timeout_ms=30000
             )
             
-            # Merge Instagram data
-            result["full_name"] = ig_result.get("full_name")
-            result["followers"] = ig_result.get("followers")
-            result["following"] = ig_result.get("following")
-            result["posts"] = ig_result.get("posts")
-            result["screenshot_path"] = ig_result.get("screenshot_path")
+            # CRITICAL: If Instagram says NOT FOUND, override API result
+            # This means the account was deleted/suspended after API cache was updated
+            if ig_result.get("exists") is False:
+                result["exists"] = False
+                result["error"] = "api_found_but_instagram_not_found"
+                print(f"⚠️ API says exists, but Instagram says NOT FOUND for @{username}")
+                # Don't mark as done - account is not active
+                return result
             
-            # If IG check failed to get screenshot but API confirmed exists
-            if not ig_result.get("screenshot_path") and ig_result.get("error"):
-                result["error"] = f"screenshot_error: {ig_result['error']}"
+            # Instagram confirms account exists or is private
+            if ig_result.get("exists") is True:
+                # Merge Instagram data
+                result["full_name"] = ig_result.get("full_name")
+                result["followers"] = ig_result.get("followers")
+                result["following"] = ig_result.get("following")
+                result["posts"] = ig_result.get("posts")
+                result["screenshot_path"] = ig_result.get("screenshot_path")
+                
+                # Mark as done - both API and Instagram confirm
+                print(f"✅ Both API and Instagram confirm @{username} is active")
+            else:
+                # Instagram check had an error - keep API result but note the issue
+                result["error"] = f"instagram_verification_error: {ig_result.get('error', 'unknown')}"
+                print(f"⚠️ API found @{username}, but Instagram verification failed: {result['error']}")
+                # Still keep exists=True from API in this case
                 
         except Exception as e:
-            result["error"] = f"screenshot_failed: {str(e)}"
+            result["error"] = f"instagram_verification_failed: {str(e)}"
+            print(f"⚠️ Failed to verify @{username} via Instagram: {str(e)}")
+            # Keep API result if Instagram check completely failed
     
     return result
 
