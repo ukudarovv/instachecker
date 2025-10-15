@@ -843,15 +843,15 @@ class TelegramBot:
                 state = state_data.get("state")
                 
                 if state == "waiting_for_username":
-                    # Process username input
+                    # Process username input and create account immediately with 30 days
                     raw = text or ""
                     
                     # Import services
                     try:
-                        from .services.accounts import normalize_username
+                        from .services.accounts import normalize_username, find_duplicate, create_account
                         from .services.checker import is_valid_instagram_username, check_account_exists_placeholder
                     except ImportError:
-                        from services.accounts import normalize_username
+                        from services.accounts import normalize_username, find_duplicate, create_account
                         from services.checker import is_valid_instagram_username, check_account_exists_placeholder
                     
                     username = normalize_username(raw)
@@ -867,31 +867,7 @@ class TelegramBot:
                         self.send_message(chat_id, "⚠️ Похоже, такого аккаунта не существует. Введите другой или «Отмена».", cancel_kb())
                         return
                     
-                    # Store username and move to next step
-                    self.fsm_states[user_id]["username"] = username
-                    self.fsm_states[user_id]["state"] = "waiting_for_days"
-                    self.send_message(chat_id, "📅 Введите количество дней работы (целое число > 0):", cancel_kb())
-                
-                elif state == "waiting_for_days":
-                    # Process days input
-                    if not text.isdigit():
-                        self.send_message(chat_id, "⚠️ Нужно целое число дней. Попробуйте снова или «Отмена».", cancel_kb())
-                        return
-                    
-                    days = int(text)
-                    if days <= 0:
-                        self.send_message(chat_id, "⚠️ Число дней должно быть больше нуля. Попробуйте снова или «Отмена».", cancel_kb())
-                        return
-                    
-                    # Get stored username
-                    username = self.fsm_states[user_id].get("username", "")
-                    
-                    # Check for duplicates
-                    try:
-                        from .services.accounts import find_duplicate, create_account
-                    except ImportError:
-                        from services.accounts import find_duplicate, create_account
-                    
+                    # Check for duplicates and create account immediately
                     with session_factory() as session:
                         if find_duplicate(session, user.id, username):
                             del self.fsm_states[user_id]
@@ -903,11 +879,22 @@ class TelegramBot:
                             )
                             return
                         
-                        # Create account
-                        acc = create_account(session, user.id, username, days)
+                        # Create account with 30 days by default
+                        acc = create_account(session, user.id, username, 30)
                     
                     # Clear FSM state
                     del self.fsm_states[user_id]
+                    
+                    # Send success message
+                    keyboard = main_menu(is_admin=ensure_admin(user))
+                    self.send_message(chat_id, 
+                        f"✅ Аккаунт @{username} добавлен!\n\n"
+                        f"📅 Период мониторинга: 30 дней\n"
+                        f"📅 С: {acc.from_date.strftime('%d.%m.%Y')}\n"
+                        f"📅 До: {acc.to_date.strftime('%d.%m.%Y')}\n\n"
+                        f"🔄 Автоматическая проверка запущена...",
+                        keyboard
+                    )
                     
                     # Auto-check account via hybrid method in separate thread
                     try:
@@ -921,83 +908,38 @@ class TelegramBot:
                         from utils.encryptor import OptionalFernet
                         from config import get_settings
                     
-                    settings = get_settings()
-                    fernet = OptionalFernet(settings.encryption_key)
-                    
-                    with session_factory() as s:
-                        ig_session = get_active_session(s, user.id)
-                    
-                    keyboard = main_menu(is_admin=ensure_admin(user))
-                    
-                    # Send immediate confirmation
-                    self.send_message(chat_id, 
-                        f"✅ Аккаунт добавлен.\n"
-                        f"• Имя: <a href=\"https://www.instagram.com/{acc.account}/\">@{acc.account}</a>\n"
-                        f"• Дата старта: {acc.from_date}\n"
-                        f"• Период (дней): {acc.period}\n"
-                        f"• До: {acc.to_date}",
-                        keyboard
-                    )
-                    
-                    # Check if we have any way to verify
-                    if not ig_session:
-                        self.send_message(chat_id, 
-                            "⚠️ Нет Instagram сессии для автоматической проверки.\n"
-                            "Добавьте IG-сессию через меню 'Instagram' для проверки."
-                        )
-                        return
-                    
-                    # Run check in background thread
-                    import threading
-                    
-                    def run_auto_check():
-                        """Run auto-check in separate thread."""
+                    def auto_check_new_account():
                         try:
                             import asyncio
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
                             
-                            async def check_with_timeout():
-                                with session_factory() as s2:
-                                    return await check_account_hybrid(
-                                        session=s2,
+                            settings = get_settings()
+                            fernet = OptionalFernet(settings.encryption_key)
+                            
+                            with session_factory() as session:
+                                ig_session = get_active_session(session, user.id, fernet)
+                                if ig_session:
+                                    result = loop.run_until_complete(check_account_hybrid(
+                                        session=session,
                                         user_id=user.id,
                                         username=username,
                                         ig_session=ig_session,
                                         fernet=fernet
-                                    )
+                                    ))
+                                    
+                                    if result.get("exists") is True:
+                                        self.send_message(user.id, f"🎉 @{username} уже активен!")
+                                else:
+                                    self.send_message(user.id, f"ℹ️ @{username} добавлен. Для проверки нужна IG-сессия.")
                             
-                            # Set timeout for the check (30 seconds)
-                            check_result = asyncio.run(asyncio.wait_for(check_with_timeout(), timeout=30.0))
-                            
-                            # Send result
-                            status_mark = "✅" if check_result["exists"] is True else ("❌" if check_result["exists"] is False else "❓")
-                            status_text = "Аккаунт найден и отмечен как активный!" if check_result["exists"] is True else "Аккаунт не найден"
-                            
-                            self.send_message(chat_id, f"{status_mark} {status_text}")
-                            
-                            # Send screenshot if available
-                            if check_result.get("screenshot_path") and os.path.exists(check_result["screenshot_path"]):
-                                try:
-                                    screenshot_path = check_result["screenshot_path"]
-                                    self.send_photo(chat_id, screenshot_path, f'📸 <a href="https://www.instagram.com/{username}/">@{username}</a>')
-                                    # Delete screenshot after sending
-                                    try:
-                                        os.remove(screenshot_path)
-                                        print(f"🗑️ Screenshot deleted: {screenshot_path}")
-                                    except Exception as del_err:
-                                        print(f"Warning: Failed to delete screenshot: {del_err}")
-                                except Exception as e:
-                                    print(f"Failed to send photo: {e}")
-                        
-                        except asyncio.TimeoutError:
-                            self.send_message(chat_id, "⚠️ Проверка превысила время ожидания (30 сек).")
+                            loop.close()
                         except Exception as e:
-                            self.send_message(chat_id, f"⚠️ Ошибка при проверке: {str(e)}")
-                            print(f"Error in auto-check thread: {e}")
+                            print(f"Auto-check error for @{username}: {e}")
                     
-                    # Start check in background
-                    self.send_message(chat_id, "⏳ Запускаю автопроверку в фоновом режиме...")
-                    check_thread = threading.Thread(target=run_auto_check, daemon=True)
-                    check_thread.start()
+                    import threading
+                    threading.Thread(target=auto_check_new_account, daemon=True).start()
+                
                 
                 elif state == "waiting_for_add_days":
                     # Process add days input
