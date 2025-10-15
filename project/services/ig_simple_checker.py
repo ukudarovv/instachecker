@@ -166,7 +166,7 @@ def crop_to_upper_half(image_path: str) -> str:
     """
     Crop image to show only upper part with custom margins.
     - Vertical: upper 50% minus 30% from bottom = 35% of total height
-    - Horizontal: 40% width (removes 20% from left, 40% from right)
+    - Horizontal: 43% width (removes 17% from left, 40% from right)
     
     Args:
         image_path: Path to the original image
@@ -184,16 +184,16 @@ def crop_to_upper_half(image_path: str) -> str:
         bottom_crop = int(upper_half_height * 0.35)  # Remove 30% from bottom of upper half
         final_height = upper_half_height - bottom_crop  # This gives us 35% of total height
         
-        # Calculate horizontal crop (40% width - убираем 20% слева, 40% справа)
-        left_crop = int(width * 0.40)  # Remove 40% from left
-        right_crop = int(width * 0.20)  # Remove 20% from right
+        # Calculate horizontal crop (43% width - убираем 17% слева, 40% справа)
+        left_crop = int(width * 0.17)  # Remove 17% from left
+        right_crop = int(width * 0.40)  # Remove 40% from right
         
         # Crop (left, top, right, bottom)
         cropped_img = img.crop((left_crop, 0, width - right_crop, final_height))
         
         # Save cropped image (overwrite original)
         cropped_img.save(image_path)
-        print(f"✂️ Image cropped (40% width, top 35% height, 40% left crop): {image_path}")
+        print(f"✂️ Image cropped (43% width, top 35% height, 17% left crop): {image_path}")
         
         return image_path
     except Exception as e:
