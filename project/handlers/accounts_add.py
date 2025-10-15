@@ -32,14 +32,19 @@ def register_add_account_handlers(dp, SessionLocal):
     
     @dp.message_handler(lambda m: m.text == "Добавить аккаунт")
     async def start_add_account(message):
-        """Start add account FSM."""
+        """Start add account FSM - simplified without days input."""
         with SessionLocal() as session:
             user = get_or_create_user(session, message.from_user)
             if not ensure_active(user):
                 await message.answer("⛔ Доступ пока не выдан. Обратись к администратору.")
                 return
         
-        await message.answer("🆔 Введите Instagram username (можно с @):", reply_markup=cancel_kb())
+        await message.answer(
+            "🆔 Введите Instagram username (можно с @):\n\n"
+            "📅 Период мониторинга: 30 дней (по умолчанию)\n"
+            "ℹ️ После добавления аккаунт будет автоматически проверяться",
+            reply_markup=cancel_kb()
+        )
         # Set state for username input
         # Note: In direct API mode, we'll handle state in bot.py
     

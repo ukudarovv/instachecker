@@ -29,8 +29,8 @@ def find_duplicate(session: Session, user_id: int, username: str) -> Optional[Ac
     )
 
 
-def create_account(session: Session, user_id: int, username: str, days: int) -> Account:
-    """Create new account with calculated dates."""
+def create_account(session: Session, user_id: int, username: str, days: int = 30) -> Account:
+    """Create new account with calculated dates. Default period is 30 days."""
     days = clamp_min_days(int(days))
     start = today()
     acc = Account(
@@ -112,3 +112,43 @@ def delete_account(session: Session, acc: Account) -> None:
     """Delete account from database."""
     session.delete(acc)
     session.commit()
+
+
+def get_expired_accounts(session: Session) -> List[Account]:
+    """
+    Get accounts that have expired (to_date < today) and are not done.
+    These accounts need user action - extend or delete.
+    """
+    from datetime import date
+    today_date = date.today()
+    
+    return (
+        session.query(Account)
+        .filter(
+            Account.done == False,
+            Account.to_date < today_date
+        )
+        .order_by(Account.to_date.asc())
+        .all()
+    )
+
+
+def get_accounts_expiring_soon(session: Session, days_ahead: int = 3) -> List[Account]:
+    """
+    Get accounts that will expire in the next N days.
+    Used for advance notifications.
+    """
+    from datetime import date, timedelta
+    today_date = date.today()
+    future_date = today_date + timedelta(days=days_ahead)
+    
+    return (
+        session.query(Account)
+        .filter(
+            Account.done == False,
+            Account.to_date >= today_date,
+            Account.to_date <= future_date
+        )
+        .order_by(Account.to_date.asc())
+        .all()
+    )
