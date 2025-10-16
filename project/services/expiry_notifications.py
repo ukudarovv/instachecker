@@ -32,8 +32,8 @@ async def check_and_send_expiry_notifications(SessionLocal: sessionmaker, bot=No
         # Get expired accounts (to_date < today)
         expired_accounts = get_expired_accounts(session)
         
-        # Get accounts expiring soon (in next 3 days)
-        expiring_soon = get_accounts_expiring_soon(session, days_ahead=3)
+        # Get accounts expiring soon (in next 7 days)
+        expiring_soon = get_accounts_expiring_soon(session, days_ahead=7)
         
         print(f"[EXPIRY-CHECK] Found {len(expired_accounts)} expired accounts")
         print(f"[EXPIRY-CHECK] Found {len(expiring_soon)} accounts expiring soon")
@@ -78,10 +78,11 @@ async def check_and_send_expiry_notifications(SessionLocal: sessionmaker, bot=No
 
 
 async def send_expired_notification(bot, user: User, accounts: List[Account]):
-    """Send notification about expired accounts."""
+    """Send notification about expired accounts with interactive buttons."""
+    # Original message format
     message_lines = [
         "⚠️ <b>ВНИМАНИЕ: Истек срок мониторинга!</b>\n",
-        f"📅 Следующие аккаунты достигли конца периода мониторинга:"
+        "📅 Следующие аккаунты достигли конца периода мониторинга:"
     ]
     
     for acc in accounts:
@@ -97,42 +98,69 @@ async def send_expired_notification(bot, user: User, accounts: List[Account]):
         "1️⃣ Увеличить период мониторинга",
         "2️⃣ Удалить аккаунт из списка",
         "",
-        "📱 Используйте кнопку 'Активные аккаунты' для управления"
+        "📱 Используйте кнопку 'Неактивные аккаунты' для управления"
     ])
     
     message = "\n".join(message_lines)
     
+    # Create inline keyboard with buttons for each account
+    keyboard = []
+    for acc in accounts:
+        days_overdue = (date.today() - acc.to_date).days
+        button_text = f"@{acc.account} (просрочен на {days_overdue} дн.)"
+        keyboard.append([{
+            "text": button_text,
+            "callback_data": f"expiry_expired:{acc.id}"
+        }])
+    
+    # Add "Manage accounts" button
+    keyboard.append([{
+        "text": "📱 Неактивные аккаунты",
+        "callback_data": "show_inactive_accounts"
+    }])
+    
+    reply_markup = {"inline_keyboard": keyboard}
+    
     try:
-        await bot.send_message(user.id, message)
+        # Send message with inline keyboard
+        await bot.send_message(user.id, message, reply_markup=reply_markup)
     except Exception as e:
         print(f"[EXPIRY-CHECK] Failed to send expired notification: {e}")
 
 
 async def send_expiring_soon_notification(bot, user: User, accounts: List[Account]):
-    """Send notification about accounts expiring soon."""
+    """Send notification about accounts expiring soon with interactive buttons."""
+    # Header message
     message_lines = [
         "⏰ <b>Напоминание: скоро истечет срок мониторинга</b>\n",
-        "📅 Следующие аккаунты скоро достигнут конца периода:"
+        f"📅 Найдено аккаунтов: {len(accounts)}\n",
+        "💡 <b>Рекомендация:</b> Увеличьте период мониторинга заранее\n",
+        "👇 Нажмите на кнопку с аккаунтом для просмотра информации:"
     ]
-    
-    for acc in accounts:
-        days_left = (acc.to_date - date.today()).days
-        message_lines.append(
-            f"• <a href='https://www.instagram.com/{acc.account}/'>@{acc.account}</a> "
-            f"(осталось {days_left} дн.)"
-        )
-    
-    message_lines.extend([
-        "",
-        "💡 <b>Рекомендация:</b> Увеличьте период мониторинга заранее",
-        "",
-        "📱 Используйте кнопку 'Активные аккаунты' для управления"
-    ])
     
     message = "\n".join(message_lines)
     
+    # Create inline keyboard with buttons for each account
+    keyboard = []
+    for acc in accounts:
+        days_left = (acc.to_date - date.today()).days
+        button_text = f"@{acc.account} (осталось {days_left} дн.)"
+        keyboard.append([{
+            "text": button_text,
+            "callback_data": f"expiry_soon:{acc.id}"
+        }])
+    
+    # Add "Manage accounts" button
+    keyboard.append([{
+        "text": "📱 Неактивные аккаунты",
+        "callback_data": "show_inactive_accounts"
+    }])
+    
+    reply_markup = {"inline_keyboard": keyboard}
+    
     try:
-        await bot.send_message(user.id, message)
+        # Send message with inline keyboard
+        await bot.send_message(user.id, message, reply_markup=reply_markup)
     except Exception as e:
         print(f"[EXPIRY-CHECK] Failed to send expiring soon notification: {e}")
 

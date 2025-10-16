@@ -33,9 +33,12 @@ class AsyncBotWrapper:
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, json=data, timeout=10) as response:
-                    response.raise_for_status()
                     result = await response.json()
-                    return result.get("ok", False)
+                    if not result.get("ok", False):
+                        print(f"Telegram API error: {result.get('description', 'Unknown error')}")
+                        print(f"Error code: {result.get('error_code', 'N/A')}")
+                        return False
+                    return True
         except Exception as e:
             print(f"Error sending message: {e}")
             # Try to send without HTML parsing if that's the issue
@@ -43,9 +46,11 @@ class AsyncBotWrapper:
                 data.pop("parse_mode", None)
                 async with aiohttp.ClientSession() as session:
                     async with session.post(url, json=data, timeout=10) as response:
-                        response.raise_for_status()
                         result = await response.json()
-                        return result.get("ok", False)
+                        if not result.get("ok", False):
+                            print(f"Telegram API error (retry): {result.get('description', 'Unknown error')}")
+                            return False
+                        return True
             except Exception as e2:
                 print(f"Error sending message (retry): {e2}")
                 return False

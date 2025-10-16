@@ -1,7 +1,7 @@
 """Automatic background checker for accounts."""
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from sqlalchemy.orm import sessionmaker
 
 try:
@@ -85,13 +85,12 @@ async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accou
         not_found = 0
         errors = 0
         
-        # Create tasks for parallel checking
-        tasks = []
+        # PHASE 1: Quick API checks for all accounts (max 1 second delay)
+        print(f"[AUTO-CHECK] 📡 Phase 1: API checks for {len(pending_accounts)} accounts...")
+        api_results = []
+        accounts_to_verify = []  # Accounts that API says are active
         
-        async def check_single_account(acc):
-            """Check single account in parallel."""
-            nonlocal checked, found, not_found, errors
-            
+        for idx, acc in enumerate(pending_accounts):
             try:
                 # Get user's priority Instagram session
                 with SessionLocal() as s:
@@ -99,117 +98,171 @@ async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accou
                 
                 if not ig_session:
                     print(f"[AUTO-CHECK] Skipping @{acc.account} - no valid IG session for user {acc.user_id}")
-                    return
+                    continue
                 
-                print(f"[AUTO-CHECK] Checking @{acc.account}...")
+                print(f"[AUTO-CHECK] [{idx+1}/{len(pending_accounts)}] API check @{acc.account}...")
                 
-                # Perform hybrid check
+                # Perform API-only check (skip Instagram verification in this phase)
                 with SessionLocal() as s:
                     result = await check_account_hybrid(
                         session=s,
                         user_id=acc.user_id,
                         username=acc.account,
                         ig_session=ig_session,
-                        fernet=fernet
+                        fernet=fernet,
+                        skip_instagram_verification=True  # SKIP Instagram check in Phase 1
                     )
                 
                 checked += 1
+                api_results.append((acc, result, ig_session))
                 
-                # Update statistics and handle results
+                # If API says account is active, add to verification list
                 if result.get("exists") is True:
-                    found += 1
-                    print(f"[AUTO-CHECK] ✅ @{acc.account} - FOUND (verified via {result.get('checked_via', 'unknown')})")
+                    accounts_to_verify.append((acc, result, ig_session))
+                    print(f"[AUTO-CHECK] ✓ @{acc.account} - API says ACTIVE (will verify with Instagram)")
+                elif result.get("exists") is False:
+                    not_found += 1
+                    print(f"[AUTO-CHECK] ❌ @{acc.account} - API says NOT FOUND")
+                else:
+                    errors += 1
+                    print(f"[AUTO-CHECK] ❓ @{acc.account} - API ERROR: {result.get('error', 'unknown')}")
+                
+                # Short delay between API checks (1 second max)
+                if idx < len(pending_accounts) - 1:
+                    await asyncio.sleep(1)
                     
-                    # Mark account as done ONLY if truly found
+            except Exception as e:
+                errors += 1
+                print(f"[AUTO-CHECK] ❌ Error in API check @{acc.account}: {str(e)}")
+        
+        print(f"[AUTO-CHECK] 📡 Phase 1 complete: {len(accounts_to_verify)} accounts to verify via Instagram")
+        
+        # PHASE 2: Instagram verification for active accounts (5 seconds delay)
+        if accounts_to_verify:
+            print(f"[AUTO-CHECK] 📸 Phase 2: Instagram verification for {len(accounts_to_verify)} active accounts...")
+            
+            for idx, (acc, api_result, ig_session) in enumerate(accounts_to_verify):
+                try:
+                    print(f"[AUTO-CHECK] [{idx+1}/{len(accounts_to_verify)}] Instagram verify @{acc.account}...")
+                    
+                    # Now do full Instagram verification
                     with SessionLocal() as s:
-                        account = s.query(Account).filter(
-                            Account.user_id == acc.user_id,
-                            Account.account == acc.account
-                        ).first()
-                        if account:
-                            account.done = True
-                            from datetime import date
-                            account.date_of_finish = date.today()
-                            s.commit()
-                            print(f"[AUTO-CHECK] ✅ Marked @{acc.account} as done")
+                        result = await check_account_hybrid(
+                            session=s,
+                            user_id=acc.user_id,
+                            username=acc.account,
+                            ig_session=ig_session,
+                            fernet=fernet,
+                            skip_instagram_verification=False  # DO Instagram check in Phase 2
+                        )
                     
-                    # Send notification to user if bot is provided
-                    if bot:
-                        try:
-                            with SessionLocal() as s:
-                                user = s.query(User).get(acc.user_id)
-                                if user:
-                                    # Calculate real days completed
-                                    completed_days = 1  # Default fallback
-                                    if acc.from_date:
-                                        from datetime import date, datetime
-                                        if isinstance(acc.from_date, datetime):
-                                            start_date = acc.from_date.date()
-                                        else:
-                                            start_date = acc.from_date
+                    # Log the full result for debugging
+                    print(f"[AUTO-CHECK] 🔍 Result for @{acc.account}: exists={result.get('exists')}, checked_via={result.get('checked_via')}, screenshot_path={result.get('screenshot_path')}")
+                    
+                    # Update statistics and handle results
+                    if result.get("exists") is True:
+                        found += 1
+                        print(f"[AUTO-CHECK] ✅ @{acc.account} - FOUND (verified via {result.get('checked_via', 'unknown')})")
+                        
+                        # Mark account as done ONLY if truly found
+                        with SessionLocal() as s:
+                            account = s.query(Account).filter(
+                                Account.user_id == acc.user_id,
+                                Account.account == acc.account
+                            ).first()
+                            if account:
+                                account.done = True
+                                account.date_of_finish = date.today()
+                                s.commit()
+                                print(f"[AUTO-CHECK] ✅ Marked @{acc.account} as done")
+                        
+                        # Send notification to user if bot is provided
+                        if bot:
+                            try:
+                                with SessionLocal() as s:
+                                    user = s.query(User).get(acc.user_id)
+                                    if user:
+                                        # Calculate real days completed
+                                        completed_days = 1  # Default fallback
+                                        if acc.from_date:
+                                            if isinstance(acc.from_date, datetime):
+                                                start_date = acc.from_date.date()
+                                            else:
+                                                start_date = acc.from_date
+                                            
+                                            current_date = date.today()
+                                            completed_days = (current_date - start_date).days + 1  # +1 to include start day
+                                            
+                                            # Ensure completed_days is at least 1
+                                            completed_days = max(1, completed_days)
                                         
-                                        current_date = date.today()
-                                        completed_days = (current_date - start_date).days + 1  # +1 to include start day
-                                        
-                                        # Ensure completed_days is at least 1
-                                        completed_days = max(1, completed_days)
-                                    
-                                    message = f"""Имя пользователя: <a href="https://www.instagram.com/{acc.account}/">{acc.account}</a>
+                                        message = f"""Имя пользователя: <a href="https://www.instagram.com/{acc.account}/">{acc.account}</a>
 Начало работ: {acc.from_date.strftime("%d.%m.%Y") if acc.from_date else "N/A"}
 Заявлено: {acc.period} дней
 Завершено за: {completed_days} дней
 Конец работ: {acc.to_date.strftime("%d.%m.%Y") if acc.to_date else "N/A"}
 Статус: Аккаунт разблокирован✅"""
-                                    await bot.send_message(user.id, message)
-                                    
-                                    # Send screenshot if available
-                                    if result.get("screenshot_path"):
-                                        import os
-                                        if os.path.exists(result["screenshot_path"]):
-                                            try:
-                                                await bot.send_photo(user.id, result["screenshot_path"], f'📸 <a href="https://www.instagram.com/{acc.account}/">@{acc.account}</a>')
-                                                # Delete screenshot after sending
-                                                os.remove(result["screenshot_path"])
-                                                print(f"[AUTO-CHECK] 📸 Screenshot sent and deleted for @{acc.account}")
-                                            except Exception as e:
-                                                print(f"[AUTO-CHECK] Failed to send photo: {e}")
-                        except Exception as e:
-                            print(f"[AUTO-CHECK] Failed to send notification: {e}")
-                
-                elif result.get("exists") is False:
-                    not_found += 1
-                    error_detail = result.get("error", "")
-                    if "api_found_but_instagram_not_found" in error_detail:
-                        print(f"[AUTO-CHECK] ❌ @{acc.account} - NOT FOUND (API said exists, but Instagram confirms NOT FOUND)")
-                    else:
-                        print(f"[AUTO-CHECK] ❌ @{acc.account} - NOT FOUND")
+                                        # Send message (AsyncBotWrapper methods are already async)
+                                        await bot.send_message(user.id, message)
+                                        
+                                        # Send screenshot if available
+                                        if result.get("screenshot_path"):
+                                            import os
+                                            screenshot_path = result["screenshot_path"]
+                                            print(f"[AUTO-CHECK] 📸 Screenshot path found: {screenshot_path}")
+                                            
+                                            if os.path.exists(screenshot_path):
+                                                print(f"[AUTO-CHECK] 📸 Screenshot file exists, size: {os.path.getsize(screenshot_path)} bytes")
+                                                try:
+                                                    print(f"[AUTO-CHECK] 📸 Sending screenshot to user {user.id}...")
+                                                    # Send photo (AsyncBotWrapper.send_photo is already async)
+                                                    success = await bot.send_photo(
+                                                        user.id,
+                                                        screenshot_path,
+                                                        f'📸 <a href="https://www.instagram.com/{acc.account}/">@{acc.account}</a>'
+                                                    )
+                                                    
+                                                    if success:
+                                                        print(f"[AUTO-CHECK] 📸 Screenshot sent successfully!")
+                                                        # Delete screenshot after sending
+                                                        os.remove(screenshot_path)
+                                                        print(f"[AUTO-CHECK] 📸 Screenshot deleted: {screenshot_path}")
+                                                    else:
+                                                        print(f"[AUTO-CHECK] ⚠️ Screenshot send returned False")
+                                                except Exception as e:
+                                                    print(f"[AUTO-CHECK] ❌ Failed to send photo: {e}")
+                                                    import traceback
+                                                    traceback.print_exc()
+                                            else:
+                                                print(f"[AUTO-CHECK] ⚠️ Screenshot file NOT found: {screenshot_path}")
+                            except Exception as e:
+                                print(f"[AUTO-CHECK] Failed to send notification: {e}")
                     
-                    # Keep account as not done (done=False) - will be checked again later
-                    print(f"[AUTO-CHECK] ⏳ @{acc.account} remains pending (done=False)")
-                else:
+                    elif result.get("exists") is False:
+                        not_found += 1
+                        error_detail = result.get("error", "")
+                        if "api_found_but_instagram_not_found" in error_detail:
+                            print(f"[AUTO-CHECK] ❌ @{acc.account} - NOT FOUND (API said exists, but Instagram confirms NOT FOUND)")
+                        else:
+                            print(f"[AUTO-CHECK] ❌ @{acc.account} - NOT FOUND")
+                        
+                        # Keep account as not done (done=False) - will be checked again later
+                        print(f"[AUTO-CHECK] ⏳ @{acc.account} remains pending (done=False)")
+                    else:
+                        errors += 1
+                        print(f"[AUTO-CHECK] ❓ @{acc.account} - ERROR: {result.get('error', 'unknown')}")
+                        # Keep as not done on error too
+                    
+                    # 5 seconds delay between Instagram checks (if more accounts to verify)
+                    if idx < len(accounts_to_verify) - 1:
+                        print(f"[AUTO-CHECK] ⏳ Waiting 5 seconds before next Instagram check...")
+                        await asyncio.sleep(5)
+                        
+                except Exception as e:
                     errors += 1
-                    print(f"[AUTO-CHECK] ❓ @{acc.account} - ERROR: {result.get('error', 'unknown')}")
-                    # Keep as not done on error too
-                
-            except Exception as e:
-                errors += 1
-                print(f"[AUTO-CHECK] ❌ Error checking @{acc.account}: {str(e)}")
+                    print(f"[AUTO-CHECK] ❌ Error in Instagram verification @{acc.account}: {str(e)}")
         
-        # Run all checks in parallel with semaphore to limit concurrency
-        semaphore = asyncio.Semaphore(1)  # Max 1 parallel check to avoid rate limits
-        
-        async def check_with_semaphore(acc):
-            async with semaphore:
-                await check_single_account(acc)
-                # Much longer delay between checks to avoid rate limits and redirects
-                print(f"[AUTO-CHECK] ⏳ Waiting 30 seconds before next check...")
-                await asyncio.sleep(30)  # 30 seconds between checks
-        
-        # Create tasks for all accounts
-        tasks = [check_with_semaphore(acc) for acc in pending_accounts]
-        
-        # Run all tasks in parallel
-        await asyncio.gather(*tasks, return_exceptions=True)
+        print(f"[AUTO-CHECK] 📸 Phase 2 complete!")
         
         print(f"\n[AUTO-CHECK] Completed!")
         print(f"  • Checked: {checked}")

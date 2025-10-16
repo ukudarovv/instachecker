@@ -650,6 +650,92 @@ class TelegramBot:
                 
                 self.answer_callback_query(callback_query["id"], "OK" if ok else (err or "fail"))
             
+            elif callback_data.startswith("expiry_soon:") or callback_data.startswith("expiry_expired:"):
+                # Show account info from expiry notification
+                acc_id = int(callback_data.split(":")[1])
+                
+                try:
+                    from .services.accounts import get_account_by_id
+                    from .services.formatting import format_account_card
+                except ImportError:
+                    from services.accounts import get_account_by_id
+                    from services.formatting import format_account_card
+                
+                with session_factory() as s:
+                    acc = get_account_by_id(s, user.id, acc_id)
+                    
+                    if not acc or acc.user_id != user.id:
+                        self.answer_callback_query(callback_query["id"], "❌ Аккаунт не найден", show_alert=True)
+                        return
+                    
+                    # Format account info
+                    info_text = format_account_card(acc)
+                    
+                    # Create keyboard with action buttons
+                    keyboard = {
+                        "inline_keyboard": [
+                            [
+                                {"text": "➕ День", "callback_data": f"addd:{acc_id}"},
+                                {"text": "➖ День", "callback_data": f"subd:{acc_id}"}
+                            ],
+                            [{"text": "🗑 Удалить", "callback_data": f"delc:{acc_id}"}],
+                            [{"text": "⬅ Назад", "callback_data": "close_expiry_info"}]
+                        ]
+                    }
+                    
+                    # Edit message with account info
+                    self.edit_message_text(chat_id, message_id, info_text, keyboard)
+                    self.answer_callback_query(callback_query["id"])
+            
+            elif callback_data == "show_inactive_accounts" or callback_data == "close_expiry_info":
+                # Show inactive accounts list or close info
+                if callback_data == "show_inactive_accounts":
+                    # Show inactive accounts list (same as "Неактивные аккаунты" menu)
+                    try:
+                        from .services.accounts import get_accounts_page
+                    except ImportError:
+                        from services.accounts import get_accounts_page
+                    
+                    with session_factory() as s:
+                        page = 1
+                        accounts, total_pages = get_accounts_page(s, user.id, done=False, page=page)
+                        
+                        if not accounts:
+                            self.edit_message_text(chat_id, message_id, "📋 Неактивных аккаунтов пока нет.")
+                            self.answer_callback_query(callback_query["id"])
+                            return
+                        
+                        try:
+                            from .keyboards import accounts_list_kb, pagination_kb
+                        except ImportError:
+                            from keyboards import accounts_list_kb, pagination_kb
+                        
+                        # Create accounts list keyboard
+                        keyboard = accounts_list_kb("iinfo", accounts)
+                        
+                        
+                        # Add pagination if needed
+                        if total_pages > 1:
+                            try:
+                                from .keyboards import pagination_kb
+                            except ImportError:
+                                from keyboards import pagination_kb
+                            
+                            pagination = pagination_kb("ipg", page, total_pages)
+                            keyboard["inline_keyboard"].extend(pagination["inline_keyboard"])
+                        
+                        self.edit_message_text(
+                            chat_id, 
+                            message_id,
+                            f"📋 Неактивные аккаунты (на проверке)\nСтраница {page}/{total_pages}\nВсего: {len(accounts)}",
+                            keyboard
+                        )
+                        self.answer_callback_query(callback_query["id"])
+                else:
+                    # Close info - delete message or edit back to notification
+                    self.delete_message(chat_id, message_id)
+                    self.answer_callback_query(callback_query["id"], "✅ Закрыто")
+            
             elif callback_data.startswith("usr_"):
                 # User management callbacks (admin only)
                 if not ensure_admin(user):
@@ -888,7 +974,7 @@ class TelegramBot:
                     # Send success message
                     keyboard = main_menu(is_admin=ensure_admin(user))
                     self.send_message(chat_id, 
-                        f"✅ Аккаунт @{username} добавлен!\n\n"
+                        f"✅ Аккаунт <a href='https://www.instagram.com/{username}/'>@{username}</a> добавлен!\n\n"
                         f"📅 Период мониторинга: 30 дней\n"
                         f"📅 С: {acc.from_date.strftime('%d.%m.%Y')}\n"
                         f"📅 До: {acc.to_date.strftime('%d.%m.%Y')}\n\n"
@@ -918,7 +1004,7 @@ class TelegramBot:
                             fernet = OptionalFernet(settings.encryption_key)
                             
                             with session_factory() as session:
-                                ig_session = get_active_session(session, user.id, fernet)
+                                ig_session = get_active_session(session, user.id)
                                 if ig_session:
                                     result = loop.run_until_complete(check_account_hybrid(
                                         session=session,
@@ -928,14 +1014,56 @@ class TelegramBot:
                                         fernet=fernet
                                     ))
                                     
+                                    # Send result based on check outcome
                                     if result.get("exists") is True:
-                                        self.send_message(user.id, f"🎉 @{username} уже активен!")
+                                        # Send success message with screenshot if available
+                                        success_message = f"✅ <a href='https://www.instagram.com/{username}/'>@{username}</a> уже активен!"
+                                        self.send_message(user.id, success_message)
+                                        
+                                        # Send screenshot if available
+                                        if result.get("screenshot_path"):
+                                            import os
+                                            screenshot_path = result["screenshot_path"]
+                                            print(f"[AUTO-CHECK] 📸 Screenshot path found: {screenshot_path}")
+                                            
+                                            if os.path.exists(screenshot_path):
+                                                print(f"[AUTO-CHECK] 📸 Screenshot file exists, size: {os.path.getsize(screenshot_path)} bytes")
+                                                try:
+                                                    print(f"[AUTO-CHECK] 📸 Sending screenshot to user {user.id}...")
+                                                    # Send photo
+                                                    success = self.send_photo(
+                                                        user.id,
+                                                        screenshot_path,
+                                                        f'📸 <a href="https://www.instagram.com/{username}/">@{username}</a>'
+                                                    )
+                                                    
+                                                    if success:
+                                                        print(f"[AUTO-CHECK] 📸 Screenshot sent successfully!")
+                                                        # Delete screenshot after sending
+                                                        os.remove(screenshot_path)
+                                                        print(f"[AUTO-CHECK] 📸 Screenshot deleted: {screenshot_path}")
+                                                    else:
+                                                        print(f"[AUTO-CHECK] ⚠️ Screenshot send returned False")
+                                                except Exception as e:
+                                                    print(f"[AUTO-CHECK] ❌ Failed to send photo: {e}")
+                                                    import traceback
+                                                    traceback.print_exc()
+                                            else:
+                                                print(f"[AUTO-CHECK] ⚠️ Screenshot file NOT found: {screenshot_path}")
+                                    elif result.get("exists") is False:
+                                        self.send_message(user.id, f"❌ <a href='https://www.instagram.com/{username}/'>@{username}</a> не найден или удалён")
+                                    else:
+                                        # exists is None - error occurred
+                                        error_msg = result.get("error", "unknown error")
+                                        self.send_message(user.id, f"⚠️ <a href='https://www.instagram.com/{username}/'>@{username}</a>: не удалось проверить\n\nОшибка: {error_msg}")
                                 else:
-                                    self.send_message(user.id, f"ℹ️ @{username} добавлен. Для проверки нужна IG-сессия.")
+                                    self.send_message(user.id, f"ℹ️ <a href='https://www.instagram.com/{username}/'>@{username}</a> добавлен. Для проверки нужна IG-сессия.")
                             
                             loop.close()
                         except Exception as e:
                             print(f"Auto-check error for @{username}: {e}")
+                            # Send error message to user
+                            self.send_message(user.id, f"⚠️ Ошибка при автопроверке @{username}: {str(e)}")
                     
                     import threading
                     threading.Thread(target=auto_check_new_account, daemon=True).start()

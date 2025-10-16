@@ -26,14 +26,15 @@ async def check_account_hybrid(
     user_id: int,
     username: str,
     ig_session: Optional[InstagramSession] = None,
-    fernet: Optional[OptionalFernet] = None
+    fernet: Optional[OptionalFernet] = None,
+    skip_instagram_verification: bool = False
 ) -> Dict[str, Any]:
     """
     Hybrid check: API + Instagram screenshot.
     
     Process:
     1. Check via RapidAPI (fast, uses quota)
-    2. If exists and IG session available - take screenshot
+    2. If exists and IG session available - take screenshot (unless skip_instagram_verification=True)
     3. Return combined result
     
     Args:
@@ -42,6 +43,7 @@ async def check_account_hybrid(
         username: Instagram username to check
         ig_session: Optional Instagram session for screenshots
         fernet: Optional encryptor for cookies
+        skip_instagram_verification: If True, skip Instagram check even if account found via API
         
     Returns:
         Dict with check results: {
@@ -121,7 +123,7 @@ async def check_account_hybrid(
         return result
     
     # Step 3: Account exists via API - VERIFY with Instagram if session available
-    if api_result["exists"] is True and ig_session and fernet:
+    if api_result["exists"] is True and ig_session and fernet and not skip_instagram_verification:
         result["checked_via"] = "api+instagram"
         try:
             cookies = decode_cookies(fernet, ig_session.cookies)
