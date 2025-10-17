@@ -5,13 +5,69 @@ from datetime import date, timedelta
 from sqlalchemy.orm import sessionmaker
 
 try:
-    from ..models import Account, User
+    from ..models import Account, User, ExpiryNotification
     from ..services.accounts import get_expired_accounts, get_accounts_expiring_soon
     from ..utils.access import ensure_active
 except ImportError:
-    from models import Account, User
+    from models import Account, User, ExpiryNotification
     from services.accounts import get_expired_accounts, get_accounts_expiring_soon
     from utils.access import ensure_active
+
+
+def was_notification_sent_today(session, user_id: int, account_id: int, notification_type: str) -> bool:
+    """
+    Check if notification was already sent today for this account.
+    
+    Args:
+        session: SQLAlchemy session
+        user_id: User ID
+        account_id: Account ID
+        notification_type: Type of notification ('expiring_soon' | 'expired')
+    
+    Returns:
+        True if notification was sent today, False otherwise
+    """
+    today = date.today()
+    
+    existing = session.query(ExpiryNotification).filter(
+        ExpiryNotification.user_id == user_id,
+        ExpiryNotification.account_id == account_id,
+        ExpiryNotification.notification_type == notification_type,
+        ExpiryNotification.notification_date == today
+    ).first()
+    
+    return existing is not None
+
+
+def mark_notification_sent(session, user_id: int, account_id: int, notification_type: str):
+    """
+    Mark notification as sent for today.
+    
+    Args:
+        session: SQLAlchemy session
+        user_id: User ID
+        account_id: Account ID
+        notification_type: Type of notification ('expiring_soon' | 'expired')
+    """
+    today = date.today()
+    
+    # Check if already exists (shouldn't happen, but just in case)
+    existing = session.query(ExpiryNotification).filter(
+        ExpiryNotification.user_id == user_id,
+        ExpiryNotification.account_id == account_id,
+        ExpiryNotification.notification_type == notification_type,
+        ExpiryNotification.notification_date == today
+    ).first()
+    
+    if not existing:
+        notification = ExpiryNotification(
+            user_id=user_id,
+            account_id=account_id,
+            notification_type=notification_type,
+            notification_date=today
+        )
+        session.add(notification)
+        session.commit()
 
 
 async def check_and_send_expiry_notifications(SessionLocal: sessionmaker, bot=None):
@@ -35,19 +91,37 @@ async def check_and_send_expiry_notifications(SessionLocal: sessionmaker, bot=No
         # Get accounts expiring soon (in next 7 days)
         expiring_soon = get_accounts_expiring_soon(session, days_ahead=7)
         
-        print(f"[EXPIRY-CHECK] Found {len(expired_accounts)} expired accounts")
-        print(f"[EXPIRY-CHECK] Found {len(expiring_soon)} accounts expiring soon")
+        print(f"[EXPIRY-CHECK] Found {len(expired_accounts)} expired accounts (before filtering)")
+        print(f"[EXPIRY-CHECK] Found {len(expiring_soon)} accounts expiring soon (before filtering)")
+        
+        # Filter out accounts that already received notification today
+        expired_accounts_to_notify = []
+        for acc in expired_accounts:
+            if not was_notification_sent_today(session, acc.user_id, acc.id, 'expired'):
+                expired_accounts_to_notify.append(acc)
+            else:
+                print(f"[EXPIRY-CHECK] ⏭️ Skipping expired notification for @{acc.account} - already sent today")
+        
+        expiring_soon_to_notify = []
+        for acc in expiring_soon:
+            if not was_notification_sent_today(session, acc.user_id, acc.id, 'expiring_soon'):
+                expiring_soon_to_notify.append(acc)
+            else:
+                print(f"[EXPIRY-CHECK] ⏭️ Skipping expiring soon notification for @{acc.account} - already sent today")
+        
+        print(f"[EXPIRY-CHECK] {len(expired_accounts_to_notify)} expired accounts to notify")
+        print(f"[EXPIRY-CHECK] {len(expiring_soon_to_notify)} expiring soon accounts to notify")
         
         # Group accounts by user
         user_expired = {}
         user_expiring = {}
         
-        for acc in expired_accounts:
+        for acc in expired_accounts_to_notify:
             if acc.user_id not in user_expired:
                 user_expired[acc.user_id] = []
             user_expired[acc.user_id].append(acc)
         
-        for acc in expiring_soon:
+        for acc in expiring_soon_to_notify:
             if acc.user_id not in user_expiring:
                 user_expiring[acc.user_id] = []
             user_expiring[acc.user_id].append(acc)
@@ -59,6 +133,11 @@ async def check_and_send_expiry_notifications(SessionLocal: sessionmaker, bot=No
                 if user and ensure_active(user):
                     await send_expired_notification(bot, user, accounts)
                     print(f"[EXPIRY-CHECK] ✅ Sent expired notification to user {user_id}")
+                    
+                    # Mark notifications as sent for all accounts
+                    for acc in accounts:
+                        mark_notification_sent(session, user_id, acc.id, 'expired')
+                        print(f"[EXPIRY-CHECK] 📝 Marked expired notification as sent for @{acc.account}")
                 else:
                     print(f"[EXPIRY-CHECK] ⚠️ User {user_id} not found or inactive")
             except Exception as e:
@@ -71,6 +150,11 @@ async def check_and_send_expiry_notifications(SessionLocal: sessionmaker, bot=No
                 if user and ensure_active(user):
                     await send_expiring_soon_notification(bot, user, accounts)
                     print(f"[EXPIRY-CHECK] ✅ Sent expiring soon notification to user {user_id}")
+                    
+                    # Mark notifications as sent for all accounts
+                    for acc in accounts:
+                        mark_notification_sent(session, user_id, acc.id, 'expiring_soon')
+                        print(f"[EXPIRY-CHECK] 📝 Marked expiring soon notification as sent for @{acc.account}")
                 else:
                     print(f"[EXPIRY-CHECK] ⚠️ User {user_id} not found or inactive")
             except Exception as e:

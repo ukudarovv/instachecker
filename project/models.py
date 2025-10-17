@@ -108,3 +108,20 @@ class SystemSettings(Base):
     key = Column(String, unique=True, nullable=False, index=True)
     value = Column(String, nullable=False)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class ExpiryNotification(Base):
+    """Expiry notification tracking model."""
+    __tablename__ = "expiry_notifications"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    account_id = Column(Integer, ForeignKey("accounts.id", ondelete="CASCADE"), index=True, nullable=False)
+    notification_type = Column(String, nullable=False, index=True)  # 'expiring_soon' | 'expired'
+    notification_date = Column(Date, nullable=False, index=True)  # Date when notification was sent
+    created_at = Column(DateTime, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "account_id", "notification_type", "notification_date", 
+                        name="uq_expiry_notification"),
+    )

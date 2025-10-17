@@ -45,8 +45,9 @@ except ImportError:
     from cron import start_cron
     # check_now_adv removed - functionality integrated directly into bot.py
 
-# Global scheduler instance
+# Global scheduler instances
 _checker_scheduler = None
+_expiry_scheduler = None
 
 
 class TelegramBot:
@@ -1922,18 +1923,21 @@ def main():
     # Start APScheduler-based auto-checker
     # Auto-check interval is read from database (can be changed via admin menu)
     global _checker_scheduler
+    global _expiry_scheduler
     try:
         from .auto_checker_scheduler import AutoCheckerScheduler
+        from .expiry_scheduler import ExpiryNotificationScheduler
         from .services.system_settings import get_auto_check_interval
     except ImportError:
         from auto_checker_scheduler import AutoCheckerScheduler
+        from expiry_scheduler import ExpiryNotificationScheduler
         from services.system_settings import get_auto_check_interval
     
     # Get current interval from database
     with session_factory() as session:
         interval_minutes = get_auto_check_interval(session)
     
-    # Initialize and start scheduler
+    # Initialize and start auto-checker
     _checker_scheduler = AutoCheckerScheduler(
         bot_token=settings.bot_token,
         SessionLocal=session_factory,
@@ -1947,6 +1951,21 @@ def main():
     next_run = _checker_scheduler.get_next_run_time()
     if next_run:
         logger.info(f"Next check scheduled at: {next_run}")
+    
+    # Initialize and start expiry notification scheduler (daily at 10:00 AM)
+    from datetime import time
+    _expiry_scheduler = ExpiryNotificationScheduler(
+        bot_token=settings.bot_token,
+        SessionLocal=session_factory,
+        notification_time=time(10, 0)  # 10:00 AM
+    )
+    _expiry_scheduler.start()
+    logger.info("Expiry notification scheduler started (daily at 10:00 AM)")
+    
+    # Get next expiry notification time
+    next_expiry = _expiry_scheduler.get_next_run_time()
+    if next_expiry:
+        logger.info(f"Next expiry notification scheduled at: {next_expiry}")
     
     # Start polling
     logger.info("Starting polling...")

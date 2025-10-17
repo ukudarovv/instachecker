@@ -8,14 +8,12 @@ try:
     from ..models import Account, User
     from ..services.hybrid_checker import check_account_hybrid
     from ..services.ig_sessions import get_priority_valid_session
-    from ..services.expiry_notifications import check_and_send_expiry_notifications
     from ..utils.encryptor import OptionalFernet
     from ..config import get_settings
 except ImportError:
     from models import Account, User
     from services.hybrid_checker import check_account_hybrid
     from services.ig_sessions import get_priority_valid_session
-    from services.expiry_notifications import check_and_send_expiry_notifications
     from utils.encryptor import OptionalFernet
     from config import get_settings
 
@@ -35,12 +33,8 @@ async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accou
     
     print(f"\n[AUTO-CHECK] {datetime.now()} - Starting automatic check...")
     
-    # First, check for expired accounts and send notifications
-    if bot:
-        try:
-            await check_and_send_expiry_notifications(SessionLocal, bot)
-        except Exception as e:
-            print(f"[AUTO-CHECK] Failed to check expiry notifications: {e}")
+    # NOTE: Expiry notifications are now handled by separate daily scheduler at 10:00 AM
+    # See project/expiry_scheduler.py
     
     # Get admin users for notifications
     admin_users = []
