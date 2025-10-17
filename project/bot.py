@@ -688,6 +688,67 @@ class TelegramBot:
                     self.edit_message_text(chat_id, message_id, info_text, keyboard)
                     self.answer_callback_query(callback_query["id"])
             
+            elif callback_data.startswith("set_verify_mode:"):
+                # User wants to change verification mode
+                new_mode = callback_data.split(":")[1]
+                
+                with session_factory() as session:
+                    current_user = session.query(User).get(user.id)
+                    if not current_user:
+                        self.answer_callback_query(callback_query["id"], "❌ Пользователь не найден", show_alert=True)
+                        return
+                    
+                    # Update mode
+                    current_user.verify_mode = new_mode
+                    session.commit()
+                    
+                    mode_name = {
+                        "api+instagram": "🔑 API + 📸 Instagram",
+                        "api+proxy": "🔑 API + 🌐 Proxy"
+                    }.get(new_mode, new_mode)
+                    
+                    # Update message to show new selection
+                    mode_descriptions = {
+                        "api+instagram": (
+                            "🔑 <b>API + 📸 Instagram (с логином)</b>\n\n"
+                            "Двухэтапная проверка:\n"
+                            "1️⃣ Быстрая проверка через API (1 сек)\n"
+                            "2️⃣ Проверка через Instagram с авторизацией (5 сек)\n\n"
+                            "✅ Полная информация (подписчики, посты)\n"
+                            "✅ Скриншоты профиля\n"
+                            "✅ Доступ к приватным профилям\n"
+                            "❗ Требуется Instagram сессия"
+                        ),
+                        "api+proxy": (
+                            "🔑 <b>API + 🌐 Proxy (без логина)</b>\n\n"
+                            "Двухэтапная проверка:\n"
+                            "1️⃣ Быстрая проверка через API (1 сек)\n"
+                            "2️⃣ Проверка через Proxy без авторизации (5 сек)\n\n"
+                            "✅ Не требует Instagram аккаунт\n"
+                            "✅ Скриншоты публичных страниц\n"
+                            "✅ Минимальный риск блокировки\n"
+                            "❗ Требуется активный Proxy"
+                        )
+                    }
+                    
+                    current_description = mode_descriptions.get(new_mode, "❓ Неизвестный режим")
+                    
+                    message = (
+                        f"🔄 <b>Текущий режим проверки</b>\n\n"
+                        f"{current_description}\n\n"
+                        f"Выберите новый режим проверки:"
+                    )
+                    
+                    from .keyboards import verify_mode_selection_kb
+                    self.edit_message_text(chat_id, message_id, message, verify_mode_selection_kb(new_mode))
+                    self.answer_callback_query(callback_query["id"], f"✅ Режим изменен на {mode_name}")
+            
+            elif callback_data == "close_settings":
+                # Close settings menu
+                from .keyboards import main_menu
+                self.edit_message_text(chat_id, message_id, "Главное меню:", main_menu(ensure_admin(user)))
+                self.answer_callback_query(callback_query["id"])
+            
             elif callback_data == "show_inactive_accounts" or callback_data == "close_expiry_info":
                 # Show inactive accounts list or close info
                 if callback_data == "show_inactive_accounts":
@@ -1899,6 +1960,62 @@ class TelegramBot:
                         from keyboards import proxies_menu_kb
                     
                     self.send_message(chat_id, f"Готово. Успешных: {good}, неуспешных: {bad}", proxies_menu_kb())
+            
+            elif text == "⚙️ Настройки":
+                if not ensure_active(user):
+                    self.send_message(chat_id, "⛔ Доступ пока не выдан.")
+                    return
+                
+                from .keyboards import settings_menu_kb
+                self.send_message(chat_id, "⚙️ <b>Настройки</b>\n\nВыберите раздел:", settings_menu_kb())
+            
+            elif text == "🔄 Режим проверки":
+                if not ensure_active(user):
+                    self.send_message(chat_id, "⛔ Доступ пока не выдан.")
+                    return
+                
+                # Show current mode and options
+                with session_factory() as session:
+                    current_user = session.query(User).get(user.id)
+                    current_mode = current_user.verify_mode or "api+instagram"
+                
+                mode_descriptions = {
+                    "api+instagram": (
+                        "🔑 <b>API + 📸 Instagram (с логином)</b>\n\n"
+                        "Двухэтапная проверка:\n"
+                        "1️⃣ Быстрая проверка через API (1 сек)\n"
+                        "2️⃣ Проверка через Instagram с авторизацией (5 сек)\n\n"
+                        "✅ Полная информация (подписчики, посты)\n"
+                        "✅ Скриншоты профиля\n"
+                        "✅ Доступ к приватным профилям\n"
+                        "❗ Требуется Instagram сессия"
+                    ),
+                    "api+proxy": (
+                        "🔑 <b>API + 🌐 Proxy (без логина)</b>\n\n"
+                        "Двухэтапная проверка:\n"
+                        "1️⃣ Быстрая проверка через API (1 сек)\n"
+                        "2️⃣ Проверка через Proxy без авторизации (5 сек)\n\n"
+                        "✅ Не требует Instagram аккаунт\n"
+                        "✅ Скриншоты публичных страниц\n"
+                        "✅ Минимальный риск блокировки\n"
+                        "❗ Требуется активный Proxy"
+                    )
+                }
+                
+                current_description = mode_descriptions.get(current_mode, "❓ Неизвестный режим")
+                
+                message = (
+                    f"🔄 <b>Текущий режим проверки</b>\n\n"
+                    f"{current_description}\n\n"
+                    f"Выберите новый режим проверки:"
+                )
+                
+                from .keyboards import verify_mode_selection_kb
+                self.send_message(chat_id, message, verify_mode_selection_kb(current_mode))
+            
+            elif text == "⬅️ Назад в меню":
+                from .keyboards import main_menu
+                self.send_message(chat_id, "Главное меню:", main_menu(ensure_admin(user)))
             
             elif text == "Админка":
                 if not ensure_admin(user):

@@ -22,7 +22,8 @@ def main_menu(is_admin: bool = False) -> dict:
         "keyboard": [
             [{"text": "Добавить аккаунт"}, {"text": "Активные аккаунты"}],
             [{"text": "Аккаунты на проверке"}, {"text": "Проверить аккаунты"}],
-            [{"text": "API"}, {"text": "Прокси"}, {"text": "Instagram"}]
+            [{"text": "API"}, {"text": "Прокси"}, {"text": "Instagram"}],
+            [{"text": "⚙️ Настройки"}]
         ],
         "resize_keyboard": True,
         "one_time_keyboard": False
@@ -32,6 +33,58 @@ def main_menu(is_admin: bool = False) -> dict:
         keyboard["keyboard"].append([{"text": "Админка"}])
     
     return keyboard
+
+
+def settings_menu_kb() -> dict:
+    """
+    Create settings menu keyboard.
+    
+    Returns:
+        dict with settings keyboard configuration
+    """
+    keyboard = {
+        "keyboard": [
+            [{"text": "🔄 Режим проверки"}],
+            [{"text": "⬅️ Назад в меню"}]
+        ],
+        "resize_keyboard": True,
+        "one_time_keyboard": False
+    }
+    return keyboard
+
+
+def verify_mode_selection_kb(current_mode: str) -> dict:
+    """
+    Create verification mode selection keyboard.
+    
+    Args:
+        current_mode: Current verification mode
+    
+    Returns:
+        dict with inline keyboard for mode selection
+    """
+    modes = [
+        ("api+instagram", "🔑 API + 📸 Instagram (с логином)"),
+        ("api+proxy", "🔑 API + 🌐 Proxy (без логина)")
+    ]
+    
+    keyboard = []
+    for mode_value, mode_label in modes:
+        # Add checkmark to current mode
+        if mode_value == current_mode:
+            button_text = f"✅ {mode_label}"
+        else:
+            button_text = mode_label
+        
+        keyboard.append([{
+            "text": button_text,
+            "callback_data": f"set_verify_mode:{mode_value}"
+        }])
+    
+    # Add back button
+    keyboard.append([{"text": "⬅️ Закрыть", "callback_data": "close_settings"}])
+    
+    return {"inline_keyboard": keyboard}
 
 
 def cancel_kb() -> dict:
