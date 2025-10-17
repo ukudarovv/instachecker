@@ -739,13 +739,19 @@ class TelegramBot:
                         f"Выберите новый режим проверки:"
                     )
                     
-                    from .keyboards import verify_mode_selection_kb
+                    try:
+                        from .keyboards import verify_mode_selection_kb
+                    except ImportError:
+                        from keyboards import verify_mode_selection_kb
                     self.edit_message_text(chat_id, message_id, message, verify_mode_selection_kb(new_mode))
                     self.answer_callback_query(callback_query["id"], f"✅ Режим изменен на {mode_name}")
             
             elif callback_data == "close_settings":
                 # Close settings menu
-                from .keyboards import main_menu
+                try:
+                    from .keyboards import main_menu
+                except ImportError:
+                    from keyboards import main_menu
                 self.edit_message_text(chat_id, message_id, "Главное меню:", main_menu(ensure_admin(user)))
                 self.answer_callback_query(callback_query["id"])
             
@@ -1966,7 +1972,10 @@ class TelegramBot:
                     self.send_message(chat_id, "⛔ Доступ пока не выдан.")
                     return
                 
-                from .keyboards import settings_menu_kb
+                try:
+                    from .keyboards import settings_menu_kb
+                except ImportError:
+                    from keyboards import settings_menu_kb
                 self.send_message(chat_id, "⚙️ <b>Настройки</b>\n\nВыберите раздел:", settings_menu_kb())
             
             elif text == "🔄 Режим проверки":
@@ -2010,11 +2019,17 @@ class TelegramBot:
                     f"Выберите новый режим проверки:"
                 )
                 
-                from .keyboards import verify_mode_selection_kb
+                try:
+                    from .keyboards import verify_mode_selection_kb
+                except ImportError:
+                    from keyboards import verify_mode_selection_kb
                 self.send_message(chat_id, message, verify_mode_selection_kb(current_mode))
             
             elif text == "⬅️ Назад в меню":
-                from .keyboards import main_menu
+                try:
+                    from .keyboards import main_menu
+                except ImportError:
+                    from keyboards import main_menu
                 self.send_message(chat_id, "Главное меню:", main_menu(ensure_admin(user)))
             
             elif text == "Админка":
