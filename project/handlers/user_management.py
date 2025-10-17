@@ -337,7 +337,9 @@ def register_user_management_handlers(bot, session_factory):
             verify_mode_text = {
                 "api": "🔑 API",
                 "proxy": "🌐 Прокси",
-                "instagram": "📸 Instagram"
+                "instagram": "📸 Instagram",
+                "api+instagram": "🔑 API + 📸 Instagram",
+                "api+proxy": "🔑 API + 🌐 Proxy"
             }.get(target_user.verify_mode, "❓ Неизвестно")
             
             user_info = (
@@ -781,6 +783,72 @@ def register_user_management_handlers(bot, session_factory):
                 f"✅ Удалено {count} пользователей"
             )
     
+    def handle_callback_usr_change_verify(callback_query, user, user_id, page=1, filter_type="all"):
+        """Handle usr_change_verify callback - change verification mode."""
+        if not ensure_admin(user):
+            bot.answer_callback_query(callback_query["id"], "⛔ Доступ запрещен")
+            return
+        
+        page = int(page) if page else 1
+        
+        with session_factory() as session:
+            target_user = session.query(User).get(int(user_id))
+            if not target_user:
+                bot.answer_callback_query(callback_query["id"], "❌ Пользователь не найден", show_alert=True)
+                return
+            
+            # Show mode selection
+            current_mode = target_user.verify_mode or "api+instagram"
+            message = (
+                f"🔄 <b>Изменение режима проверки</b>\n\n"
+                f"Пользователь: @{target_user.username or str(target_user.id)}\n"
+                f"Текущий режим: <b>{current_mode}</b>\n\n"
+                f"Выберите новый режим проверки:"
+            )
+            
+            keyboard = [
+                [{"text": "🔑 API + 📸 Instagram (с логином)", "callback_data": f"usr_set_verify:{user_id}:api+instagram:{page}:{filter_type}"}],
+                [{"text": "🔑 API + 🌐 Proxy (без логина)", "callback_data": f"usr_set_verify:{user_id}:api+proxy:{page}:{filter_type}"}],
+                [{"text": "⬅ Назад", "callback_data": f"usr_view:{user_id}:{page}:{filter_type}"}]
+            ]
+            
+            bot.edit_message_text(
+                callback_query["message"]["chat"]["id"],
+                callback_query["message"]["message_id"],
+                message,
+                {"inline_keyboard": keyboard}
+            )
+            
+            bot.answer_callback_query(callback_query["id"])
+    
+    def handle_callback_usr_set_verify(callback_query, user, user_id, mode, page=1, filter_type="all"):
+        """Handle usr_set_verify callback - set new verification mode."""
+        if not ensure_admin(user):
+            bot.answer_callback_query(callback_query["id"], "⛔ Доступ запрещен")
+            return
+        
+        page = int(page) if page else 1
+        
+        with session_factory() as session:
+            target_user = session.query(User).get(int(user_id))
+            if not target_user:
+                bot.answer_callback_query(callback_query["id"], "❌ Пользователь не найден", show_alert=True)
+                return
+            
+            # Update verify mode
+            target_user.verify_mode = mode
+            session.commit()
+            
+            mode_name = {
+                "api+instagram": "🔑 API + 📸 Instagram",
+                "api+proxy": "🔑 API + 🌐 Proxy"
+            }.get(mode, mode)
+            
+            bot.answer_callback_query(callback_query["id"], f"✅ Режим изменен на {mode_name}")
+            
+            # Return to user card
+            handle_callback_usr_view(callback_query, user, user_id, page, filter_type)
+    
     # Register message handlers
     return {
         "Управление пользователями": handle_user_management_menu,
@@ -798,6 +866,8 @@ def register_user_management_handlers(bot, session_factory):
         "usr_deactivate": handle_callback_usr_deactivate,
         "usr_promote": handle_callback_usr_promote,
         "usr_demote": handle_callback_usr_demote,
+        "usr_change_verify": handle_callback_usr_change_verify,
+        "usr_set_verify": handle_callback_usr_set_verify,
         "usr_accounts": handle_callback_usr_accounts,
         "usr_acc_page": handle_callback_usr_acc_page,
         "usr_acc_toggle": handle_callback_usr_acc_toggle,

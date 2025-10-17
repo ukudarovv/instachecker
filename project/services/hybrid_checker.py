@@ -6,16 +6,18 @@ from sqlalchemy.orm import Session
 from datetime import date
 
 try:
-    from ..models import Account, InstagramSession
+    from ..models import Account, InstagramSession, Proxy
     from .check_via_api import check_account_exists_via_api
     from .ig_simple_checker import check_account_with_screenshot
+    from .proxy_checker import check_account_via_proxy_with_screenshot
     from .ig_sessions import get_active_session, decode_cookies
     from ..utils.encryptor import OptionalFernet
     from ..config import get_settings
 except ImportError:
-    from models import Account, InstagramSession
+    from models import Account, InstagramSession, Proxy
     from services.check_via_api import check_account_exists_via_api
     from services.ig_simple_checker import check_account_with_screenshot
+    from services.proxy_checker import check_account_via_proxy_with_screenshot
     from services.ig_sessions import get_active_session, decode_cookies
     from utils.encryptor import OptionalFernet
     from config import get_settings
@@ -27,23 +29,27 @@ async def check_account_hybrid(
     username: str,
     ig_session: Optional[InstagramSession] = None,
     fernet: Optional[OptionalFernet] = None,
-    skip_instagram_verification: bool = False
+    skip_instagram_verification: bool = False,
+    verify_mode: str = "api+instagram"
 ) -> Dict[str, Any]:
     """
-    Hybrid check: API + Instagram screenshot.
+    Hybrid check: API + (Instagram or Proxy).
     
     Process:
     1. Check via RapidAPI (fast, uses quota)
-    2. If exists and IG session available - take screenshot (unless skip_instagram_verification=True)
+    2. If exists:
+       - If verify_mode='api+instagram' and IG session available - Instagram screenshot
+       - If verify_mode='api+proxy' and proxy available - Proxy screenshot (no login)
     3. Return combined result
     
     Args:
         session: Database session
         user_id: User ID
         username: Instagram username to check
-        ig_session: Optional Instagram session for screenshots
+        ig_session: Optional Instagram session for screenshots (for api+instagram mode)
         fernet: Optional encryptor for cookies
-        skip_instagram_verification: If True, skip Instagram check even if account found via API
+        skip_instagram_verification: If True, skip verification even if account found via API
+        verify_mode: Verification mode ('api+instagram' or 'api+proxy')
         
     Returns:
         Dict with check results: {
@@ -122,48 +128,93 @@ async def check_account_hybrid(
         result["checked_via"] = "api"
         return result
     
-    # Step 3: Account exists via API - VERIFY with Instagram if session available
-    if api_result["exists"] is True and ig_session and fernet and not skip_instagram_verification:
-        result["checked_via"] = "api+instagram"
-        try:
-            cookies = decode_cookies(fernet, ig_session.cookies)
-            ig_result = await check_account_with_screenshot(
-                username=username,
-                cookies=cookies,
-                headless=settings.ig_headless,
-                timeout_ms=30000
-            )
-            
-            # CRITICAL: If Instagram says NOT FOUND, override API result
-            # This means the account was deleted/suspended after API cache was updated
-            if ig_result.get("exists") is False:
-                result["exists"] = False
-                result["error"] = "api_found_but_instagram_not_found"
-                print(f"⚠️ API says exists, but Instagram says NOT FOUND for @{username}")
-                # Don't mark as done - account is not active
-                return result
-            
-            # Instagram confirms account exists or is private
-            if ig_result.get("exists") is True:
-                # Merge Instagram data
-                result["full_name"] = ig_result.get("full_name")
-                result["followers"] = ig_result.get("followers")
-                result["following"] = ig_result.get("following")
-                result["posts"] = ig_result.get("posts")
-                result["screenshot_path"] = ig_result.get("screenshot_path")
+    # Step 3: Account exists via API - VERIFY with Instagram or Proxy
+    if api_result["exists"] is True and not skip_instagram_verification:
+        # Choose verification method based on verify_mode
+        if verify_mode == "api+instagram" and ig_session and fernet:
+            # INSTAGRAM VERIFICATION (with login)
+            result["checked_via"] = "api+instagram"
+            try:
+                cookies = decode_cookies(fernet, ig_session.cookies)
+                ig_result = await check_account_with_screenshot(
+                    username=username,
+                    cookies=cookies,
+                    headless=settings.ig_headless,
+                    timeout_ms=30000
+                )
                 
-                # Mark as done - both API and Instagram confirm
-                print(f"✅ Both API and Instagram confirm @{username} is active")
-            else:
-                # Instagram check had an error - keep API result but note the issue
-                result["error"] = f"instagram_verification_error: {ig_result.get('error', 'unknown')}"
-                print(f"⚠️ API found @{username}, but Instagram verification failed: {result['error']}")
-                # Still keep exists=True from API in this case
+                # CRITICAL: If Instagram says NOT FOUND, override API result
+                if ig_result.get("exists") is False:
+                    result["exists"] = False
+                    result["error"] = "api_found_but_instagram_not_found"
+                    print(f"⚠️ API says exists, but Instagram says NOT FOUND for @{username}")
+                    return result
                 
-        except Exception as e:
-            result["error"] = f"instagram_verification_failed: {str(e)}"
-            print(f"⚠️ Failed to verify @{username} via Instagram: {str(e)}")
-            # Keep API result if Instagram check completely failed
+                # Instagram confirms account exists
+                if ig_result.get("exists") is True:
+                    result["full_name"] = ig_result.get("full_name")
+                    result["followers"] = ig_result.get("followers")
+                    result["following"] = ig_result.get("following")
+                    result["posts"] = ig_result.get("posts")
+                    result["screenshot_path"] = ig_result.get("screenshot_path")
+                    print(f"✅ Both API and Instagram confirm @{username} is active")
+                else:
+                    result["error"] = f"instagram_verification_error: {ig_result.get('error', 'unknown')}"
+                    print(f"⚠️ API found @{username}, but Instagram verification failed: {result['error']}")
+                    
+            except Exception as e:
+                result["error"] = f"instagram_error: {str(e)}"
+                print(f"❌ Instagram check error for @{username}: {str(e)}")
+        
+        elif verify_mode == "api+proxy":
+            # PROXY VERIFICATION (without login)
+            result["checked_via"] = "api+proxy"
+            try:
+                # Get user's active proxy
+                proxy = session.query(Proxy).filter(
+                    Proxy.user_id == user_id,
+                    Proxy.is_active == True
+                ).order_by(Proxy.priority.asc()).first()
+                
+                if proxy:
+                    # Generate screenshot path
+                    import os
+                    from datetime import datetime
+                    screenshot_dir = "screenshots"
+                    os.makedirs(screenshot_dir, exist_ok=True)
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    screenshot_path = os.path.join(screenshot_dir, f"ig_{username}_{timestamp}.png")
+                    
+                    proxy_result = await check_account_via_proxy_with_screenshot(
+                        username=username,
+                        proxy=proxy,
+                        headless=settings.ig_headless,
+                        timeout_ms=30000,
+                        screenshot_path=screenshot_path
+                    )
+                    
+                    # CRITICAL: If proxy says NOT FOUND, override API result
+                    if proxy_result.get("exists") is False:
+                        result["exists"] = False
+                        result["error"] = "api_found_but_proxy_not_found"
+                        print(f"⚠️ API says exists, but Proxy says NOT FOUND for @{username}")
+                        return result
+                    
+                    # Proxy confirms account exists
+                    if proxy_result.get("exists") is True:
+                        result["screenshot_path"] = proxy_result.get("screenshot_path")
+                        result["is_private"] = proxy_result.get("is_private")
+                        print(f"✅ Both API and Proxy confirm @{username} is active")
+                    else:
+                        result["error"] = f"proxy_verification_error: {proxy_result.get('error', 'unknown')}"
+                        print(f"⚠️ API found @{username}, but Proxy verification failed: {result['error']}")
+                else:
+                    result["error"] = "no_active_proxy"
+                    print(f"⚠️ No active proxy found for user {user_id}")
+                    
+            except Exception as e:
+                result["error"] = f"proxy_error: {str(e)}"
+                print(f"❌ Proxy check error for @{username}: {str(e)}")
     
     return result
 

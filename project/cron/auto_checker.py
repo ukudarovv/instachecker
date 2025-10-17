@@ -86,17 +86,27 @@ async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accou
         
         for idx, acc in enumerate(pending_accounts):
             try:
-                # Get user's priority Instagram session
+                # Get user's verify_mode and session
                 with SessionLocal() as s:
-                    ig_session = get_priority_valid_session(s, acc.user_id, fernet)
+                    user = s.query(User).get(acc.user_id)
+                    if not user:
+                        print(f"[AUTO-CHECK] Skipping @{acc.account} - user {acc.user_id} not found")
+                        continue
+                    
+                    verify_mode = user.verify_mode or "api+instagram"
+                    
+                    # Get appropriate session based on verify_mode
+                    if verify_mode == "api+instagram":
+                        ig_session = get_priority_valid_session(s, acc.user_id, fernet)
+                        if not ig_session:
+                            print(f"[AUTO-CHECK] Skipping @{acc.account} - no valid IG session for user {acc.user_id}")
+                            continue
+                    else:  # api+proxy
+                        ig_session = None  # Proxy doesn't need IG session
                 
-                if not ig_session:
-                    print(f"[AUTO-CHECK] Skipping @{acc.account} - no valid IG session for user {acc.user_id}")
-                    continue
+                print(f"[AUTO-CHECK] [{idx+1}/{len(pending_accounts)}] API check @{acc.account} (mode: {verify_mode})...")
                 
-                print(f"[AUTO-CHECK] [{idx+1}/{len(pending_accounts)}] API check @{acc.account}...")
-                
-                # Perform API-only check (skip Instagram verification in this phase)
+                # Perform API-only check (skip verification in this phase)
                 with SessionLocal() as s:
                     result = await check_account_hybrid(
                         session=s,
@@ -104,16 +114,18 @@ async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accou
                         username=acc.account,
                         ig_session=ig_session,
                         fernet=fernet,
-                        skip_instagram_verification=True  # SKIP Instagram check in Phase 1
+                        skip_instagram_verification=True,  # SKIP verification in Phase 1
+                        verify_mode=verify_mode
                     )
                 
                 checked += 1
-                api_results.append((acc, result, ig_session))
+                api_results.append((acc, result, ig_session, verify_mode))
                 
                 # If API says account is active, add to verification list
                 if result.get("exists") is True:
-                    accounts_to_verify.append((acc, result, ig_session))
-                    print(f"[AUTO-CHECK] ✓ @{acc.account} - API says ACTIVE (will verify with Instagram)")
+                    accounts_to_verify.append((acc, result, ig_session, verify_mode))
+                    verification_method = "Instagram" if verify_mode == "api+instagram" else "Proxy"
+                    print(f"[AUTO-CHECK] ✓ @{acc.account} - API says ACTIVE (will verify with {verification_method})")
                 elif result.get("exists") is False:
                     not_found += 1
                     print(f"[AUTO-CHECK] ❌ @{acc.account} - API says NOT FOUND")
@@ -129,17 +141,18 @@ async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accou
                 errors += 1
                 print(f"[AUTO-CHECK] ❌ Error in API check @{acc.account}: {str(e)}")
         
-        print(f"[AUTO-CHECK] 📡 Phase 1 complete: {len(accounts_to_verify)} accounts to verify via Instagram")
+        print(f"[AUTO-CHECK] 📡 Phase 1 complete: {len(accounts_to_verify)} accounts to verify")
         
-        # PHASE 2: Instagram verification for active accounts (5 seconds delay)
+        # PHASE 2: Verification (Instagram or Proxy) for active accounts (5 seconds delay)
         if accounts_to_verify:
-            print(f"[AUTO-CHECK] 📸 Phase 2: Instagram verification for {len(accounts_to_verify)} active accounts...")
+            print(f"[AUTO-CHECK] 📸 Phase 2: Verification for {len(accounts_to_verify)} active accounts...")
             
-            for idx, (acc, api_result, ig_session) in enumerate(accounts_to_verify):
+            for idx, (acc, api_result, ig_session, verify_mode) in enumerate(accounts_to_verify):
                 try:
-                    print(f"[AUTO-CHECK] [{idx+1}/{len(accounts_to_verify)}] Instagram verify @{acc.account}...")
+                    verification_method = "Instagram" if verify_mode == "api+instagram" else "Proxy"
+                    print(f"[AUTO-CHECK] [{idx+1}/{len(accounts_to_verify)}] {verification_method} verify @{acc.account}...")
                     
-                    # Now do full Instagram verification
+                    # Now do full verification
                     with SessionLocal() as s:
                         result = await check_account_hybrid(
                             session=s,
@@ -147,7 +160,8 @@ async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accou
                             username=acc.account,
                             ig_session=ig_session,
                             fernet=fernet,
-                            skip_instagram_verification=False  # DO Instagram check in Phase 2
+                            skip_instagram_verification=False,  # DO verification in Phase 2
+                            verify_mode=verify_mode
                         )
                     
                     # Log the full result for debugging
@@ -247,14 +261,14 @@ async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accou
                         print(f"[AUTO-CHECK] ❓ @{acc.account} - ERROR: {result.get('error', 'unknown')}")
                         # Keep as not done on error too
                     
-                    # 5 seconds delay between Instagram checks (if more accounts to verify)
+                    # 5 seconds delay between verification checks (if more accounts to verify)
                     if idx < len(accounts_to_verify) - 1:
-                        print(f"[AUTO-CHECK] ⏳ Waiting 5 seconds before next Instagram check...")
+                        print(f"[AUTO-CHECK] ⏳ Waiting 5 seconds before next verification check...")
                         await asyncio.sleep(5)
                         
                 except Exception as e:
                     errors += 1
-                    print(f"[AUTO-CHECK] ❌ Error in Instagram verification @{acc.account}: {str(e)}")
+                    print(f"[AUTO-CHECK] ❌ Error in verification @{acc.account}: {str(e)}")
         
         print(f"[AUTO-CHECK] 📸 Phase 2 complete!")
         

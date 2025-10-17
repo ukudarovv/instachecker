@@ -1005,14 +1005,24 @@ class TelegramBot:
                             fernet = OptionalFernet(settings.encryption_key)
                             
                             with session_factory() as session:
-                                ig_session = get_active_session(session, user.id)
-                                if ig_session:
+                                # Get user's verify_mode
+                                verify_mode = user.verify_mode or "api+instagram"
+                                
+                                ig_session = None
+                                if verify_mode == "api+instagram":
+                                    ig_session = get_active_session(session, user.id)
+                                
+                                if verify_mode == "api+instagram" and not ig_session:
+                                    # Skip check if Instagram mode but no session
+                                    pass
+                                else:
                                     result = loop.run_until_complete(check_account_hybrid(
                                         session=session,
                                         user_id=user.id,
                                         username=username,
                                         ig_session=ig_session,
-                                        fernet=fernet
+                                        fernet=fernet,
+                                        verify_mode=verify_mode
                                     ))
                                     
                                     # Send result based on check outcome
@@ -1715,6 +1725,9 @@ class TelegramBot:
                                 try:
                                     ok_count = nf_count = unk_count = 0
                                     import asyncio
+                                    # Get user's verify_mode
+                                    verify_mode = user.verify_mode or "api+instagram"
+                                    
                                     for a in accs:
                                         with session_factory() as s2:
                                             info = asyncio.run(check_account_hybrid(
@@ -1722,7 +1735,8 @@ class TelegramBot:
                                                 user_id=user.id,
                                                 username=a.account,
                                                 ig_session=ig_session,
-                                                fernet=fernet
+                                                fernet=fernet,
+                                                verify_mode=verify_mode
                                             ))
                                         
                                         if info["exists"] is True:
