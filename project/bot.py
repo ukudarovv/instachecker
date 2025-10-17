@@ -1014,7 +1014,7 @@ class TelegramBot:
                                 
                                 if verify_mode == "api+instagram" and not ig_session:
                                     # Skip check if Instagram mode but no session
-                                    pass
+                                    self.send_message(user.id, f"ℹ️ <a href='https://www.instagram.com/{username}/'>@{username}</a> добавлен. Для проверки нужна IG-сессия.")
                                 else:
                                     result = loop.run_until_complete(check_account_hybrid(
                                         session=session,
@@ -1067,8 +1067,6 @@ class TelegramBot:
                                         # exists is None - error occurred
                                         error_msg = result.get("error", "unknown error")
                                         self.send_message(user.id, f"⚠️ <a href='https://www.instagram.com/{username}/'>@{username}</a>: не удалось проверить\n\nОшибка: {error_msg}")
-                                else:
-                                    self.send_message(user.id, f"ℹ️ <a href='https://www.instagram.com/{username}/'>@{username}</a> добавлен. Для проверки нужна IG-сессия.")
                             
                             loop.close()
                         except Exception as e:
