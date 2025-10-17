@@ -1965,11 +1965,11 @@ def main():
         logger.info(f"Next check scheduled at: {next_run}")
     
     # Initialize and start expiry notification scheduler (daily at 10:00 AM)
-    from datetime import time
+    from datetime import time as datetime_time
     _expiry_scheduler = ExpiryNotificationScheduler(
         bot_token=settings.bot_token,
         SessionLocal=session_factory,
-        notification_time=time(10, 0)  # 10:00 AM
+        notification_time=datetime_time(10, 0)  # 10:00 AM
     )
     _expiry_scheduler.start()
     logger.info("Expiry notification scheduler started (daily at 10:00 AM)")
