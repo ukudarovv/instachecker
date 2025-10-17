@@ -10,6 +10,70 @@ except ImportError:
     from models import Proxy
 
 
+async def test_proxy_connectivity(proxy: Proxy, timeout_ms: int = 10000) -> Dict[str, Any]:
+    """
+    Test proxy connectivity.
+    
+    Args:
+        proxy: Proxy object to test
+        timeout_ms: Timeout in milliseconds
+    
+    Returns:
+        dict with test results: {
+            "success": bool,
+            "error": str (optional)
+        }
+    """
+    result = {
+        "success": False,
+        "error": None
+    }
+    
+    # Build proxy config
+    proxy_url = f"{proxy.scheme}://{proxy.host}"
+    proxy_config = None
+    
+    if proxy.username and proxy.password:
+        proxy_config = {
+            "server": proxy_url,
+            "username": proxy.username,
+            "password": proxy.password
+        }
+    else:
+        proxy_config = {
+            "server": proxy_url
+        }
+    
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=True,
+                proxy=proxy_config
+            )
+            
+            context = await browser.new_context()
+            page = await context.new_page()
+            
+            try:
+                # Try to open a simple page
+                response = await page.goto("https://www.google.com", timeout=timeout_ms, wait_until="domcontentloaded")
+                
+                if response and response.ok:
+                    result["success"] = True
+                else:
+                    result["error"] = "Failed to load page"
+                    
+            except Exception as e:
+                result["error"] = str(e)
+            finally:
+                await browser.close()
+                
+    except Exception as e:
+        result["error"] = f"Browser error: {str(e)}"
+    
+    return result
+
+
 async def check_account_via_proxy(
     username: str,
     proxy: Optional[Proxy] = None,
