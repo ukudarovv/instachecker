@@ -91,7 +91,9 @@ async def check_account_hybrid(
                     username=username,
                     cookies=cookies,
                     headless=settings.ig_headless,
-                    timeout_ms=30000
+                    timeout_ms=30000,
+                    ig_username=ig_session.username,
+                    ig_password=ig_session.password
                 )
                 
                 result["exists"] = ig_result.get("exists")
@@ -141,7 +143,9 @@ async def check_account_hybrid(
                     username=username,
                     cookies=cookies,
                     headless=settings.ig_headless,
-                    timeout_ms=30000
+                    timeout_ms=30000,
+                    ig_username=ig_session.username,
+                    ig_password=ig_session.password
                 )
                 
                 # CRITICAL: If Instagram says NOT FOUND, override API result
