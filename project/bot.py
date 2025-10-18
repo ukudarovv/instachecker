@@ -747,13 +747,15 @@ class TelegramBot:
                     self.answer_callback_query(callback_query["id"], f"✅ Режим изменен на {mode_name}")
             
             elif callback_data == "close_settings":
-                # Close settings menu
+                # Close settings menu - go back to main menu
                 try:
                     from .keyboards import main_menu
+                    from .utils.access import ensure_admin
                 except ImportError:
                     from keyboards import main_menu
+                    from utils.access import ensure_admin
                 self.edit_message_text(chat_id, message_id, "Главное меню:", main_menu(ensure_admin(user)))
-                self.answer_callback_query(callback_query["id"])
+                self.answer_callback_query(callback_query["id"], "✅ Настройки закрыты")
             
             elif callback_data == "show_inactive_accounts" or callback_data == "close_expiry_info":
                 # Show inactive accounts list or close info
