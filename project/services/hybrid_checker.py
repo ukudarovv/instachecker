@@ -230,7 +230,6 @@ async def check_account_hybrid(
                     # Try without proxy as fallback
                     print(f"🔄 Trying without proxy for @{username}...")
                     try:
-                        from .proxy_checker import check_account_via_proxy_with_screenshot
                         
                         # Generate screenshot path
                         import os
@@ -240,10 +239,10 @@ async def check_account_hybrid(
                         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                         screenshot_path = os.path.join(screenshot_dir, f"ig_{username}_{timestamp}.png")
                         
-                        # Try without proxy
-                        fallback_result = await check_account_via_proxy_with_screenshot(
+                        # Try without proxy using simple checker
+                        fallback_result = await check_account_with_screenshot(
                             username=username,
-                            proxy=None,  # No proxy
+                            cookies=None,  # No cookies
                             headless=settings.ig_headless,
                             timeout_ms=30000,
                             screenshot_path=screenshot_path
