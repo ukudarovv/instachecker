@@ -208,11 +208,59 @@ async def check_account_hybrid(
                         result["is_private"] = proxy_result.get("is_private")
                         print(f"✅ Both API and Proxy confirm @{username} is active")
                     else:
+                        # If proxy failed (connection error, etc.), don't consider it successful
                         result["error"] = f"proxy_verification_error: {proxy_result.get('error', 'unknown')}"
                         print(f"⚠️ API found @{username}, but Proxy verification failed: {result['error']}")
+                        
+                        # If it's a connection error, mark as not found
+                        proxy_error = str(proxy_result.get('error', ''))
+                        if any(err in proxy_error for err in [
+                            "ERR_TUNNEL_CONNECTION_FAILED",
+                            "ERR_PROXY_CONNECTION_FAILED", 
+                            "ERR_CONNECTION_REFUSED",
+                            "ERR_TIMED_OUT"
+                        ]):
+                            result["exists"] = False
+                            print(f"❌ Proxy connection failed for @{username}, marking as not found")
+                            return result
                 else:
                     result["error"] = "no_active_proxy"
                     print(f"⚠️ No active proxy found for user {user_id}")
+                    
+                    # Try without proxy as fallback
+                    print(f"🔄 Trying without proxy for @{username}...")
+                    try:
+                        from .proxy_checker import check_account_via_proxy_with_screenshot
+                        
+                        # Generate screenshot path
+                        import os
+                        from datetime import datetime
+                        screenshot_dir = "screenshots"
+                        os.makedirs(screenshot_dir, exist_ok=True)
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        screenshot_path = os.path.join(screenshot_dir, f"ig_{username}_{timestamp}.png")
+                        
+                        # Try without proxy
+                        fallback_result = await check_account_via_proxy_with_screenshot(
+                            username=username,
+                            proxy=None,  # No proxy
+                            headless=settings.ig_headless,
+                            timeout_ms=30000,
+                            screenshot_path=screenshot_path
+                        )
+                        
+                        if fallback_result.get("exists") is True:
+                            result["screenshot_path"] = fallback_result.get("screenshot_path")
+                            result["is_private"] = fallback_result.get("is_private")
+                            result["error"] = None  # Clear error
+                            print(f"✅ Fallback check (no proxy) successful for @{username}")
+                        else:
+                            result["error"] = f"fallback_failed: {fallback_result.get('error', 'unknown')}"
+                            print(f"❌ Fallback check also failed for @{username}")
+                            
+                    except Exception as e:
+                        result["error"] = f"fallback_error: {str(e)}"
+                        print(f"❌ Fallback check error for @{username}: {str(e)}")
                     
             except Exception as e:
                 result["error"] = f"proxy_error: {str(e)}"
