@@ -134,6 +134,7 @@ async def check_account_hybrid(
         if verify_mode == "api+instagram" and ig_session and fernet:
             # INSTAGRAM VERIFICATION (with login)
             result["checked_via"] = "api+instagram"
+            print(f"📸 Using INSTAGRAM verification (with cookies and login) for @{username}")
             try:
                 cookies = decode_cookies(fernet, ig_session.cookies)
                 ig_result = await check_account_with_screenshot(
@@ -169,6 +170,7 @@ async def check_account_hybrid(
         elif verify_mode == "api+proxy":
             # PROXY VERIFICATION (without login)
             result["checked_via"] = "api+proxy"
+            print(f"🌐 Using PROXY verification (no cookies, no login) for @{username}")
             try:
                 # Get user's active proxy
                 proxy = session.query(Proxy).filter(
