@@ -20,7 +20,10 @@ def get_random_user_agent():
 
 def get_next_proxy(session, user_id, current_proxy_id=None):
     """Get next available proxy for user, excluding current one"""
-    from ..models import Proxy
+    try:
+        from ..models import Proxy
+    except ImportError:
+        from models import Proxy
     
     query = session.query(Proxy).filter(
         Proxy.user_id == user_id,
@@ -435,11 +438,14 @@ async def check_account_via_proxy_with_fallback(
             screenshot_path=screenshot_path
         )
         
-        # Check if we got redirected to login
+        # Check if we got redirected to login - this means account exists!
         if (check_result.get("exists") is True and 
             check_result.get("note") == "Redirected to login page"):
-            print(f"[PROXY-FALLBACK] ⚠️ Proxy {proxy.host} redirected to login - trying next proxy...")
-            continue
+            print(f"[PROXY-FALLBACK] ✅ Proxy {proxy.host} confirmed account exists (redirected to login)")
+            result.update(check_result)
+            result["proxy_used"] = f"{proxy.scheme}://{proxy.host}"
+            print(f"[PROXY-FALLBACK] ✅ Success with proxy {proxy.host}")
+            break
         
         # If we got a definitive result (not redirected to login), use it
         if check_result.get("exists") is not None:

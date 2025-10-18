@@ -195,7 +195,10 @@ async def check_account_hybrid(
                     screenshot_path = os.path.join(screenshot_dir, f"ig_{username}_{timestamp}.png")
                     
                     # Use fallback function for automatic proxy switching
-                    from .proxy_checker import check_account_via_proxy_with_fallback
+                    try:
+                        from .proxy_checker import check_account_via_proxy_with_fallback
+                    except ImportError:
+                        from services.proxy_checker import check_account_via_proxy_with_fallback
                     proxy_result = await check_account_via_proxy_with_fallback(
                         session=session,
                         user_id=user_id,
