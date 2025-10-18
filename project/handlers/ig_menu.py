@@ -177,6 +177,26 @@ def register_ig_menu_handlers(bot, session_factory) -> None:
                 bot.send_message(chat_id, "Введите IG username (под которым будем логиниться):\n\nДля отмены напишите: /cancel")
                 bot.fsm_states[chat_id] = {"state": "waiting_username", "mode": "login"}
             
+            elif mode == "complete":
+                bot.send_message(
+                    chat_id,
+                    "🔐 **Полная настройка Instagram сессии**\n\n"
+                    "Введите данные в формате:\n"
+                    "```\n"
+                    "username: your_username\n"
+                    "password: your_password\n"
+                    "cookies: [{\"name\": \"sessionid\", \"value\": \"abc123\", \"domain\": \".instagram.com\"}]\n"
+                    "```\n\n"
+                    "**Пример:**\n"
+                    "```\n"
+                    "username: my_instagram\n"
+                    "password: mypassword123\n"
+                    "cookies: [{\"name\": \"sessionid\", \"value\": \"abc123\", \"domain\": \".instagram.com\"}, {\"name\": \"csrftoken\", \"value\": \"xyz789\", \"domain\": \".instagram.com\"}]\n"
+                    "```\n\n"
+                    "❌ Для отмены: /cancel"
+                )
+                bot.fsm_states[chat_id] = {"state": "waiting_complete", "mode": "complete"}
+            
             bot.answer_callback_query(callback_query["id"])
         
         elif data == "ig_back":
@@ -500,6 +520,93 @@ def register_ig_menu_handlers(bot, session_factory) -> None:
             
             del bot.fsm_states[chat_id]
             bot.send_message(chat_id, f"✅ Сессия @{ig_username} создана (id={obj.id}).", reply_markup=get_ig_menu_kb())
+        
+        elif state == "waiting_complete":
+            # Parse complete session data (username, password, cookies)
+            try:
+                lines = text.strip().split('\n')
+                data = {}
+                
+                for line in lines:
+                    if ':' in line:
+                        key, value = line.split(':', 1)
+                        key = key.strip().lower()
+                        value = value.strip()
+                        data[key] = value
+                
+                # Validate required fields
+                if 'username' not in data:
+                    bot.send_message(chat_id, "❌ Не указан username. Попробуйте еще раз.")
+                    return
+                
+                if 'password' not in data:
+                    bot.send_message(chat_id, "❌ Не указан password. Попробуйте еще раз.")
+                    return
+                
+                # Parse cookies if provided
+                cookies = []
+                if 'cookies' in data and data['cookies'].strip():
+                    try:
+                        cookies = json.loads(data['cookies'])
+                        if not isinstance(cookies, list):
+                            raise ValueError("Cookies должны быть списком")
+                    except (json.JSONDecodeError, ValueError) as e:
+                        bot.send_message(chat_id, f"❌ Ошибка в формате cookies: {e}")
+                        return
+                
+                # Validate cookies format
+                valid_cookies = []
+                for i, cookie in enumerate(cookies):
+                    if not isinstance(cookie, dict):
+                        raise ValueError(f"Cookie #{i+1} должен быть объектом")
+                    
+                    if "name" not in cookie or "value" not in cookie:
+                        raise ValueError(f"Cookie #{i+1} должен содержать 'name' и 'value'")
+                    
+                    # Add default fields if missing
+                    validated_cookie = {
+                        "name": cookie["name"],
+                        "value": cookie["value"],
+                        "domain": cookie.get("domain", ".instagram.com"),
+                        "path": cookie.get("path", "/"),
+                    }
+                    
+                    # Keep optional fields if present
+                    for field in ["expires", "httpOnly", "secure", "sameSite"]:
+                        if field in cookie:
+                            validated_cookie[field] = cookie[field]
+                    
+                    valid_cookies.append(validated_cookie)
+                
+                cookies = valid_cookies
+                
+                # Save complete session
+                with session_factory() as s:
+                    user = get_or_create_user(s, message["from"])
+                    obj = save_session(
+                        session=s,
+                        user_id=user.id,
+                        ig_username=data['username'],
+                        cookies_json=cookies,
+                        fernet=fernet,
+                        ig_password=data['password'],  # Save encrypted password
+                    )
+                
+                del bot.fsm_states[chat_id]
+                
+                # Send success message
+                success_msg = f"✅ **Полная сессия создана!**\n\n"
+                success_msg += f"👤 **Username:** @{data['username']}\n"
+                success_msg += f"🔐 **Password:** {'*' * len(data['password'])}\n"
+                success_msg += f"🍪 **Cookies:** {len(cookies)} шт.\n"
+                success_msg += f"🆔 **ID сессии:** {obj.id}\n\n"
+                success_msg += f"🎯 **Готово к использованию!**"
+                
+                bot.send_message(chat_id, success_msg, reply_markup=get_ig_menu_kb())
+                
+            except Exception as e:
+                bot.send_message(chat_id, f"❌ Ошибка при создании сессии: {e}")
+                return
 
     # Register handlers
     bot.ig_menu_process_message = process_message
