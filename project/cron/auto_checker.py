@@ -9,6 +9,7 @@ try:
     from ..models import Account, User
     from ..services.hybrid_checker import check_account_hybrid
     from ..services.triple_checker import check_account_triple
+    from ..services.simple_checkers import check_account_instagram_only, check_account_proxy_only, check_account_instagram_proxy
     from ..services.ig_sessions import get_priority_valid_session
     from ..utils.encryptor import OptionalFernet
     from ..config import get_settings
@@ -16,6 +17,7 @@ except ImportError:
     from models import Account, User
     from services.hybrid_checker import check_account_hybrid
     from services.triple_checker import check_account_triple
+    from services.simple_checkers import check_account_instagram_only, check_account_proxy_only, check_account_instagram_proxy
     from services.ig_sessions import get_priority_valid_session
     from utils.encryptor import OptionalFernet
     from config import get_settings
@@ -50,91 +52,85 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
         print(f"[AUTO-CHECK] 👤 User {user_id} mode: {verify_mode}")
         
         # Get appropriate session based on verify_mode
-        if verify_mode == "api+instagram":
+        if verify_mode in ["api+instagram", "instagram", "instagram+proxy", "api+proxy+instagram"]:
+            # Modes that need Instagram session
             ig_session = get_priority_valid_session(session, user_id, fernet)
             if not ig_session:
                 print(f"[AUTO-CHECK] ❌ No valid IG session for user {user_id}")
                 return {"checked": 0, "found": 0, "not_found": 0, "errors": len(user_accounts)}
-        elif verify_mode == "api+proxy":
-            ig_session = None  # Proxy doesn't need IG session
-            
-            # Check if user has active proxy
-            from ..models import Proxy
-            proxy = session.query(Proxy).filter(
-                Proxy.user_id == user_id,
-                Proxy.is_active == True
-            ).first()
-            
-            if not proxy:
-                print(f"[AUTO-CHECK] ⏭️ User {user_id} has no active proxy - SKIPPING")
-                return {"checked": 0, "found": 0, "not_found": 0, "errors": 0}
-        elif verify_mode == "api+proxy+instagram":
-            # Triple check mode needs both proxy and IG session
-            ig_session = get_priority_valid_session(session, user_id, fernet)
-            if not ig_session:
-                print(f"[AUTO-CHECK] ❌ No valid IG session for user {user_id}")
-                return {"checked": 0, "found": 0, "not_found": 0, "errors": len(user_accounts)}
-            
-            from ..models import Proxy
-            proxy = session.query(Proxy).filter(
-                Proxy.user_id == user_id,
-                Proxy.is_active == True
-            ).first()
-            
-            if not proxy:
-                print(f"[AUTO-CHECK] ⏭️ User {user_id} has no active proxy - SKIPPING")
-                return {"checked": 0, "found": 0, "not_found": 0, "errors": 0}
         else:
             ig_session = None
         
-        # PHASE 1: API checks for this user's accounts
-        print(f"[AUTO-CHECK] 📡 Phase 1: API checks for user {user_id}...")
+        if verify_mode in ["api+proxy", "proxy", "instagram+proxy", "api+proxy+instagram"]:
+            # Modes that need Proxy
+            from ..models import Proxy
+            proxy = session.query(Proxy).filter(
+                Proxy.user_id == user_id,
+                Proxy.is_active == True
+            ).first()
+            
+            if not proxy:
+                print(f"[AUTO-CHECK] ⏭️ User {user_id} has no active proxy - SKIPPING")
+                return {"checked": 0, "found": 0, "not_found": 0, "errors": 0}
+        
+        # PHASE 1: API checks for this user's accounts (skip for non-API modes)
         accounts_to_verify = []
         
-        # Add delay between checks to avoid Instagram rate limiting
-        import time
-        import random
+        # Check if this mode uses API
+        uses_api = verify_mode in ["api+instagram", "api+proxy", "api+proxy+instagram"]
         
-        for idx, acc in enumerate(user_accounts):
-            try:
-                print(f"[AUTO-CHECK] [{idx+1}/{len(user_accounts)}] API check @{acc.account} (user {user_id})...")
-                
-                # Perform API-only check
-                result = await check_account_hybrid(
-                    session=session,
-                    user_id=user_id,
-                    username=acc.account,
-                    ig_session=ig_session,
-                    fernet=fernet,
-                    skip_instagram_verification=True,  # SKIP verification in Phase 1
-                    verify_mode=verify_mode
-                )
-                
-                checked += 1
-                
-                # If API says account is active, add to verification list
-                if result.get("exists") is True:
-                    accounts_to_verify.append((acc, result))
-                    verification_method = "Instagram" if verify_mode == "api+instagram" else "Proxy"
-                    print(f"[AUTO-CHECK] ✓ @{acc.account} - API says ACTIVE (will verify with {verification_method})")
-                elif result.get("exists") is False:
-                    not_found += 1
-                    print(f"[AUTO-CHECK] ❌ @{acc.account} - API says NOT FOUND")
-                else:
-                    errors += 1
-                    print(f"[AUTO-CHECK] ❓ @{acc.account} - API ERROR: {result.get('error', 'unknown')}")
-                
-                # Random delay between API checks (2-5 seconds) to avoid rate limiting
-                if idx < len(user_accounts) - 1:
-                    delay = random.uniform(2, 5)
-                    print(f"[AUTO-CHECK] ⏳ Waiting {delay:.1f}s before next check...")
-                    await asyncio.sleep(delay)
+        if uses_api:
+            print(f"[AUTO-CHECK] 📡 Phase 1: API checks for user {user_id}...")
+            
+            # Add delay between checks to avoid Instagram rate limiting
+            import time
+            import random
+            
+            for idx, acc in enumerate(user_accounts):
+                try:
+                    print(f"[AUTO-CHECK] [{idx+1}/{len(user_accounts)}] API check @{acc.account} (user {user_id})...")
                     
-            except Exception as e:
-                errors += 1
-                print(f"[AUTO-CHECK] ❌ Error in API check @{acc.account}: {str(e)}")
-        
-        print(f"[AUTO-CHECK] 📡 Phase 1 complete for user {user_id}: {len(accounts_to_verify)} accounts to verify")
+                    # Perform API-only check
+                    result = await check_account_hybrid(
+                        session=session,
+                        user_id=user_id,
+                        username=acc.account,
+                        ig_session=ig_session,
+                        fernet=fernet,
+                        skip_instagram_verification=True,  # SKIP verification in Phase 1
+                        verify_mode=verify_mode
+                    )
+                    
+                    checked += 1
+                    
+                    # If API says account is active, add to verification list
+                    if result.get("exists") is True:
+                        accounts_to_verify.append((acc, result))
+                        verification_method = "Instagram" if verify_mode == "api+instagram" else "Proxy"
+                        print(f"[AUTO-CHECK] ✓ @{acc.account} - API says ACTIVE (will verify with {verification_method})")
+                    elif result.get("exists") is False:
+                        not_found += 1
+                        print(f"[AUTO-CHECK] ❌ @{acc.account} - API says NOT FOUND")
+                    else:
+                        errors += 1
+                        print(f"[AUTO-CHECK] ❓ @{acc.account} - API ERROR: {result.get('error', 'unknown')}")
+                    
+                    # Random delay between API checks (2-5 seconds) to avoid rate limiting
+                    if idx < len(user_accounts) - 1:
+                        delay = random.uniform(2, 5)
+                        print(f"[AUTO-CHECK] ⏳ Waiting {delay:.1f}s before next check...")
+                        await asyncio.sleep(delay)
+                        
+                except Exception as e:
+                    errors += 1
+                    print(f"[AUTO-CHECK] ❌ Error in API check @{acc.account}: {str(e)}")
+            
+            print(f"[AUTO-CHECK] 📡 Phase 1 complete for user {user_id}: {len(accounts_to_verify)} accounts to verify")
+        else:
+            # For non-API modes, check all accounts directly
+            print(f"[AUTO-CHECK] 🔍 Skipping API phase (mode: {verify_mode}), checking all accounts directly...")
+            for acc in user_accounts:
+                accounts_to_verify.append((acc, None))  # No API result
         
         # PHASE 2: Verification for active accounts
         if accounts_to_verify:
@@ -142,11 +138,11 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
             
             for idx, (acc, api_result) in enumerate(accounts_to_verify):
                 try:
+                    # Select appropriate checker based on verify_mode
                     if verify_mode == "api+proxy+instagram":
-                        verification_method = "Proxy + Instagram"
+                        verification_method = "API + Proxy + Instagram"
                         print(f"[AUTO-CHECK] [{idx+1}/{len(accounts_to_verify)}] {verification_method} triple verify @{acc.account}...")
                         
-                        # Use triple checker for api+proxy+instagram mode
                         result = await check_account_triple(
                             session=session,
                             user_id=user_id,
@@ -154,11 +150,46 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
                             ig_session=ig_session,
                             fernet=fernet
                         )
+                    
+                    elif verify_mode == "instagram+proxy":
+                        verification_method = "Instagram + Proxy"
+                        print(f"[AUTO-CHECK] [{idx+1}/{len(accounts_to_verify)}] {verification_method} verify @{acc.account}...")
+                        
+                        result = await check_account_instagram_proxy(
+                            session=session,
+                            user_id=user_id,
+                            username=acc.account,
+                            ig_session=ig_session,
+                            fernet=fernet
+                        )
+                    
+                    elif verify_mode == "instagram":
+                        verification_method = "Instagram only"
+                        print(f"[AUTO-CHECK] [{idx+1}/{len(accounts_to_verify)}] {verification_method} verify @{acc.account}...")
+                        
+                        result = await check_account_instagram_only(
+                            session=session,
+                            user_id=user_id,
+                            username=acc.account,
+                            ig_session=ig_session,
+                            fernet=fernet
+                        )
+                    
+                    elif verify_mode == "proxy":
+                        verification_method = "Proxy only"
+                        print(f"[AUTO-CHECK] [{idx+1}/{len(accounts_to_verify)}] {verification_method} verify @{acc.account}...")
+                        
+                        result = await check_account_proxy_only(
+                            session=session,
+                            user_id=user_id,
+                            username=acc.account
+                        )
+                    
                     else:
+                        # api+instagram or api+proxy modes
                         verification_method = "Instagram" if verify_mode == "api+instagram" else "Proxy"
                         print(f"[AUTO-CHECK] [{idx+1}/{len(accounts_to_verify)}] {verification_method} verify @{acc.account}...")
                         
-                        # Use hybrid checker for api+instagram and api+proxy modes
                         result = await check_account_hybrid(
                             session=session,
                             user_id=user_id,

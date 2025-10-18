@@ -17,7 +17,7 @@ class User(Base):
     username = Column(String, index=True)
     is_active = Column(Boolean, default=False, index=True)
     role = Column(String, default="user", nullable=False)  # 'user'|'admin'|'superuser'
-    verify_mode = Column(String, default="api+instagram", nullable=False)  # 'api+instagram'|'api+proxy'|'api+proxy+instagram'
+    verify_mode = Column(String, default="api+instagram", nullable=False)  # 'api+instagram'|'api+proxy'|'api+proxy+instagram'|'instagram+proxy'|'instagram'|'proxy'
     
     accounts = relationship("Account", back_populates="user", cascade="all, delete-orphan")
     api_keys = relationship("APIKey", back_populates="user", cascade="all, delete-orphan")
