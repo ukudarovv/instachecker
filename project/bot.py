@@ -1493,15 +1493,20 @@ class TelegramBot:
                             from .utils.encryptor import OptionalFernet
                             from .config import get_settings
                             from .services.ig_simple_checker import check_account_with_screenshot
+                            from .services.hybrid_checker import check_account_hybrid
                         except ImportError:
                             from models import Account
                             from services.ig_sessions import get_active_session, decode_cookies
                             from utils.encryptor import OptionalFernet
                             from config import get_settings
                             from services.ig_simple_checker import check_account_with_screenshot
+                            from services.hybrid_checker import check_account_hybrid
                         
                         settings = get_settings()
                         fernet = OptionalFernet(settings.encryption_key)
+                        
+                        # Get user's verify_mode
+                        verify_mode = user.verify_mode or "api+instagram"
                         
                         with session_factory() as session:
                             pending = session.query(Account).filter(Account.user_id == user.id, Account.done == False).all()
@@ -1511,28 +1516,42 @@ class TelegramBot:
                             self.send_message(chat_id, "📭 Нет аккаунтов на проверке.")
                             return
                         
-                        if not ig_session:
+                        # Check Instagram session only for api+instagram mode
+                        if verify_mode == "api+instagram" and not ig_session:
                             self.send_message(chat_id, "⚠️ Нет активной Instagram-сессии. Добавьте её через меню 'Instagram'.")
                             return
                         
-                        # Decode cookies
-                        try:
-                            cookies = decode_cookies(fernet, ig_session.cookies)
-                        except Exception as e:
-                            self.send_message(chat_id, f"❌ Ошибка расшифровки cookies: {e}")
-                            return
+                        # Decode cookies only for api+instagram mode
+                        cookies = None
+                        if verify_mode == "api+instagram":
+                            try:
+                                cookies = decode_cookies(fernet, ig_session.cookies)
+                            except Exception as e:
+                                self.send_message(chat_id, f"❌ Ошибка расшифровки cookies: {e}")
+                                return
                         
-                        self.send_message(chat_id, f"🔍 Проверяю {len(pending)} аккаунтов через Instagram с скриншотами...")
+                        # Determine verification method based on user's mode
+                        if verify_mode == "api+instagram":
+                            method_text = "Instagram с скриншотами"
+                        else:  # api+proxy
+                            method_text = "Proxy с скриншотами"
+                        
+                        self.send_message(chat_id, f"🔍 Проверяю {len(pending)} аккаунтов через {method_text}...")
                         
                         ok = nf = unk = 0
                         for acc in pending:
                             try:
                                 import asyncio
-                                result = asyncio.run(check_account_with_screenshot(
+                                
+                                # Use hybrid checker with user's verify_mode
+                                result = asyncio.run(check_account_hybrid(
+                                    session=session,
+                                    user_id=user.id,
                                     username=acc.account,
-                                    cookies=cookies,
-                                    headless=settings.ig_headless,
-                                    timeout_ms=30000
+                                    ig_session=ig_session if verify_mode == "api+instagram" else None,
+                                    fernet=fernet,
+                                    skip_instagram_verification=False,
+                                    verify_mode=verify_mode
                                 ))
                                 
                                 # Only send message if account exists
