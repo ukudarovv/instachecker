@@ -1510,7 +1510,11 @@ class TelegramBot:
                         
                         with session_factory() as session:
                             pending = session.query(Account).filter(Account.user_id == user.id, Account.done == False).all()
-                            ig_session = get_active_session(session, user.id)
+                            # Only get Instagram session for api+instagram mode
+                            if verify_mode == "api+instagram":
+                                ig_session = get_active_session(session, user.id)
+                            else:
+                                ig_session = None
                         
                         if not pending:
                             self.send_message(chat_id, "📭 Нет аккаунтов на проверке.")
@@ -1790,13 +1794,20 @@ class TelegramBot:
                         settings = get_settings()
                         fernet = OptionalFernet(settings.encryption_key)
                         
+                        # Get user's verify_mode
+                        verify_mode = user.verify_mode or "api+instagram"
+                        
                         with session_factory() as s:
                             accs = s.query(Account).filter(Account.user_id == user.id, Account.done == False).all()
-                            ig_session = get_active_session(s, user.id)
+                            # Only get Instagram session for api+instagram mode
+                            if verify_mode == "api+instagram":
+                                ig_session = get_active_session(s, user.id)
+                            else:
+                                ig_session = None
                         
                         if not accs:
                             self.send_message(chat_id, "📭 Нет аккаунтов на проверке.")
-                        elif not ig_session:
+                        elif verify_mode == "api+instagram" and not ig_session:
                             self.send_message(chat_id,
                                 "⚠️ Нет активной Instagram-сессии для скриншотов.\n"
                                 "Будет выполнена только проверка через API.\n"
