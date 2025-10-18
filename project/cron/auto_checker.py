@@ -70,6 +70,10 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
         print(f"[AUTO-CHECK] 📡 Phase 1: API checks for user {user_id}...")
         accounts_to_verify = []
         
+        # Add delay between checks to avoid Instagram rate limiting
+        import time
+        import random
+        
         for idx, acc in enumerate(user_accounts):
             try:
                 print(f"[AUTO-CHECK] [{idx+1}/{len(user_accounts)}] API check @{acc.account} (user {user_id})...")
@@ -99,9 +103,11 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
                     errors += 1
                     print(f"[AUTO-CHECK] ❓ @{acc.account} - API ERROR: {result.get('error', 'unknown')}")
                 
-                # Short delay between API checks (1 second max)
+                # Random delay between API checks (2-5 seconds) to avoid rate limiting
                 if idx < len(user_accounts) - 1:
-                    await asyncio.sleep(1)
+                    delay = random.uniform(2, 5)
+                    print(f"[AUTO-CHECK] ⏳ Waiting {delay:.1f}s before next check...")
+                    await asyncio.sleep(delay)
                     
             except Exception as e:
                 errors += 1
@@ -131,6 +137,12 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
                     
                     # Log the full result for debugging
                     print(f"[AUTO-CHECK] 🔍 Result for @{acc.account}: exists={result.get('exists')}, checked_via={result.get('checked_via')}, screenshot_path={result.get('screenshot_path')}")
+                    
+                    # Longer delay between proxy/Instagram checks (5-10 seconds) to avoid detection
+                    if idx < len(accounts_to_verify) - 1:
+                        delay = random.uniform(5, 10)
+                        print(f"[AUTO-CHECK] ⏳ Waiting {delay:.1f}s before next verification...")
+                        await asyncio.sleep(delay)
                     
                     # Update statistics and handle results
                     if result.get("exists") is True:
