@@ -209,6 +209,12 @@ async def check_account_via_proxy(
                     print(f"[PROXY-CHECK] ❌ Account @{username} not found (page not available)")
                     result["exists"] = False
                     result["error"] = "Page not available"
+                elif "Login" in title or "Instagram" in title:
+                    # Instagram redirected to login page - account likely exists but requires login
+                    print(f"[PROXY-CHECK] ⚠️ Account @{username} - redirected to login (likely exists)")
+                    result["exists"] = True
+                    result["is_private"] = None  # Cannot determine privacy without login
+                    result["note"] = "Redirected to login page"
                 else:
                     # Account likely exists
                     # Try to detect if private
@@ -229,10 +235,18 @@ async def check_account_via_proxy(
                             result["exists"] = True
                             result["is_private"] = False
                         else:
-                            # Might be rate limited or other issue
-                            print(f"[PROXY-CHECK] ⚠️ Account @{username} - uncertain (no clear indicators)")
-                            result["exists"] = None
-                            result["error"] = "Cannot determine account status"
+                            # Check if we're on a login page or rate limited
+                            page_content = await page.content()
+                            if "Login" in page_content or "log in" in page_content.lower():
+                                print(f"[PROXY-CHECK] ⚠️ Account @{username} - redirected to login (likely exists)")
+                                result["exists"] = True
+                                result["is_private"] = None
+                                result["note"] = "Redirected to login page"
+                            else:
+                                # Might be rate limited or other issue
+                                print(f"[PROXY-CHECK] ⚠️ Account @{username} - uncertain (no clear indicators)")
+                                result["exists"] = None
+                                result["error"] = "Cannot determine account status"
                 
             except PlaywrightTimeout:
                 print(f"[PROXY-CHECK] ⏱️ Timeout checking @{username}")
