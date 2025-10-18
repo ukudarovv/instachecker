@@ -171,12 +171,19 @@ async def check_account_hybrid(
             # PROXY VERIFICATION (without login)
             result["checked_via"] = "api+proxy"
             print(f"🌐 Using PROXY verification (no cookies, no login) for @{username}")
+            print(f"🔍 User {user_id} - PROXY mode selected")
             try:
                 # Get user's active proxy
                 proxy = session.query(Proxy).filter(
                     Proxy.user_id == user_id,
                     Proxy.is_active == True
                 ).order_by(Proxy.priority.asc()).first()
+                
+                if proxy:
+                    print(f"🔗 Found active proxy: {proxy.scheme}://{proxy.host}")
+                    print(f"👤 Proxy user: {proxy.username}")
+                else:
+                    print(f"⚠️ No active proxy found for user {user_id}")
                 
                 if proxy:
                     # Generate screenshot path

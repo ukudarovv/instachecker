@@ -148,6 +148,14 @@ async def check_account_via_proxy(
         "checked_via": "proxy"
     }
     
+    # Log proxy configuration
+    print(f"[PROXY-CHECK] 🔍 Checking @{username} via proxy...")
+    if proxy:
+        print(f"[PROXY-CHECK] 🔗 Proxy: {proxy.scheme}://{proxy.host}")
+        print(f"[PROXY-CHECK] 👤 Auth: {proxy.username} (password: {'Yes' if proxy.password else 'No'})")
+    else:
+        print(f"[PROXY-CHECK] ⚠️ No proxy - using direct connection")
+    
     # Build proxy config if proxy provided
     proxy_config = None
     if proxy:
@@ -288,6 +296,14 @@ async def check_account_via_proxy_with_screenshot(
         Same as check_account_via_proxy plus:
             - screenshot_path: str (if screenshot was taken)
     """
+    # Log proxy usage
+    if proxy:
+        print(f"[PROXY-CHECK] 🔗 Using proxy: {proxy.scheme}://{proxy.host}")
+        print(f"[PROXY-CHECK] 👤 Proxy user: {proxy.username}")
+        print(f"[PROXY-CHECK] 🔑 Proxy auth: {'Yes' if proxy.password else 'No'}")
+    else:
+        print(f"[PROXY-CHECK] ⚠️ No proxy configured - using direct connection")
+    
     result = await check_account_via_proxy(username, proxy, headless, timeout_ms)
     
     # If account exists and screenshot requested, take it
