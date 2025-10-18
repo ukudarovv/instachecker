@@ -33,7 +33,14 @@ async def test_proxy_connectivity(proxy: Proxy, timeout_ms: int = 10000) -> Dict
     proxy_url = f"{proxy.scheme}://{proxy.host}"
     proxy_config = None
     
-    if proxy.username and proxy.password:
+    # Playwright doesn't support SOCKS5 with authentication
+    # Only use HTTP proxies with auth, or SOCKS5 without auth
+    if proxy.scheme == "socks5" and (proxy.username or proxy.password):
+        print(f"[PROXY-TEST] ⚠️ SOCKS5 with auth not supported by Playwright, using without auth")
+        proxy_config = {
+            "server": proxy_url
+        }
+    elif proxy.username and proxy.password:
         proxy_config = {
             "server": proxy_url,
             "username": proxy.username,
@@ -110,7 +117,16 @@ async def check_account_via_proxy(
     proxy_config = None
     if proxy:
         proxy_url = f"{proxy.scheme}://{proxy.host}"
-        if proxy.username and proxy.password:
+        
+        # Playwright doesn't support SOCKS5 with authentication
+        # Only use HTTP proxies with auth, or SOCKS5 without auth
+        if proxy.scheme == "socks5" and (proxy.username or proxy.password):
+            print(f"[PROXY-CHECK] ⚠️ SOCKS5 with auth not supported by Playwright, using without auth")
+            print(f"[PROXY-CHECK] 💡 Tip: Use HTTP proxy with auth instead of SOCKS5")
+            proxy_config = {
+                "server": proxy_url
+            }
+        elif proxy.username and proxy.password:
             proxy_config = {
                 "server": proxy_url,
                 "username": proxy.username,
@@ -232,7 +248,12 @@ async def check_account_via_proxy_with_screenshot(
                 proxy_config = None
                 if proxy:
                     proxy_url = f"{proxy.scheme}://{proxy.host}"
-                    if proxy.username and proxy.password:
+                    
+                    # Playwright doesn't support SOCKS5 with authentication
+                    if proxy.scheme == "socks5" and (proxy.username or proxy.password):
+                        print(f"[PROXY-CHECK] ⚠️ SOCKS5 with auth not supported by Playwright, using without auth")
+                        proxy_config = {"server": proxy_url}
+                    elif proxy.username and proxy.password:
                         proxy_config = {
                             "server": proxy_url,
                             "username": proxy.username,
