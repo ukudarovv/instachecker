@@ -18,6 +18,20 @@ def get_random_user_agent():
     """Get a random User-Agent string"""
     return random.choice(USER_AGENTS)
 
+def get_next_proxy(session, user_id, current_proxy_id=None):
+    """Get next available proxy for user, excluding current one"""
+    from ..models import Proxy
+    
+    query = session.query(Proxy).filter(
+        Proxy.user_id == user_id,
+        Proxy.is_active == True
+    ).order_by(Proxy.priority.asc())
+    
+    if current_proxy_id:
+        query = query.filter(Proxy.id != current_proxy_id)
+    
+    return query.first()
+
 try:
     from ..models import Proxy
 except ImportError:
@@ -347,5 +361,98 @@ async def check_account_via_proxy_with_screenshot(
                 await browser.close()
         except Exception as e:
             print(f"[PROXY-CHECK] ⚠️ Failed to take screenshot: {e}")
+    
+    return result
+
+
+async def check_account_via_proxy_with_fallback(
+    session,
+    user_id: int,
+    username: str,
+    max_attempts: int = 3,
+    headless: bool = True,
+    timeout_ms: int = 30000,
+    screenshot_path: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Check Instagram account via proxy with automatic fallback to other proxies.
+    
+    Args:
+        session: Database session
+        user_id: User ID
+        username: Instagram username
+        max_attempts: Maximum number of proxy attempts
+        headless: Run in headless mode
+        timeout_ms: Timeout in milliseconds
+        screenshot_path: Path to save screenshot (optional)
+    
+    Returns:
+        dict with keys:
+            - username: str
+            - exists: bool (True if found, False if not found, None if error)
+            - is_private: bool (optional, if found)
+            - error: str (optional, if error occurred)
+            - checked_via: str = 'proxy'
+            - screenshot_path: str (if screenshot was taken)
+            - proxy_used: str (proxy that worked)
+            - attempts: int (number of attempts made)
+    """
+    result = {
+        "username": username,
+        "exists": None,
+        "is_private": None,
+        "error": None,
+        "checked_via": "proxy",
+        "screenshot_path": None,
+        "proxy_used": None,
+        "attempts": 0
+    }
+    
+    print(f"[PROXY-FALLBACK] 🔄 Starting fallback check for @{username} (max {max_attempts} attempts)")
+    
+    current_proxy_id = None
+    
+    for attempt in range(1, max_attempts + 1):
+        result["attempts"] = attempt
+        
+        # Get next proxy
+        proxy = get_next_proxy(session, user_id, current_proxy_id)
+        
+        if not proxy:
+            print(f"[PROXY-FALLBACK] ❌ No more proxies available for user {user_id}")
+            result["error"] = "No more proxies available"
+            break
+        
+        current_proxy_id = proxy.id
+        print(f"[PROXY-FALLBACK] 🔗 Attempt {attempt}/{max_attempts} - Using proxy: {proxy.scheme}://{proxy.host}")
+        
+        # Try check with current proxy
+        check_result = await check_account_via_proxy_with_screenshot(
+            username=username,
+            proxy=proxy,
+            headless=headless,
+            timeout_ms=timeout_ms,
+            screenshot_path=screenshot_path
+        )
+        
+        # Check if we got redirected to login
+        if (check_result.get("exists") is True and 
+            check_result.get("note") == "Redirected to login page"):
+            print(f"[PROXY-FALLBACK] ⚠️ Proxy {proxy.host} redirected to login - trying next proxy...")
+            continue
+        
+        # If we got a definitive result (not redirected to login), use it
+        if check_result.get("exists") is not None:
+            result.update(check_result)
+            result["proxy_used"] = f"{proxy.scheme}://{proxy.host}"
+            print(f"[PROXY-FALLBACK] ✅ Success with proxy {proxy.host}")
+            break
+        else:
+            print(f"[PROXY-FALLBACK] ⚠️ Proxy {proxy.host} failed - trying next proxy...")
+            continue
+    
+    if result["exists"] is None and not result.get("error"):
+        result["error"] = f"All {max_attempts} proxies failed"
+        print(f"[PROXY-FALLBACK] ❌ All proxies failed for @{username}")
     
     return result
