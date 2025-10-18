@@ -5,18 +5,72 @@ import random
 from typing import Dict, Any, Optional
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeout
 
-# List of realistic User-Agents for rotation
+# Extended list of realistic User-Agents for better rotation
 USER_AGENTS = [
+    # Chrome on Windows
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+    
+    # Chrome on macOS
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36',
+    
+    # Firefox on Windows
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15'
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/120.0',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0',
+    
+    # Firefox on macOS
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/121.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/120.0',
+    
+    # Safari on macOS
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15',
+    
+    # Chrome on Linux
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+    
+    # Edge
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36 Edg/119.0.0.0'
 ]
 
 def get_random_user_agent():
     """Get a random User-Agent string"""
     return random.choice(USER_AGENTS)
+
+def get_random_viewport():
+    """Get a random viewport size"""
+    viewports = [
+        {'width': 1920, 'height': 1080},
+        {'width': 1366, 'height': 768},
+        {'width': 1440, 'height': 900},
+        {'width': 1536, 'height': 864},
+        {'width': 1280, 'height': 720},
+        {'width': 1600, 'height': 900},
+        {'width': 1024, 'height': 768}
+    ]
+    return random.choice(viewports)
+
+def get_random_locale():
+    """Get a random locale"""
+    locales = ['en-US', 'en-GB', 'en-CA', 'en-AU', 'de-DE', 'fr-FR', 'es-ES', 'it-IT', 'pt-BR', 'ja-JP']
+    return random.choice(locales)
+
+def get_random_timezone():
+    """Get a random timezone"""
+    timezones = [
+        'America/New_York', 'America/Los_Angeles', 'America/Chicago', 'America/Denver',
+        'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Europe/Rome',
+        'Asia/Tokyo', 'Asia/Shanghai', 'Australia/Sydney', 'America/Toronto'
+    ]
+    return random.choice(timezones)
 
 def get_next_proxy(session, user_id, current_proxy_id=None):
     """Get next available proxy for user, excluding current one"""
@@ -199,28 +253,123 @@ async def check_account_via_proxy(
     
     try:
         async with async_playwright() as p:
-            # Launch browser
+            # Enhanced browser launch with anti-detection
             browser = await p.chromium.launch(
                 headless=headless,
-                proxy=proxy_config
+                proxy=proxy_config,
+                args=[
+                    '--no-sandbox',
+                    '--disable-blink-features=AutomationControlled',
+                    '--disable-dev-shm-usage',
+                    '--disable-web-security',
+                    '--disable-features=VizDisplayCompositor',
+                    '--disable-background-timer-throttling',
+                    '--disable-backgrounding-occluded-windows',
+                    '--disable-renderer-backgrounding',
+                    '--disable-field-trial-config',
+                    '--disable-ipc-flooding-protection',
+                    '--no-first-run',
+                    '--no-default-browser-check',
+                    '--disable-default-apps',
+                    '--disable-extensions',
+                    '--disable-plugins',
+                    '--disable-translate',
+                    '--disable-background-networking',
+                    '--disable-sync',
+                    '--metrics-recording-only',
+                    '--no-report-upload',
+                    '--disable-logging',
+                    '--disable-gpu-logging',
+                    '--silent'
+                ]
             )
             
+            # Create context with random settings
             context = await browser.new_context(
-                viewport={"width": 1280, "height": 900},
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                user_agent=get_random_user_agent(),
+                viewport=get_random_viewport(),
+                locale=get_random_locale(),
+                timezone_id=get_random_timezone(),
+                permissions=['geolocation'],
+                geolocation={'latitude': random.uniform(-90, 90), 'longitude': random.uniform(-180, 180)},
+                color_scheme='light',
+                reduced_motion='no-preference',
+                forced_colors='none'
             )
+            
+            # Add stealth scripts
+            await context.add_init_script("""
+                // Hide webdriver property
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined,
+                });
+                
+                // Override plugins
+                Object.defineProperty(navigator, 'plugins', {
+                    get: () => [1, 2, 3, 4, 5],
+                });
+                
+                // Override languages
+                Object.defineProperty(navigator, 'languages', {
+                    get: () => ['en-US', 'en'],
+                });
+                
+                // Mock chrome runtime
+                if (!window.chrome) {
+                    window.chrome = {};
+                }
+                if (!window.chrome.runtime) {
+                    window.chrome.runtime = {
+                        onConnect: undefined,
+                        onMessage: undefined,
+                    };
+                }
+            """)
             
             page = await context.new_page()
             
             try:
-                # Navigate to Instagram profile
+                # Navigate to Instagram profile with anti-detection
                 url = f"https://www.instagram.com/{username}/"
                 print(f"[PROXY-CHECK] Opening {url}...")
                 
-                response = await page.goto(url, timeout=timeout_ms, wait_until="domcontentloaded")
+                # Add random delay before navigation
+                await asyncio.sleep(random.uniform(1, 3))
                 
-                # Wait a bit for page to load
-                await asyncio.sleep(2)
+                # Navigate with random wait strategy
+                wait_strategies = ["domcontentloaded", "networkidle", "load"]
+                wait_strategy = random.choice(wait_strategies)
+                
+                response = await page.goto(url, timeout=timeout_ms, wait_until=wait_strategy)
+                
+                # Random delay after page load
+                await asyncio.sleep(random.uniform(2, 5))
+                
+                # Check for anti-bot protection
+                page_content = await page.content()
+                if "Take a quick pause" in page_content or "We're seeing more requests" in page_content:
+                    print(f"[PROXY-CHECK] 🛡️ Anti-bot protection detected, waiting...")
+                    # Wait longer and try to scroll to simulate human behavior
+                    await asyncio.sleep(random.uniform(10, 20))
+                    
+                    # Simulate human-like scrolling
+                    await page.evaluate("window.scrollTo(0, 100)")
+                    await asyncio.sleep(random.uniform(1, 3))
+                    await page.evaluate("window.scrollTo(0, 0)")
+                    await asyncio.sleep(random.uniform(2, 4))
+                    
+                    # Try to click somewhere to simulate interaction
+                    try:
+                        await page.click('body', timeout=1000)
+                    except:
+                        pass
+                    
+                    await asyncio.sleep(random.uniform(5, 10))
+                    
+                    # Try to navigate again
+                    print(f"[PROXY-CHECK] Retrying navigation...")
+                    await page.goto(url, timeout=timeout_ms, wait_until="domcontentloaded")
+                    await asyncio.sleep(random.uniform(3, 6))
                 
                 # Check if account exists by looking for common indicators
                 # Method 1: Check page title
@@ -344,13 +493,128 @@ async def check_account_via_proxy_with_screenshot(
                     else:
                         proxy_config = {"server": proxy_url}
                 
-                browser = await p.chromium.launch(headless=headless, proxy=proxy_config)
-                context = await browser.new_context(viewport={"width": 1280, "height": 900})
+                # Enhanced browser launch with anti-detection
+                browser = await p.chromium.launch(
+                    headless=headless,
+                    proxy=proxy_config,
+                    args=[
+                        '--no-sandbox',
+                        '--disable-blink-features=AutomationControlled',
+                        '--disable-dev-shm-usage',
+                        '--disable-web-security',
+                        '--disable-features=VizDisplayCompositor',
+                        '--disable-background-timer-throttling',
+                        '--disable-backgrounding-occluded-windows',
+                        '--disable-renderer-backgrounding',
+                        '--disable-field-trial-config',
+                        '--disable-ipc-flooding-protection',
+                        '--no-first-run',
+                        '--no-default-browser-check',
+                        '--disable-default-apps',
+                        '--disable-extensions',
+                        '--disable-plugins',
+                        '--disable-translate',
+                        '--disable-background-networking',
+                        '--disable-sync',
+                        '--metrics-recording-only',
+                        '--no-report-upload',
+                        '--disable-logging',
+                        '--disable-gpu-logging',
+                        '--silent',
+                        '--disable-background-timer-throttling',
+                        '--disable-backgrounding-occluded-windows',
+                        '--disable-renderer-backgrounding',
+                        '--disable-features=TranslateUI',
+                        '--disable-ipc-flooding-protection'
+                    ]
+                )
+                
+                # Create context with random settings
+                context = await browser.new_context(
+                    user_agent=get_random_user_agent(),
+                    viewport=get_random_viewport(),
+                    locale=get_random_locale(),
+                    timezone_id=get_random_timezone(),
+                    permissions=['geolocation'],
+                    geolocation={'latitude': random.uniform(-90, 90), 'longitude': random.uniform(-180, 180)},
+                    color_scheme='light',
+                    reduced_motion='no-preference',
+                    forced_colors='none'
+                )
+                
+                # Add stealth scripts
+                await context.add_init_script("""
+                    // Hide webdriver property
+                    Object.defineProperty(navigator, 'webdriver', {
+                        get: () => undefined,
+                    });
+                    
+                    // Override plugins
+                    Object.defineProperty(navigator, 'plugins', {
+                        get: () => [1, 2, 3, 4, 5],
+                    });
+                    
+                    // Override languages
+                    Object.defineProperty(navigator, 'languages', {
+                        get: () => ['en-US', 'en'],
+                    });
+                    
+                    // Override permissions
+                    const originalQuery = window.navigator.permissions.query;
+                    window.navigator.permissions.query = (parameters) => (
+                        parameters.name === 'notifications' ?
+                            Promise.resolve({ state: Notification.permission }) :
+                            originalQuery(parameters)
+                    );
+                    
+                    // Mock chrome runtime
+                    if (!window.chrome) {
+                        window.chrome = {};
+                    }
+                    if (!window.chrome.runtime) {
+                        window.chrome.runtime = {
+                            onConnect: undefined,
+                            onMessage: undefined,
+                        };
+                    }
+                """)
+                
                 page = await context.new_page()
                 
                 url = f"https://www.instagram.com/{username}/"
-                await page.goto(url, timeout=timeout_ms, wait_until="domcontentloaded")
-                await asyncio.sleep(2)
+                
+                # Add random delay before navigation
+                await asyncio.sleep(random.uniform(1, 3))
+                
+                # Navigate with random wait strategy
+                wait_strategies = ["domcontentloaded", "networkidle", "load"]
+                wait_strategy = random.choice(wait_strategies)
+                
+                await page.goto(url, timeout=timeout_ms, wait_until=wait_strategy)
+                
+                # Random delay after page load
+                await asyncio.sleep(random.uniform(2, 5))
+                
+                # Check for anti-bot protection
+                page_content = await page.content()
+                if "Take a quick pause" in page_content or "We're seeing more requests" in page_content:
+                    print(f"[PROXY-CHECK] 🛡️ Anti-bot protection detected, waiting...")
+                    # Wait longer and try to scroll to simulate human behavior
+                    await asyncio.sleep(random.uniform(10, 20))
+                    
+                    # Simulate human-like scrolling
+                    await page.evaluate("window.scrollTo(0, 100)")
+                    await asyncio.sleep(random.uniform(1, 3))
+                    await page.evaluate("window.scrollTo(0, 0)")
+                    await asyncio.sleep(random.uniform(2, 4))
+                    
+                    # Try to click somewhere to simulate interaction
+                    try:
+                        await page.click('body', timeout=1000)
+                    except:
+                        pass
+                    
+                    await asyncio.sleep(random.uniform(5, 10))
                 
                 # Take screenshot
                 await page.screenshot(
