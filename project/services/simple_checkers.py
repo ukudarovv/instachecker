@@ -65,6 +65,27 @@ async def check_account_instagram_only(
     ig_username = ig_session.username
     ig_password = fernet.decrypt(ig_session.password) if ig_session.password else None
     
+    # Try to get proxy (optional for instagram mode)
+    proxy_server = None
+    proxy_username = None
+    proxy_password = None
+    
+    try:
+        proxy = session.query(Proxy).filter(
+            Proxy.user_id == user_id,
+            Proxy.is_active == True
+        ).order_by(Proxy.priority.asc()).first()
+        
+        if proxy:
+            proxy_server = f"{proxy.scheme}://{proxy.host}"
+            proxy_username = proxy.username
+            proxy_password = proxy.password
+            print(f"✅ Found proxy for Instagram mode: {proxy_server}")
+        else:
+            print(f"⚠️ No proxy found for Instagram mode - using direct connection")
+    except Exception as e:
+        print(f"⚠️ Proxy check error: {e} - using direct connection")
+    
     # Import check function
     try:
         from .ig_simple_checker import check_account_with_screenshot
@@ -79,7 +100,10 @@ async def check_account_instagram_only(
             headless=settings.ig_headless,
             timeout_ms=30000,
             ig_username=ig_username,
-            ig_password=ig_password
+            ig_password=ig_password,
+            proxy_server=proxy_server,
+            proxy_username=proxy_username,
+            proxy_password=proxy_password
         )
         
         result.update(ig_result)

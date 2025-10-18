@@ -209,7 +209,10 @@ async def check_account_with_screenshot(
     screenshot_dir: str = "screenshots",
     ig_username: Optional[str] = None,
     ig_password: Optional[str] = None,
-    session_db_update_callback: Optional[callable] = None
+    session_db_update_callback: Optional[callable] = None,
+    proxy_server: Optional[str] = None,
+    proxy_username: Optional[str] = None,
+    proxy_password: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Check Instagram account using Playwright with screenshot.
@@ -223,6 +226,9 @@ async def check_account_with_screenshot(
         ig_username: Instagram username for re-login if session expired
         ig_password: Instagram password for re-login if session expired
         session_db_update_callback: Callback to update cookies in DB (takes new_cookies as arg)
+        proxy_server: Proxy server (e.g., "http://host:port")
+        proxy_username: Proxy username for authentication
+        proxy_password: Proxy password for authentication
         
     Returns:
         Dict with check results and screenshot path
@@ -246,8 +252,17 @@ async def check_account_with_screenshot(
     os.makedirs(screenshot_dir, exist_ok=True)
     
     async with async_playwright() as p:
+        # Prepare proxy configuration
+        proxy_config = None
+        if proxy_server:
+            proxy_config = {"server": proxy_server}
+            if proxy_username and proxy_password:
+                proxy_config["username"] = proxy_username
+                proxy_config["password"] = proxy_password
+        
         browser = await p.chromium.launch(
             headless=headless,
+            proxy=proxy_config,
             args=[
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
@@ -347,8 +362,8 @@ async def check_account_with_screenshot(
                     # Clear any existing redirects
                     await page.evaluate("() => { window.history.replaceState(null, '', '/'); }")
                     
-                    # Navigate with longer timeout and different strategy
-                    await page.goto(url, wait_until="networkidle", timeout=timeout_ms)
+                    # Navigate with domcontentloaded strategy (faster, less prone to timeout)
+                    await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
                     
                     # Wait longer for page to load and render
                     await page.wait_for_timeout(5000)  # Increased to 5 seconds
