@@ -1,18 +1,21 @@
 """Automatic background checker for accounts with parallel user processing."""
 
 import asyncio
+import random
 from datetime import datetime, timedelta, date
 from sqlalchemy.orm import sessionmaker
 
 try:
     from ..models import Account, User
     from ..services.hybrid_checker import check_account_hybrid
+    from ..services.triple_checker import check_account_triple
     from ..services.ig_sessions import get_priority_valid_session
     from ..utils.encryptor import OptionalFernet
     from ..config import get_settings
 except ImportError:
     from models import Account, User
     from services.hybrid_checker import check_account_hybrid
+    from services.triple_checker import check_account_triple
     from services.ig_sessions import get_priority_valid_session
     from utils.encryptor import OptionalFernet
     from config import get_settings
@@ -52,7 +55,7 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
             if not ig_session:
                 print(f"[AUTO-CHECK] ❌ No valid IG session for user {user_id}")
                 return {"checked": 0, "found": 0, "not_found": 0, "errors": len(user_accounts)}
-        else:  # api+proxy
+        elif verify_mode == "api+proxy":
             ig_session = None  # Proxy doesn't need IG session
             
             # Check if user has active proxy
@@ -65,6 +68,24 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
             if not proxy:
                 print(f"[AUTO-CHECK] ⏭️ User {user_id} has no active proxy - SKIPPING")
                 return {"checked": 0, "found": 0, "not_found": 0, "errors": 0}
+        elif verify_mode == "api+proxy+instagram":
+            # Triple check mode needs both proxy and IG session
+            ig_session = get_priority_valid_session(session, user_id, fernet)
+            if not ig_session:
+                print(f"[AUTO-CHECK] ❌ No valid IG session for user {user_id}")
+                return {"checked": 0, "found": 0, "not_found": 0, "errors": len(user_accounts)}
+            
+            from ..models import Proxy
+            proxy = session.query(Proxy).filter(
+                Proxy.user_id == user_id,
+                Proxy.is_active == True
+            ).first()
+            
+            if not proxy:
+                print(f"[AUTO-CHECK] ⏭️ User {user_id} has no active proxy - SKIPPING")
+                return {"checked": 0, "found": 0, "not_found": 0, "errors": 0}
+        else:
+            ig_session = None
         
         # PHASE 1: API checks for this user's accounts
         print(f"[AUTO-CHECK] 📡 Phase 1: API checks for user {user_id}...")
@@ -121,19 +142,32 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
             
             for idx, (acc, api_result) in enumerate(accounts_to_verify):
                 try:
-                    verification_method = "Instagram" if verify_mode == "api+instagram" else "Proxy"
-                    print(f"[AUTO-CHECK] [{idx+1}/{len(accounts_to_verify)}] {verification_method} verify @{acc.account}...")
-                    
-                    # Now do full verification
-                    result = await check_account_hybrid(
-                        session=session,
-                        user_id=user_id,
-                        username=acc.account,
-                        ig_session=ig_session,
-                        fernet=fernet,
-                        skip_instagram_verification=False,  # DO verification in Phase 2
-                        verify_mode=verify_mode
-                    )
+                    if verify_mode == "api+proxy+instagram":
+                        verification_method = "Proxy + Instagram"
+                        print(f"[AUTO-CHECK] [{idx+1}/{len(accounts_to_verify)}] {verification_method} triple verify @{acc.account}...")
+                        
+                        # Use triple checker for api+proxy+instagram mode
+                        result = await check_account_triple(
+                            session=session,
+                            user_id=user_id,
+                            username=acc.account,
+                            ig_session=ig_session,
+                            fernet=fernet
+                        )
+                    else:
+                        verification_method = "Instagram" if verify_mode == "api+instagram" else "Proxy"
+                        print(f"[AUTO-CHECK] [{idx+1}/{len(accounts_to_verify)}] {verification_method} verify @{acc.account}...")
+                        
+                        # Use hybrid checker for api+instagram and api+proxy modes
+                        result = await check_account_hybrid(
+                            session=session,
+                            user_id=user_id,
+                            username=acc.account,
+                            ig_session=ig_session,
+                            fernet=fernet,
+                            skip_instagram_verification=False,  # DO verification in Phase 2
+                            verify_mode=verify_mode
+                        )
                     
                     # Log the full result for debugging
                     print(f"[AUTO-CHECK] 🔍 Result for @{acc.account}: exists={result.get('exists')}, checked_via={result.get('checked_via')}, screenshot_path={result.get('screenshot_path')}")
@@ -221,6 +255,34 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
                                     
                             except Exception as e:
                                 print(f"[AUTO-CHECK] ❌ Failed to send notification to user {user.id}: {e}")
+                    
+                    # Check for warnings (API active but profile not found)
+                    elif result.get("warning"):
+                        print(f"[AUTO-CHECK] ⚠️ @{acc.account} - WARNING: {result.get('warning')}")
+                        
+                        # Send warning notification to user if bot is provided
+                        if bot:
+                            try:
+                                warning_message = f"""⚠️ **Предупреждение для @{acc.account}**
+
+📡 **API проверка:** Активен ✅
+🌐 **Страница профиля:** Не найдена ❌
+
+**Что это значит:**
+API показывает, что аккаунт активен, но при проверке через прокси + Instagram страница профиля не найдена.
+
+**Возможные причины:**
+• Аккаунт временно недоступен
+• Блокировка по региону
+• Технические проблемы Instagram
+
+**Рекомендация:** Проверьте аккаунт вручную через браузер"""
+                                
+                                await bot.send_message(user.id, warning_message)
+                                print(f"[AUTO-CHECK] ⚠️ Warning notification sent to user {user.id}")
+                            except Exception as e:
+                                print(f"[AUTO-CHECK] ❌ Failed to send warning to user {user.id}: {e}")
+                    
                     else:
                         errors += 1
                         print(f"[AUTO-CHECK] ❌ @{acc.account} - Verification failed: {result.get('error', 'unknown')}")

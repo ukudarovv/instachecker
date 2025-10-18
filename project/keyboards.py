@@ -65,7 +65,8 @@ def verify_mode_selection_kb(current_mode: str) -> dict:
     """
     modes = [
         ("api+instagram", "🔑 API + 📸 Instagram (с логином)"),
-        ("api+proxy", "🔑 API + 🌐 Proxy (без логина)")
+        ("api+proxy", "🔑 API + 🌐 Proxy (без логина)"),
+        ("api+proxy+instagram", "🔑 API + 🌐 Proxy + 📸 Instagram (полная)")
     ]
     
     keyboard = []
