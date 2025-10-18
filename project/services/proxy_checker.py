@@ -384,11 +384,11 @@ async def check_account_via_proxy(
                     result["exists"] = False
                     result["error"] = "Page not available"
                 elif "Login" in title or "Instagram" in title:
-                    # Instagram redirected to login page - account likely exists but requires login
-                    print(f"[PROXY-CHECK] ⚠️ Account @{username} - redirected to login (likely exists)")
+                    # Instagram redirected to login page - account exists but requires login
+                    print(f"[PROXY-CHECK] ✅ Account @{username} found (redirected to login - account exists)")
                     result["exists"] = True
                     result["is_private"] = None  # Cannot determine privacy without login
-                    result["note"] = "Redirected to login page"
+                    result["note"] = "Account exists, requires login"
                 else:
                     # Account likely exists
                     # Try to detect if private
@@ -412,10 +412,10 @@ async def check_account_via_proxy(
                             # Check if we're on a login page or rate limited
                             page_content = await page.content()
                             if "Login" in page_content or "log in" in page_content.lower():
-                                print(f"[PROXY-CHECK] ⚠️ Account @{username} - redirected to login (likely exists)")
+                                print(f"[PROXY-CHECK] ✅ Account @{username} found (redirected to login - account exists)")
                                 result["exists"] = True
                                 result["is_private"] = None
-                                result["note"] = "Redirected to login page"
+                                result["note"] = "Account exists, requires login"
                             else:
                                 # Might be rate limited or other issue
                                 print(f"[PROXY-CHECK] ⚠️ Account @{username} - uncertain (no clear indicators)")
@@ -704,7 +704,8 @@ async def check_account_via_proxy_with_fallback(
         
         # Check if we got redirected to login - this means account exists!
         if (check_result.get("exists") is True and 
-            check_result.get("note") == "Redirected to login page"):
+            (check_result.get("note") == "Redirected to login page" or 
+             check_result.get("note") == "Account exists, requires login")):
             print(f"[PROXY-FALLBACK] ✅ Proxy {proxy.host} confirmed account exists (redirected to login)")
             result.update(check_result)
             result["proxy_used"] = f"{proxy.scheme}://{proxy.host}"
