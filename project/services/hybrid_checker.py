@@ -225,41 +225,8 @@ async def check_account_hybrid(
                             return result
                 else:
                     result["error"] = "no_active_proxy"
-                    print(f"⚠️ No active proxy found for user {user_id}")
-                    
-                    # Try without proxy as fallback
-                    print(f"🔄 Trying without proxy for @{username}...")
-                    try:
-                        
-                        # Generate screenshot path
-                        import os
-                        from datetime import datetime
-                        screenshot_dir = "screenshots"
-                        os.makedirs(screenshot_dir, exist_ok=True)
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        screenshot_path = os.path.join(screenshot_dir, f"ig_{username}_{timestamp}.png")
-                        
-                        # Try without proxy using simple checker
-                        fallback_result = await check_account_with_screenshot(
-                            username=username,
-                            cookies=None,  # No cookies
-                            headless=settings.ig_headless,
-                            timeout_ms=30000,
-                            screenshot_path=screenshot_path
-                        )
-                        
-                        if fallback_result.get("exists") is True:
-                            result["screenshot_path"] = fallback_result.get("screenshot_path")
-                            result["is_private"] = fallback_result.get("is_private")
-                            result["error"] = None  # Clear error
-                            print(f"✅ Fallback check (no proxy) successful for @{username}")
-                        else:
-                            result["error"] = f"fallback_failed: {fallback_result.get('error', 'unknown')}"
-                            print(f"❌ Fallback check also failed for @{username}")
-                            
-                    except Exception as e:
-                        result["error"] = f"fallback_error: {str(e)}"
-                        print(f"❌ Fallback check error for @{username}: {str(e)}")
+                    print(f"⚠️ No active proxy found for user {user_id} - skipping @{username}")
+                    result["exists"] = False
                     
             except Exception as e:
                 result["error"] = f"proxy_error: {str(e)}"

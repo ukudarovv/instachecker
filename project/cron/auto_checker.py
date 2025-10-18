@@ -54,6 +54,17 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
                 return {"checked": 0, "found": 0, "not_found": 0, "errors": len(user_accounts)}
         else:  # api+proxy
             ig_session = None  # Proxy doesn't need IG session
+            
+            # Check if user has active proxy
+            from ..models import Proxy
+            proxy = session.query(Proxy).filter(
+                Proxy.user_id == user_id,
+                Proxy.is_active == True
+            ).first()
+            
+            if not proxy:
+                print(f"[AUTO-CHECK] ⏭️ User {user_id} has no active proxy - SKIPPING")
+                return {"checked": 0, "found": 0, "not_found": 0, "errors": 0}
         
         # PHASE 1: API checks for this user's accounts
         print(f"[AUTO-CHECK] 📡 Phase 1: API checks for user {user_id}...")
