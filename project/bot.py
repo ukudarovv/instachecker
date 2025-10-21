@@ -2730,7 +2730,7 @@ class TelegramBot:
                     "Примеры:\n"
                     "`http://1.2.3.4:8080`\n"
                     "`socks5://user:pass@5.6.7.8:1080`\n"
-                    "`proxy.resi.gg:12321:74276e667af9:d9754cc35e1e`",
+                    "`example.com:8080:user:pass`",
                     proxy_add_cancel_kb()
                 )
 
