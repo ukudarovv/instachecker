@@ -3,6 +3,7 @@
 
 import sys
 import os
+import asyncio
 
 # Add project directory to Python path
 project_dir = os.path.join(os.path.dirname(__file__), 'project')
@@ -12,4 +13,4 @@ sys.path.insert(0, project_dir)
 from bot import main
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

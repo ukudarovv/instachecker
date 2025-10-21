@@ -38,6 +38,9 @@ async def check_account_instagram_only(
     Returns:
         Dict with check results
     """
+    # Логирование режима проверки
+    print(f"[INSTAGRAM-CHECK] 🔧 Режим проверки: instagram (только Instagram) для @{username}")
+    
     result = {
         "username": username,
         "exists": None,
@@ -133,6 +136,9 @@ async def check_account_proxy_only(
     Returns:
         Dict with check results
     """
+    # Логирование режима проверки
+    print(f"[PROXY-CHECK] 🔧 Режим проверки: proxy (только Proxy) для @{username}")
+    
     result = {
         "username": username,
         "exists": None,
@@ -178,7 +184,7 @@ async def check_account_proxy_only(
             session=session,
             user_id=user_id,
             username=username,
-            max_attempts=3,
+            max_attempts=None,  # Unlimited attempts
             headless=settings.ig_headless,
             timeout_ms=30000,
             screenshot_path=screenshot_path
@@ -216,6 +222,9 @@ async def check_account_instagram_proxy(
     Returns:
         Dict with check results
     """
+    # Логирование режима проверки
+    print(f"[INSTAGRAM+PROXY-CHECK] 🔧 Режим проверки: instagram+proxy (Instagram + Proxy без API) для @{username}")
+    
     result = {
         "username": username,
         "exists": None,

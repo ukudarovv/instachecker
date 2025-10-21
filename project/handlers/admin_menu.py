@@ -3,15 +3,15 @@
 import os
 
 try:
-    from ..keyboards import admin_menu_kb, main_menu
+    from ..keyboards import admin_menu_kb, main_menu, admin_verify_mode_selection_kb
     from ..utils.access import get_or_create_user, ensure_active, ensure_admin
-    from ..services.system_settings import get_auto_check_interval, set_auto_check_interval
+    from ..services.system_settings import get_auto_check_interval, set_auto_check_interval, get_global_verify_mode, set_global_verify_mode
     from ..models import Account, User, APIKey, Proxy, InstagramSession
     from .user_management import register_user_management_handlers
 except ImportError:
-    from keyboards import admin_menu_kb, main_menu
+    from keyboards import admin_menu_kb, main_menu, admin_verify_mode_selection_kb
     from utils.access import get_or_create_user, ensure_active, ensure_admin
-    from services.system_settings import get_auto_check_interval, set_auto_check_interval
+    from services.system_settings import get_auto_check_interval, set_auto_check_interval, get_global_verify_mode, set_global_verify_mode
     from models import Account, User, APIKey, Proxy, InstagramSession
     from handlers.user_management import register_user_management_handlers
 
@@ -33,12 +33,14 @@ def register_admin_menu_handlers(bot, session_factory):
         
         with session_factory() as session:
             interval = get_auto_check_interval(session)
+            current_mode = get_global_verify_mode(session)
         
         bot.send_message(
             message["chat"]["id"],
             f"⚙️ **Админ-панель**\n\n"
             f"Текущие настройки:\n"
-            f"• Интервал автопроверки: **{interval} мин**\n\n"
+            f"• Интервал автопроверки: **{interval} мин**\n"
+            f"• Режим проверки: **{current_mode}**\n\n"
             f"Выберите действие:",
             admin_menu_kb()
         )
@@ -62,10 +64,29 @@ def register_admin_menu_handlers(bot, session_factory):
             f"• Рекомендуемые: 5, 10, 15, 30\n\n"
             f"Или отправьте /cancel для отмены."
         )
+    
+    def handle_verify_mode_menu(message, user):
+        """Handle Режим проверки button."""
+        if not ensure_admin(user):
+            bot.send_message(message["chat"]["id"], "⛔ Доступ запрещен.")
+            return
         
-        # Set FSM state
-        user_id = message["from"]["id"]
-        bot.fsm_states[user_id] = {"state": "waiting_for_interval", "data": {}}
+        with session_factory() as session:
+            current_mode = get_global_verify_mode(session)
+        
+        try:
+            from ..keyboards import admin_verify_mode_selection_kb
+        except ImportError:
+            from keyboards import admin_verify_mode_selection_kb
+        
+        bot.send_message(
+            message["chat"]["id"],
+            f"🔧 **Режим проверки**\n\n"
+            f"Текущий режим: **{current_mode}**\n\n"
+            f"Выберите новый режим проверки для всех пользователей:",
+            admin_verify_mode_selection_kb(current_mode)
+        )
+        
     
     def handle_interval_input(message, user):
         """Handle interval input."""
@@ -101,7 +122,11 @@ def register_admin_menu_handlers(bot, session_factory):
         checks_per_hour = 60 // interval
         checks_per_day = checks_per_hour * 24
         
-        keyboard = main_menu(is_admin=ensure_admin(user))
+        # Get verify_mode for keyboard
+        with session_factory() as session:
+            verify_mode = get_global_verify_mode(session)
+        
+        keyboard = main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode)
         bot.send_message(
             message["chat"]["id"],
             f"✅ **Интервал автопроверки обновлен!**\n\n"
@@ -209,7 +234,9 @@ def register_admin_menu_handlers(bot, session_factory):
             return
         
         # Send final message
-        keyboard = main_menu(is_admin=ensure_admin(user))
+        with session_factory() as session:
+            verify_mode = get_global_verify_mode(session)
+        keyboard = main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode)
         bot.send_message(
             message["chat"]["id"],
             "🔄 Бот перезапускается...\n\n"
@@ -231,6 +258,7 @@ def register_admin_menu_handlers(bot, session_factory):
     message_handlers = {
         "Админка": handle_admin_menu,
         "Интервал автопроверки": handle_interval_menu,
+        "Режим проверки": handle_verify_mode_menu,
         "Статистика системы": handle_statistics,
         "Перезапуск бота": handle_restart_bot,
     }

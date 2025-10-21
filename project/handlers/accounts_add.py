@@ -53,8 +53,14 @@ def register_add_account_handlers(dp, SessionLocal):
         """Cancel any FSM operation."""
         # Reset state and show main menu
         with SessionLocal() as session:
+            try:
+                from ..services.system_settings import get_global_verify_mode
+            except ImportError:
+                from services.system_settings import get_global_verify_mode
+            
             user = get_or_create_user(session, message.from_user)
-            await message.answer("❌ Отменено.", reply_markup=main_menu(is_admin=ensure_admin(user)))
+            verify_mode = get_global_verify_mode(session)
+            await message.answer("❌ Отменено.", reply_markup=main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode))
     
     # These handlers will be integrated into the main bot logic
     # since we're using direct API calls

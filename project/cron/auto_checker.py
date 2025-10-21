@@ -1,31 +1,28 @@
 """Automatic background checker for accounts with parallel user processing."""
 
 import asyncio
+import os
 import random
 from datetime import datetime, timedelta, date
 from sqlalchemy.orm import sessionmaker
 
 try:
     from ..models import Account, User
-    from ..services.hybrid_checker import check_account_hybrid
-    from ..services.triple_checker import check_account_triple
-    from ..services.simple_checkers import check_account_instagram_only, check_account_proxy_only, check_account_instagram_proxy
-    from ..services.ig_sessions import get_priority_valid_session
+    from ..services.main_checker import check_account_main
+    from ..services.system_settings import get_global_verify_mode
     from ..utils.encryptor import OptionalFernet
     from ..config import get_settings
 except ImportError:
     from models import Account, User
-    from services.hybrid_checker import check_account_hybrid
-    from services.triple_checker import check_account_triple
-    from services.simple_checkers import check_account_instagram_only, check_account_proxy_only, check_account_instagram_proxy
-    from services.ig_sessions import get_priority_valid_session
+    from services.main_checker import check_account_main
+    from services.system_settings import get_global_verify_mode
     from utils.encryptor import OptionalFernet
     from config import get_settings
 
 
 async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: sessionmaker, fernet: OptionalFernet, bot=None):
     """
-    Check accounts for a specific user in a separate thread.
+    Check accounts for a specific user using new API + Proxy logic.
     
     Args:
         user_id: User ID
@@ -48,283 +45,92 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
             print(f"[AUTO-CHECK] ❌ User {user_id} not found")
             return {"checked": 0, "found": 0, "not_found": 0, "errors": 1}
         
-        verify_mode = user.verify_mode or "api+instagram"
-        print(f"[AUTO-CHECK] 👤 User {user_id} mode: {verify_mode}")
+        # Get global verification mode
+        verify_mode = get_global_verify_mode(session)
+        print(f"[AUTO-CHECK] 👤 User {user_id} - режим проверки: {verify_mode}")
         
-        # Get appropriate session based on verify_mode
-        if verify_mode in ["api+instagram", "instagram", "instagram+proxy", "api+proxy+instagram"]:
-            # Modes that need Instagram session
-            ig_session = get_priority_valid_session(session, user_id, fernet)
-            if not ig_session:
-                print(f"[AUTO-CHECK] ❌ No valid IG session for user {user_id}")
-                return {"checked": 0, "found": 0, "not_found": 0, "errors": len(user_accounts)}
-        else:
-            ig_session = None
-        
-        if verify_mode in ["api+proxy", "proxy", "instagram+proxy", "api+proxy+instagram"]:
-            # Modes that need Proxy
-            from ..models import Proxy
-            proxy = session.query(Proxy).filter(
-                Proxy.user_id == user_id,
-                Proxy.is_active == True
-            ).first()
-            
-            if not proxy:
-                print(f"[AUTO-CHECK] ⏭️ User {user_id} has no active proxy - SKIPPING")
-                return {"checked": 0, "found": 0, "not_found": 0, "errors": 0}
-        
-        # PHASE 1: API checks for this user's accounts (skip for non-API modes)
-        accounts_to_verify = []
-        
-        # Check if this mode uses API
-        uses_api = verify_mode in ["api+instagram", "api+proxy", "api+proxy+instagram"]
-        
-        if uses_api:
-            print(f"[AUTO-CHECK] 📡 Phase 1: API checks for user {user_id}...")
-            
-            # Add delay between checks to avoid Instagram rate limiting
-            import time
-            import random
-            
-            for idx, acc in enumerate(user_accounts):
-                try:
-                    print(f"[AUTO-CHECK] [{idx+1}/{len(user_accounts)}] API check @{acc.account} (user {user_id})...")
+        # Check all accounts using new main_checker logic
+        for idx, acc in enumerate(user_accounts):
+            try:
+                print(f"[AUTO-CHECK] [{idx+1}/{len(user_accounts)}] Проверка @{acc.account}...")
+                
+                # Use new main_checker with API + Proxy logic
+                success, message, screenshot_path = await check_account_main(
+                    username=acc.account,
+                    session=session,
+                    user_id=user_id
+                )
+                
+                checked += 1
+                
+                if success:
+                    found += 1
+                    print(f"[AUTO-CHECK] ✅ @{acc.account} - FOUND: {message}")
                     
-                    # Perform API-only check
-                    result = await check_account_hybrid(
-                        session=session,
-                        user_id=user_id,
-                        username=acc.account,
-                        ig_session=ig_session,
-                        fernet=fernet,
-                        skip_instagram_verification=True,  # SKIP verification in Phase 1
-                        verify_mode=verify_mode
-                    )
+                    # Mark account as done
+                    account = session.query(Account).filter(
+                        Account.user_id == user_id,
+                        Account.account == acc.account
+                    ).first()
+                    if account:
+                        account.done = True
+                        account.date_of_finish = date.today()
+                        session.commit()
+                        print(f"[AUTO-CHECK] ✅ Marked @{acc.account} as done")
                     
-                    checked += 1
-                    
-                    # If API says account is active, add to verification list
-                    if result.get("exists") is True:
-                        accounts_to_verify.append((acc, result))
-                        verification_method = "Instagram" if verify_mode == "api+instagram" else "Proxy"
-                        print(f"[AUTO-CHECK] ✓ @{acc.account} - API says ACTIVE (will verify with {verification_method})")
-                    elif result.get("exists") is False:
-                        not_found += 1
-                        print(f"[AUTO-CHECK] ❌ @{acc.account} - API says NOT FOUND")
-                    else:
-                        errors += 1
-                        print(f"[AUTO-CHECK] ❓ @{acc.account} - API ERROR: {result.get('error', 'unknown')}")
-                    
-                    # Random delay between API checks (2-5 seconds) to avoid rate limiting
-                    if idx < len(user_accounts) - 1:
-                        delay = random.uniform(2, 5)
-                        print(f"[AUTO-CHECK] ⏳ Waiting {delay:.1f}s before next check...")
-                        await asyncio.sleep(delay)
-                        
-                except Exception as e:
-                    errors += 1
-                    print(f"[AUTO-CHECK] ❌ Error in API check @{acc.account}: {str(e)}")
-            
-            print(f"[AUTO-CHECK] 📡 Phase 1 complete for user {user_id}: {len(accounts_to_verify)} accounts to verify")
-        else:
-            # For non-API modes, check all accounts directly
-            print(f"[AUTO-CHECK] 🔍 Skipping API phase (mode: {verify_mode}), checking all accounts directly...")
-            for acc in user_accounts:
-                accounts_to_verify.append((acc, None))  # No API result
-        
-        # PHASE 2: Verification for active accounts
-        if accounts_to_verify:
-            print(f"[AUTO-CHECK] 📸 Phase 2: Verification for user {user_id}...")
-            
-            for idx, (acc, api_result) in enumerate(accounts_to_verify):
-                try:
-                    # Select appropriate checker based on verify_mode
-                    if verify_mode == "api+proxy+instagram":
-                        verification_method = "API + Proxy + Instagram"
-                        print(f"[AUTO-CHECK] [{idx+1}/{len(accounts_to_verify)}] {verification_method} triple verify @{acc.account}...")
-                        
-                        result = await check_account_triple(
-                            session=session,
-                            user_id=user_id,
-                            username=acc.account,
-                            ig_session=ig_session,
-                            fernet=fernet
-                        )
-                    
-                    elif verify_mode == "instagram+proxy":
-                        verification_method = "Instagram + Proxy"
-                        print(f"[AUTO-CHECK] [{idx+1}/{len(accounts_to_verify)}] {verification_method} verify @{acc.account}...")
-                        
-                        result = await check_account_instagram_proxy(
-                            session=session,
-                            user_id=user_id,
-                            username=acc.account,
-                            ig_session=ig_session,
-                            fernet=fernet
-                        )
-                    
-                    elif verify_mode == "instagram":
-                        verification_method = "Instagram only"
-                        print(f"[AUTO-CHECK] [{idx+1}/{len(accounts_to_verify)}] {verification_method} verify @{acc.account}...")
-                        
-                        result = await check_account_instagram_only(
-                            session=session,
-                            user_id=user_id,
-                            username=acc.account,
-                            ig_session=ig_session,
-                            fernet=fernet
-                        )
-                    
-                    elif verify_mode == "proxy":
-                        verification_method = "Proxy only"
-                        print(f"[AUTO-CHECK] [{idx+1}/{len(accounts_to_verify)}] {verification_method} verify @{acc.account}...")
-                        
-                        result = await check_account_proxy_only(
-                            session=session,
-                            user_id=user_id,
-                            username=acc.account
-                        )
-                    
-                    else:
-                        # api+instagram or api+proxy modes
-                        verification_method = "Instagram" if verify_mode == "api+instagram" else "Proxy"
-                        print(f"[AUTO-CHECK] [{idx+1}/{len(accounts_to_verify)}] {verification_method} verify @{acc.account}...")
-                        
-                        result = await check_account_hybrid(
-                            session=session,
-                            user_id=user_id,
-                            username=acc.account,
-                            ig_session=ig_session,
-                            fernet=fernet,
-                            skip_instagram_verification=False,  # DO verification in Phase 2
-                            verify_mode=verify_mode
-                        )
-                    
-                    # Log the full result for debugging
-                    print(f"[AUTO-CHECK] 🔍 Result for @{acc.account}: exists={result.get('exists')}, checked_via={result.get('checked_via')}, screenshot_path={result.get('screenshot_path')}")
-                    
-                    # Longer delay between proxy/Instagram checks (5-10 seconds) to avoid detection
-                    if idx < len(accounts_to_verify) - 1:
-                        delay = random.uniform(5, 10)
-                        print(f"[AUTO-CHECK] ⏳ Waiting {delay:.1f}s before next verification...")
-                        await asyncio.sleep(delay)
-                    
-                    # Update statistics and handle results
-                    if result.get("exists") is True:
-                        found += 1
-                        print(f"[AUTO-CHECK] ✅ @{acc.account} - FOUND (verified via {result.get('checked_via', 'unknown')})")
-                        
-                        # Mark account as done ONLY if truly found
-                        account = session.query(Account).filter(
-                            Account.user_id == user_id,
-                            Account.account == acc.account
-                        ).first()
-                        if account:
-                            account.done = True
-                            account.date_of_finish = date.today()
-                            session.commit()
-                            print(f"[AUTO-CHECK] ✅ Marked @{acc.account} as done")
-                        
-                        # Send notification to user if bot is provided
-                        if bot:
-                            try:
-                                # Calculate real days completed
-                                completed_days = 1  # Default fallback
-                                if acc.from_date:
-                                    if isinstance(acc.from_date, datetime):
-                                        start_date = acc.from_date.date()
-                                    else:
-                                        start_date = acc.from_date
-                                    
-                                    current_date = date.today()
-                                    completed_days = (current_date - start_date).days + 1  # +1 to include start day
-                                    
-                                    # Ensure completed_days is at least 1
-                                    completed_days = max(1, completed_days)
+                    # Send notification to user if bot is provided
+                    if bot:
+                        try:
+                            # Calculate real days completed
+                            completed_days = 1
+                            if acc.from_date:
+                                if isinstance(acc.from_date, datetime):
+                                    start_date = acc.from_date.date()
+                                else:
+                                    start_date = acc.from_date
                                 
-                                message = f"""Имя пользователя: <a href="https://www.instagram.com/{acc.account}/">{acc.account}</a>
+                                current_date = date.today()
+                                completed_days = (current_date - start_date).days + 1
+                                completed_days = max(1, completed_days)
+                            
+                            message = f"""Имя пользователя: <a href="https://www.instagram.com/{acc.account}/">{acc.account}</a>
 Начало работ: {acc.from_date.strftime("%d.%m.%Y") if acc.from_date else "N/A"}
 Заявлено: {acc.period} дней
 Завершено за: {completed_days} дней
 Конец работ: {acc.to_date.strftime("%d.%m.%Y") if acc.to_date else "N/A"}
 Статус: Аккаунт разблокирован✅"""
-                                # Send message
-                                await bot.send_message(user.id, message)
-                                
-                                # Send screenshot if available
-                                if result.get("screenshot_path"):
-                                    import os
-                                    screenshot_path = result["screenshot_path"]
-                                    print(f"[AUTO-CHECK] 📸 Screenshot path found: {screenshot_path}")
-                                    
-                                    if os.path.exists(screenshot_path):
-                                        print(f"[AUTO-CHECK] 📸 Screenshot file exists, size: {os.path.getsize(screenshot_path)} bytes")
-                                        try:
-                                            print(f"[AUTO-CHECK] 📸 Sending screenshot to user {user.id}...")
-                                            # Send photo
-                                            success = await bot.send_photo(
-                                                user.id,
-                                                screenshot_path,
-                                                f'📸 <a href="https://www.instagram.com/{acc.account}/">@{acc.account}</a>'
-                                            )
-                                            
-                                            if success:
-                                                print(f"[AUTO-CHECK] 📸 Screenshot sent successfully!")
-                                                # Delete screenshot after sending
-                                                os.remove(screenshot_path)
-                                                print(f"[AUTO-CHECK] 📸 Screenshot deleted: {screenshot_path}")
-                                            else:
-                                                print(f"[AUTO-CHECK] ⚠️ Screenshot send returned False")
-                                        except Exception as e:
-                                            print(f"[AUTO-CHECK] ❌ Failed to send photo: {e}")
-                                            import traceback
-                                            traceback.print_exc()
-                                    else:
-                                        print(f"[AUTO-CHECK] ⚠️ Screenshot file NOT found: {screenshot_path}")
-                                else:
-                                    print(f"[AUTO-CHECK] ⚠️ No screenshot path in result")
-                                    
-                            except Exception as e:
-                                print(f"[AUTO-CHECK] ❌ Failed to send notification to user {user.id}: {e}")
+                            
+                            await bot.send_message(user.id, message)
+                            
+                            # Send screenshot if available
+                            if screenshot_path and os.path.exists(screenshot_path):
+                                try:
+                                    success = await bot.send_photo(
+                                        user.id,
+                                        screenshot_path,
+                                        f'📸 <a href="https://www.instagram.com/{acc.account}/">@{acc.account}</a>'
+                                    )
+                                    if success:
+                                        print(f"[AUTO-CHECK] 📸 Screenshot sent successfully!")
+                                except Exception as e:
+                                    print(f"[AUTO-CHECK] ❌ Failed to send photo: {e}")
+                            
+                        except Exception as e:
+                            print(f"[AUTO-CHECK] ❌ Failed to send notification to user {user.id}: {e}")
+                
+                else:
+                    not_found += 1
+                    print(f"[AUTO-CHECK] ❌ @{acc.account} - NOT FOUND: {message}")
+                
+                # Delay between checks (3-7 seconds)
+                if idx < len(user_accounts) - 1:
+                    delay = random.uniform(3, 7)
+                    print(f"[AUTO-CHECK] ⏳ Waiting {delay:.1f}s before next check...")
+                    await asyncio.sleep(delay)
                     
-                    # Check for warnings (API active but profile not found)
-                    elif result.get("warning"):
-                        print(f"[AUTO-CHECK] ⚠️ @{acc.account} - WARNING: {result.get('warning')}")
-                        
-                        # Send warning notification to user if bot is provided
-                        if bot:
-                            try:
-                                warning_message = f"""⚠️ **Предупреждение для @{acc.account}**
-
-📡 **API проверка:** Активен ✅
-🌐 **Страница профиля:** Не найдена ❌
-
-**Что это значит:**
-API показывает, что аккаунт активен, но при проверке через прокси + Instagram страница профиля не найдена.
-
-**Возможные причины:**
-• Аккаунт временно недоступен
-• Блокировка по региону
-• Технические проблемы Instagram
-
-**Рекомендация:** Проверьте аккаунт вручную через браузер"""
-                                
-                                await bot.send_message(user.id, warning_message)
-                                print(f"[AUTO-CHECK] ⚠️ Warning notification sent to user {user.id}")
-                            except Exception as e:
-                                print(f"[AUTO-CHECK] ❌ Failed to send warning to user {user.id}: {e}")
-                    
-                    else:
-                        errors += 1
-                        print(f"[AUTO-CHECK] ❌ @{acc.account} - Verification failed: {result.get('error', 'unknown')}")
-                    
-                    # Delay between verifications (5 seconds)
-                    if idx < len(accounts_to_verify) - 1:
-                        await asyncio.sleep(5)
-                        
-                except Exception as e:
-                    errors += 1
-                    print(f"[AUTO-CHECK] ❌ Error in verification @{acc.account}: {str(e)}")
+            except Exception as e:
+                errors += 1
+                print(f"[AUTO-CHECK] ❌ Error checking @{acc.account}: {str(e)}")
         
         print(f"[AUTO-CHECK] 🧵 User {user_id} check complete: {checked} checked, {found} found, {not_found} not found, {errors} errors")
         return {"checked": checked, "found": found, "not_found": not_found, "errors": errors}

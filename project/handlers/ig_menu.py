@@ -18,33 +18,30 @@ except ImportError:
     from services.ig_sessions import save_session
 
 
-def register_ig_menu_handlers(bot, session_factory) -> None:
-    """Register Instagram menu handlers."""
-    
-    def get_ig_menu_kb():
-        """Get Instagram menu keyboard with Mini App URL if configured."""
-        settings = get_settings()
-        return instagram_menu_kb(mini_app_url=settings.ig_mini_app_url if settings.ig_mini_app_url else None)
+def get_ig_menu_kb():
+    """Get Instagram menu keyboard with Mini App URL if configured."""
+    settings = get_settings()
+    return instagram_menu_kb(mini_app_url=settings.ig_mini_app_url if settings.ig_mini_app_url else None)
 
-    def process_message(message: dict, session_factory) -> None:
-        """Process Instagram menu messages."""
-        text = message.get("text", "")
-        chat_id = message["chat"]["id"]
-        
-        # Handle "Проверить через IG" by delegating to ig_simple_check
-        if text == "Проверить через IG":
-            if hasattr(bot, 'ig_simple_check_process_message'):
-                bot.ig_simple_check_process_message(message, session_factory)
-            else:
-                bot.send_message(chat_id, "⚠️ Обработчик проверки не зарегистрирован.")
-            return
-        
-        # Handle cancel button
-        if text == "❌ Отмена":
-            if chat_id in bot.fsm_states:
-                del bot.fsm_states[chat_id]
-            bot.send_message(chat_id, "❌ Добавление сессии отменено.", reply_markup=get_ig_menu_kb())
-            return
+async def process_message(message: dict, session_factory) -> None:
+    """Process Instagram menu messages."""
+    text = message.get("text", "")
+    chat_id = message["chat"]["id"]
+    
+    # Handle "Проверить через IG" by delegating to ig_simple_check
+    if text == "Проверить через IG":
+        if hasattr(bot, 'ig_simple_check_process_message'):
+            bot.ig_simple_check_process_message(message, session_factory)
+        else:
+            bot.send_message(chat_id, "⚠️ Обработчик проверки не зарегистрирован.")
+        return
+    
+    # Handle cancel button
+    if text == "❌ Отмена":
+        if chat_id in bot.fsm_states:
+            del bot.fsm_states[chat_id]
+        bot.send_message(chat_id, "❌ Добавление сессии отменено.", reply_markup=get_ig_menu_kb())
+        return
         
         if text == "Instagram":
             with session_factory() as session:
@@ -105,9 +102,15 @@ def register_ig_menu_handlers(bot, session_factory) -> None:
 
         elif text == "Назад в меню":
             with session_factory() as session:
+                try:
+                    from ..services.system_settings import get_global_verify_mode
+                except ImportError:
+                    from services.system_settings import get_global_verify_mode
+                
                 user = get_or_create_user(session, message["from"])
                 is_admin = user.role in ["admin", "superuser"]
-                bot.send_message(chat_id, "Главное меню", reply_markup=main_menu(is_admin))
+                verify_mode = get_global_verify_mode(session)
+                bot.send_message(chat_id, "Главное меню", reply_markup=main_menu(is_admin, verify_mode=verify_mode))
 
     def process_callback_query(callback_query: dict, session_factory) -> None:
         """Process Instagram menu callback queries."""
@@ -419,6 +422,36 @@ def register_ig_menu_handlers(bot, session_factory) -> None:
                 bot.send_message(chat_id, "Теперь введите пароль IG:")
                 return
 
+        elif state == "waiting_2fa_code":
+            # Обработка ввода 2FA кода
+            twofa_code = text.strip() if text else ""
+            
+            if not twofa_code or len(twofa_code) != 6 or not twofa_code.isdigit():
+                bot.send_message(
+                    chat_id,
+                    "❌ Неверный формат кода!\n\n"
+                    "📱 Введите 6-значный цифровой код из приложения аутентификатора или SMS:"
+                )
+                return
+            
+            # Получаем сохраненные объекты браузера
+            fsm_data = bot.fsm_states[chat_id]
+            page = fsm_data.get("page")
+            context = fsm_data.get("context")
+            browser = fsm_data.get("browser")
+            ig_username = fsm_data.get("ig_username")
+            
+            if not page:
+                bot.send_message(chat_id, "❌ Ошибка: сессия браузера потеряна. Попробуйте заново.")
+                del bot.fsm_states[chat_id]
+                return
+            
+            # Запускаем асинхронную обработку 2FA
+            import asyncio
+            asyncio.create_task(_handle_2fa_code(
+                bot, chat_id, page, context, browser, ig_username, twofa_code
+            ))
+
         elif state == "waiting_password":
             ig_password = text or ""
             ig_username = bot.fsm_states[chat_id].get("ig_username")
@@ -433,14 +466,23 @@ def register_ig_menu_handlers(bot, session_factory) -> None:
             
             try:
                 import asyncio
-                cookies = asyncio.run(playwright_login_and_get_cookies(
+                result = asyncio.run(playwright_login_and_get_cookies(
                     ig_username=ig_username,
                     ig_password=ig_password,
                     headless=settings.ig_headless,
                     login_timeout_ms=settings.ig_login_timeout_ms,
                     twofa_timeout_ms=settings.ig_2fa_timeout_ms,
                     proxy_url=None,  # Без прокси
+                    bot=bot,
+                    chat_id=chat_id,
                 ))
+                
+                # Проверяем, требуется ли 2FA
+                if isinstance(result, dict) and result.get("status") == "waiting_2fa":
+                    # Состояние уже установлено в функции, просто выходим
+                    return
+                
+                cookies = result
             except Exception as e:
                 del bot.fsm_states[chat_id]
                 error_msg = str(e)
@@ -608,7 +650,142 @@ def register_ig_menu_handlers(bot, session_factory) -> None:
                 bot.send_message(chat_id, f"❌ Ошибка при создании сессии: {e}")
                 return
 
+async def _handle_2fa_code(bot, chat_id, page, context, browser, ig_username, twofa_code):
+    """Обрабатывает ввод кода 2FA"""
+    try:
+        # Вводим код 2FA
+        print(f"🔐 Entering 2FA code: {twofa_code}")
+        
+        # Ищем поле для ввода кода
+        code_input = await page.query_selector('input[name="verificationCode"]')
+        if not code_input:
+            code_input = await page.query_selector('input[placeholder*="code" i]')
+        if not code_input:
+            code_input = await page.query_selector('input[type="text"]')
+        
+        if code_input:
+            await code_input.click()
+            await page.wait_for_timeout(1000)
+            await code_input.fill("")
+            await page.wait_for_timeout(500)
+            await code_input.type(twofa_code, delay=150)
+            await page.wait_for_timeout(2000)
+            print("✅ 2FA code entered")
+            
+            # Ищем кнопку подтверждения
+            submit_button = await page.query_selector('button[type="submit"]')
+            if submit_button:
+                await submit_button.click()
+                print("✅ 2FA submit button clicked")
+            else:
+                # Пробуем Enter
+                await page.keyboard.press("Enter")
+                print("✅ Pressed Enter for 2FA")
+            
+            # Ждем результат
+            await page.wait_for_timeout(5000)
+            current_url = page.url
+            print(f"🔍 2FA result URL: {current_url}")
+            
+            if "/accounts/login" in current_url or "two_factor" in current_url:
+                # 2FA не сработал
+                bot.send_message(
+                    chat_id,
+                    "❌ Неверный код 2FA!\n\n"
+                    "📱 Попробуйте еще раз или введите новый код:"
+                )
+                return
+            else:
+                # 2FA успешен, продолжаем
+                print("✅ 2FA successful!")
+                bot.send_message(chat_id, "✅ Код 2FA принят! Завершаю вход...")
+                
+                # Продолжаем с получением cookies
+                await _complete_login_and_save_cookies(
+                    bot, chat_id, page, context, browser, ig_username
+                )
+        else:
+            bot.send_message(
+                chat_id,
+                "❌ Не удалось найти поле для ввода кода 2FA.\n"
+                "Попробуйте заново или используйте импорт cookies."
+            )
+            del bot.fsm_states[chat_id]
+            
+    except Exception as e:
+        print(f"❌ 2FA error: {e}")
+        bot.send_message(
+            chat_id,
+            f"❌ Ошибка при вводе кода 2FA: {str(e)}\n\n"
+            "Попробуйте заново или используйте импорт cookies."
+        )
+        del bot.fsm_states[chat_id]
+
+async def _complete_login_and_save_cookies(bot, chat_id, page, context, browser, ig_username):
+    """Завершает вход и сохраняет cookies после успешного 2FA"""
+    try:
+        # Убираем всплывающие окна
+        try:
+            not_now_buttons = await page.query_selector_all('button:has-text("Not Now")')
+            for button in not_now_buttons:
+                try:
+                    await button.click()
+                    await page.wait_for_timeout(1000)
+                    print("💾 Dismissed popup")
+                except:
+                    pass
+        except:
+            pass
+        
+        # Ждем полной загрузки главной страницы
+        await page.wait_for_timeout(3000)
+        
+        # Получаем cookies
+        cookies = await context.cookies()
+        print(f"✅ Got {len(cookies)} cookies")
+        
+        # Закрываем браузер
+        await browser.close()
+        
+        # Сохраняем сессию
+        from ..services.ig_sessions import save_session
+        from ..models import get_or_create_user
+        from ..utils.encryptor import OptionalFernet
+        from ..config import get_settings
+        
+        settings = get_settings()
+        fernet = OptionalFernet(settings.fernet_key)
+        
+        with session_factory() as s:
+            user = get_or_create_user(s, {"id": chat_id, "first_name": "User"})
+            obj = save_session(
+                session=s,
+                user_id=user.id,
+                ig_username=ig_username,
+                cookies_json=cookies,
+                fernet=fernet,
+                ig_password=None,  # Password not saved for 2FA accounts
+            )
+        
+        del bot.fsm_states[chat_id]
+        bot.send_message(
+            chat_id, 
+            f"✅ Сессия @{ig_username} создана с 2FA (id={obj.id}).", 
+            reply_markup=get_ig_menu_kb()
+        )
+        
+    except Exception as e:
+        print(f"❌ Error completing login: {e}")
+        bot.send_message(
+            chat_id,
+            f"❌ Ошибка при завершении входа: {str(e)}\n\n"
+            "Попробуйте заново или используйте импорт cookies."
+        )
+        del bot.fsm_states[chat_id]
+
     # Register handlers
+    print(f"[IG-MENU] 🔧 Registering handlers for bot {id(bot)}")
     bot.ig_menu_process_message = process_message
     bot.ig_menu_process_callback_query = process_callback_query
     bot.ig_menu_process_instagram_flow = process_instagram_flow
+    print(f"[IG-MENU] ✅ Handlers registered: {hasattr(bot, 'ig_menu_process_message')}")

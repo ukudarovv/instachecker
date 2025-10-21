@@ -1,5 +1,6 @@
 """Final Instagram login via Playwright - based on successful test."""
 
+import time
 from typing import Optional, List, Dict, Any
 from playwright.async_api import async_playwright, TimeoutError as PWTimeoutError
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -33,6 +34,8 @@ async def playwright_login_and_get_cookies(
     twofa_timeout_ms: int,
     proxy_url: Optional[str] = None,
     user_agent: Optional[str] = None,
+    bot=None,
+    chat_id: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """
     Final login via Chromium - based on successful test algorithm.
@@ -64,6 +67,22 @@ async def playwright_login_and_get_cookies(
             print(f"🌐 Navigating to Instagram login page...")
             await page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=30000)
             await page.wait_for_timeout(5000)
+            
+            # Отправляем скриншот страницы логина
+            if bot and chat_id:
+                try:
+                    screenshot_path = f"screenshots/ig_login_{ig_username}_{int(time.time())}.png"
+                    await page.screenshot(path=screenshot_path)
+                    await bot.send_photo(
+                        chat_id,
+                        screenshot_path,
+                        f"🌐 Страница входа в Instagram для @{ig_username}"
+                    )
+                    import os
+                    os.remove(screenshot_path)
+                    print(f"📸 Login page screenshot sent to user")
+                except Exception as e:
+                    print(f"⚠️ Failed to send login screenshot: {e}")
             
             print(f"🔐 Logging in as @{ig_username}...")
             
@@ -146,9 +165,46 @@ async def playwright_login_and_get_cookies(
             # Проверяем на 2FA
             if "two_factor" in current_url:
                 print("🔐 Two-factor authentication required")
-                print("❌ Cannot proceed with 2FA automatically")
-                print("💡 Please use cookies import method instead")
-                raise Exception("2FA required - use cookies import method")
+                
+                # Отправляем скриншот страницы 2FA
+                if bot and chat_id:
+                    try:
+                        screenshot_path = f"screenshots/ig_2fa_{ig_username}_{int(time.time())}.png"
+                        await page.screenshot(path=screenshot_path)
+                        await bot.send_photo(
+                            chat_id,
+                            screenshot_path,
+                            f"🔐 Требуется двухфакторная аутентификация для @{ig_username}\n\n"
+                            f"📱 Введите код из приложения аутентификатора или SMS:"
+                        )
+                        import os
+                        os.remove(screenshot_path)
+                        print(f"📸 2FA screenshot sent to user")
+                    except Exception as e:
+                        print(f"⚠️ Failed to send 2FA screenshot: {e}")
+                
+                # Ждем ввода кода от пользователя
+                if bot and chat_id:
+                    # Сохраняем состояние для ожидания 2FA кода
+                    bot.fsm_states[chat_id] = {
+                        "state": "waiting_2fa_code",
+                        "ig_username": ig_username,
+                        "page": page,
+                        "context": context,
+                        "browser": browser
+                    }
+                    
+                    # Отправляем сообщение с инструкцией
+                    await bot.send_message(
+                        chat_id,
+                        "⏳ Ожидаю ввода кода 2FA...\n\n"
+                        "📱 Введите 6-значный код из приложения аутентификатора или SMS"
+                    )
+                    
+                    # Возвращаем специальный результат для ожидания 2FA
+                    return {"status": "waiting_2fa", "message": "2FA code required"}
+                else:
+                    raise Exception("2FA required - bot not available for interactive input")
             
             # Проверяем на вызов безопасности
             if "/challenge/" in current_url:

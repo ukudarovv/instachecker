@@ -85,3 +85,37 @@ def set_auto_check_interval(session: Session, minutes: int) -> SystemSettings:
     
     return set_setting(session, "auto_check_interval_minutes", str(minutes))
 
+
+def get_global_verify_mode(session: Session) -> str:
+    """
+    Get global verification mode.
+    
+    Args:
+        session: Database session
+        
+    Returns:
+        Global verification mode (default: api+instagram)
+    """
+    return get_setting(session, "global_verify_mode", "api+instagram")
+
+
+def set_global_verify_mode(session: Session, mode: str) -> SystemSettings:
+    """
+    Set global verification mode.
+    
+    Args:
+        session: Database session
+        mode: Verification mode
+        
+    Returns:
+        SystemSettings object
+    """
+    valid_modes = [
+        "api+instagram", "api+proxy", "api+proxy+instagram",
+        "instagram+proxy", "instagram", "proxy", "simple_monitor", "full_bypass"
+    ]
+    
+    if mode not in valid_modes:
+        raise ValueError(f"Invalid verification mode: {mode}")
+    
+    return set_setting(session, "global_verify_mode", mode)

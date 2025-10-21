@@ -86,9 +86,15 @@ def register_api_menu_handlers(dp: Dispatcher, SessionLocal: sessionmaker) -> No
         """Return to main menu."""
         await state.finish()
         with SessionLocal() as s:
+            try:
+                from ..services.system_settings import get_global_verify_mode
+            except ImportError:
+                from services.system_settings import get_global_verify_mode
+            
             user = get_or_create_user(s, message.from_user)
             is_admin = user.role in ["admin", "superuser"]
-            await message.answer("Главное меню:", reply_markup=main_menu(is_admin=is_admin))
+            verify_mode = get_global_verify_mode(s)
+            await message.answer("Главное меню:", reply_markup=main_menu(is_admin=is_admin, verify_mode=verify_mode))
 
     @dp.message_handler(Text(equals="Мои API ключи"))
     async def my_api_keys(message: types.Message):

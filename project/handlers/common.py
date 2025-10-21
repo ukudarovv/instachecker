@@ -31,6 +31,11 @@ def register_common_handlers(dp, SessionLocal):
     async def cmd_start(message):
         """Handle /start command."""
         with SessionLocal() as session:
+            try:
+                from ..services.system_settings import get_global_verify_mode
+            except ImportError:
+                from services.system_settings import get_global_verify_mode
+            
             user = get_or_create_user(session, message.from_user)
             if not ensure_active(user):
                 await message.answer(
@@ -38,22 +43,29 @@ def register_common_handlers(dp, SessionLocal):
                     "Попроси администратора выдать доступ, после чего станет доступно меню."
                 )
                 return
+            verify_mode = get_global_verify_mode(session)
             await message.answer(
                 "Главное меню:",
-                reply_markup=main_menu(is_admin=ensure_admin(user))
+                reply_markup=main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode)
             )
 
     @dp.message_handler(lambda m: m.text and m.text.lower() in {"меню", "menu"})
     async def show_menu(message):
         """Handle Menu button."""
         with SessionLocal() as session:
+            try:
+                from ..services.system_settings import get_global_verify_mode
+            except ImportError:
+                from services.system_settings import get_global_verify_mode
+            
             user = get_or_create_user(session, message.from_user)
             if not ensure_active(user):
                 await message.answer("⛔ Доступ пока не выдан. Обратись к администратору.")
                 return
+            verify_mode = get_global_verify_mode(session)
             await message.answer(
                 "Главное меню:",
-                reply_markup=main_menu(is_admin=ensure_admin(user))
+                reply_markup=main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode)
             )
 
     # Заглушки для пунктов меню (пока только верификация доступа)

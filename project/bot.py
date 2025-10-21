@@ -1,5 +1,6 @@
 """Main bot entrypoint."""
 
+import asyncio
 import time
 import json
 import os
@@ -19,7 +20,7 @@ try:
     from .handlers.accounts_actions import register_accounts_actions_handlers
     from .handlers.proxy_menu import register_proxy_menu_handlers
     from .handlers.proxy_add import register_proxy_add_handlers
-    from .handlers.ig_menu import register_ig_menu_handlers
+    from .handlers.ig_menu_simple import register_ig_menu_handlers
     from .handlers.ig_simple_check import register_ig_simple_check_handlers
     from .cron import start_cron
     # check_now_adv removed - functionality integrated directly into bot.py
@@ -40,7 +41,7 @@ except ImportError:
     from handlers.accounts_actions import register_accounts_actions_handlers
     from handlers.proxy_menu import register_proxy_menu_handlers
     from handlers.proxy_add import register_proxy_add_handlers
-    from handlers.ig_menu import register_ig_menu_handlers
+    from handlers.ig_menu_simple import register_ig_menu_handlers
     from handlers.ig_simple_check import register_ig_simple_check_handlers
     from cron import start_cron
     # check_now_adv removed - functionality integrated directly into bot.py
@@ -104,7 +105,7 @@ class TelegramBot:
                 print(f"Error sending message (retry): {e2}")
             return False
     
-    def send_photo(self, chat_id: int, photo_path: str, caption: str = None) -> bool:
+    async def send_photo(self, chat_id: int, photo_path: str, caption: str = None) -> bool:
         """Send photo to chat."""
         url = f"{self.api_url}/sendPhoto"
         data = {"chat_id": chat_id}
@@ -118,9 +119,11 @@ class TelegramBot:
                 files = {'photo': photo}
                 response = requests.post(url, data=data, files=files, timeout=30)
                 response.raise_for_status()
-                return response.json().get("ok", False)
+                result = response.json()
+                print(f"[BOT] 📸 Photo send result: {result}")
+                return result.get("ok", False)
         except (requests.RequestException, IOError) as e:
-            print(f"Error sending photo: {e}")
+            print(f"[BOT] ❌ Error sending photo: {e}")
             return False
     
     def edit_message_text(self, chat_id: int, message_id: int, text: str, reply_markup: dict = None) -> bool:
@@ -302,6 +305,7 @@ class TelegramBot:
         chat_id = callback_query["message"]["chat"]["id"]
         callback_data = callback_query["data"]
         message_id = callback_query["message"]["message_id"]
+        
         
         # Import access helpers
         try:
@@ -498,15 +502,18 @@ class TelegramBot:
                     try:
                         from .utils.access import ensure_admin
                         from .keyboards import main_menu
+                        from .services.system_settings import get_global_verify_mode
                     except ImportError:
                         from utils.access import ensure_admin
                         from keyboards import main_menu
+                        from services.system_settings import get_global_verify_mode
                     
                     is_admin = ensure_admin(user)
+                    verify_mode = get_global_verify_mode(session)
                     if is_done:
-                        self.send_message(chat_id, "📭 Активных аккаунтов больше нет.", main_menu(is_admin=is_admin))
+                        self.send_message(chat_id, "📭 Активных аккаунтов больше нет.", main_menu(is_admin=is_admin, verify_mode=verify_mode))
                     else:
-                        self.send_message(chat_id, "📭 Аккаунтов на проверке больше нет.", main_menu(is_admin=is_admin))
+                        self.send_message(chat_id, "📭 Аккаунтов на проверке больше нет.", main_menu(is_admin=is_admin, verify_mode=verify_mode))
                 
             elif callback_data.startswith("delno:"):
                 # Cancel delete - restore account card
@@ -538,55 +545,350 @@ class TelegramBot:
                 )
                 self.answer_callback_query(callback_query["id"])
                 
-            elif callback_data.startswith("prx_off:") or callback_data.startswith("prx_on:") or callback_data.startswith("prx_pinc:") or callback_data.startswith("prx_pdec:") or callback_data.startswith("prx_del:"):
-                # Handle proxy actions
-                action, pid = callback_data.split(":")
-                pid = int(pid)
+            # Proxy pagination
+            elif callback_data.startswith("ppg:"):
+                # Navigate to proxy page
+                _, page_s = callback_data.split(":")
+                page = int(page_s)
                 
                 try:
-                    from .models import Proxy
+                    from .services.proxy_service import get_proxies_page, count_proxies
+                    from .services.proxy_formatting import format_proxies_list_header
+                    from .keyboards import proxies_list_kb, pagination_kb
+                except ImportError:
+                    from services.proxy_service import get_proxies_page, count_proxies
+                    from services.proxy_formatting import format_proxies_list_header
+                    from keyboards import proxies_list_kb, pagination_kb
+                
+                with session_factory() as session:
+                    proxies, total_pages = get_proxies_page(session, user.id, page=page, per_page=10)
+                    stats = count_proxies(session, user.id)
+                    
+                    header = format_proxies_list_header(
+                        page=page,
+                        total_pages=total_pages,
+                        total_count=stats['total'],
+                        active_count=stats['active']
+                    )
+                    
+                    combined_keyboard = {
+                        "inline_keyboard": proxies_list_kb(proxies)["inline_keyboard"] + 
+                                        pagination_kb("ppg", page, total_pages)["inline_keyboard"]
+                    }
+                    
+                    self.edit_message_text(chat_id, message_id, header, combined_keyboard)
+                    self.answer_callback_query(callback_query["id"])
+            
+            # Show proxy card
+            elif callback_data.startswith("pinfo:"):
+                _, pid_s = callback_data.split(":")
+                pid = int(pid_s)
+                
+                try:
+                    from .services.proxy_service import get_proxy_by_id
+                    from .services.proxy_formatting import format_proxy_card
                     from .keyboards import proxy_card_kb
                 except ImportError:
-                    from models import Proxy
+                    from services.proxy_service import get_proxy_by_id
+                    from services.proxy_formatting import format_proxy_card
                     from keyboards import proxy_card_kb
                 
                 with session_factory() as session:
-                    p = session.query(Proxy).filter(Proxy.id == pid, Proxy.user_id == user.id).one_or_none()
-                    if not p:
+                    proxy = get_proxy_by_id(session, user.id, pid)
+                    
+                    if not proxy:
                         self.answer_callback_query(callback_query["id"], "Не найдено/нет доступа", show_alert=True)
                         return
                     
-                    if action == "prx_off":
-                        p.is_active = False
-                    elif action == "prx_on":
-                        p.is_active = True
-                    elif action == "prx_pinc":
-                        p.priority = min(10, (p.priority or 5) + 1)
-                    elif action == "prx_pdec":
-                        p.priority = max(1, (p.priority or 5) - 1)
-                    elif action == "prx_del":
-                        session.delete(p)
-                        session.commit()
-                        self.send_message(chat_id, "🗑 Прокси удалён.")
-                        self.answer_callback_query(callback_query["id"])
+                    card_text = format_proxy_card(proxy)
+                    self.edit_message_text(chat_id, message_id, card_text, proxy_card_kb(pid, page=1))
+                    self.answer_callback_query(callback_query["id"])
+            
+            # Activate/Deactivate proxy
+            elif callback_data.startswith("pactive:") or callback_data.startswith("pinactive:"):
+                parts = callback_data.split(":")
+                action = parts[0]
+                pid = int(parts[1])
+                page = int(parts[2])
+                
+                try:
+                    from .services.proxy_service import get_proxy_by_id
+                    from .services.proxy_formatting import format_proxy_card
+                    from .keyboards import proxy_card_kb
+                except ImportError:
+                    from services.proxy_service import get_proxy_by_id
+                    from services.proxy_formatting import format_proxy_card
+                    from keyboards import proxy_card_kb
+                
+                with session_factory() as session:
+                    proxy = get_proxy_by_id(session, user.id, pid)
+                    
+                    if not proxy:
+                        self.answer_callback_query(callback_query["id"], "Не найдено/нет доступа", show_alert=True)
                         return
                     
-                    session.commit()
-                    session.refresh(p)
+                    if action == "pactive":
+                        proxy.is_active = True
+                        msg = "✅ Прокси активирован"
+                    else:
+                        proxy.is_active = False
+                        msg = "❌ Прокси деактивирован"
                     
-                    # Format proxy info
-                    creds = f"{p.username}:{p.password}@" if p.username and p.password else ""
-                    proxy_text = (
-                        f"🧩 Proxy #{p.id}\n"
-                        f"• {p.scheme}://{creds}{p.host}\n"
-                        f"• active: {p.is_active} | prio: {p.priority}\n"
-                        f"• used: {p.used_count} | success: {p.success_count} | fail_streak: {p.fail_streak}\n"
-                        f"• cooldown_until: {p.cooldown_until}\n"
-                        f"• last_checked: {p.last_checked}"
+                    session.commit()
+                    session.refresh(proxy)
+                    
+                    card_text = format_proxy_card(proxy)
+                    self.edit_message_text(chat_id, message_id, card_text, proxy_card_kb(pid, page))
+                    self.answer_callback_query(callback_query["id"], msg)
+            
+            # Delete proxy confirmation
+            elif callback_data.startswith("pdelask:"):
+                parts = callback_data.split(":")
+                pid = int(parts[1])
+                page = int(parts[2])
+                
+                try:
+                    from .services.proxy_service import get_proxy_by_id
+                except ImportError:
+                    from services.proxy_service import get_proxy_by_id
+                
+                with session_factory() as session:
+                    proxy = get_proxy_by_id(session, user.id, pid)
+                    
+                    if not proxy:
+                        self.answer_callback_query(callback_query["id"], "Не найдено/нет доступа", show_alert=True)
+                        return
+                    
+                    confirm_text = (
+                        f"❗ <b>Удалить прокси?</b>\n\n"
+                        f"🌐 {proxy.scheme}://{proxy.host}\n\n"
+                        f"⚠️ Это действие нельзя отменить!"
                     )
                     
-                    self.edit_message_text(chat_id, message_id, proxy_text, proxy_card_kb(p.id))
+                    confirm_kb = {
+                        "inline_keyboard": [
+                            [
+                                {"text": "✅ Да, удалить", "callback_data": f"pdelok:{pid}:{page}"},
+                                {"text": "❌ Отмена", "callback_data": f"pdelno:{pid}:{page}"}
+                            ]
+                        ]
+                    }
+                    
+                    self.edit_message_text(chat_id, message_id, confirm_text, confirm_kb)
                     self.answer_callback_query(callback_query["id"])
+            
+            # Confirm delete proxy
+            elif callback_data.startswith("pdelok:"):
+                parts = callback_data.split(":")
+                pid = int(parts[1])
+                page = int(parts[2])
+                
+                try:
+                    from .services.proxy_service import get_proxy_by_id, delete_proxy, get_proxies_page, count_proxies
+                    from .services.proxy_formatting import format_proxies_list_header
+                    from .keyboards import proxies_list_kb, pagination_kb, proxies_menu_kb
+                except ImportError:
+                    from services.proxy_service import get_proxy_by_id, delete_proxy, get_proxies_page, count_proxies
+                    from services.proxy_formatting import format_proxies_list_header
+                    from keyboards import proxies_list_kb, pagination_kb, proxies_menu_kb
+                
+                with session_factory() as session:
+                    proxy = get_proxy_by_id(session, user.id, pid)
+                    
+                    if not proxy:
+                        self.answer_callback_query(callback_query["id"], "Не найдено/нет доступа", show_alert=True)
+                        return
+                    
+                    proxy_url = f"{proxy.scheme}://{proxy.host}"
+                    delete_proxy(session, proxy)
+                
+                # Delete message
+                self.delete_message(chat_id, message_id)
+                
+                # Show popup
+                self.answer_callback_query(callback_query["id"], f"✅ Прокси {proxy_url} удален", show_alert=True)
+                
+                # Show updated list
+                with session_factory() as session:
+                    proxies, total_pages = get_proxies_page(session, user.id, page=1, per_page=10)
+                    
+                    if proxies:
+                        stats = count_proxies(session, user.id)
+                        header = format_proxies_list_header(
+                            page=1,
+                            total_pages=total_pages,
+                            total_count=stats['total'],
+                            active_count=stats['active']
+                        )
+                        
+                        combined_keyboard = {
+                            "inline_keyboard": proxies_list_kb(proxies)["inline_keyboard"] + 
+                                            pagination_kb("ppg", 1, total_pages)["inline_keyboard"]
+                        }
+                        
+                        self.send_message(chat_id, header, combined_keyboard)
+                    else:
+                        self.send_message(chat_id, "📭 У вас больше нет прокси.", proxies_menu_kb())
+            
+            # Cancel delete proxy
+            elif callback_data.startswith("pdelno:"):
+                parts = callback_data.split(":")
+                pid = int(parts[1])
+                page = int(parts[2])
+                
+                try:
+                    from .services.proxy_service import get_proxy_by_id
+                    from .services.proxy_formatting import format_proxy_card
+                    from .keyboards import proxy_card_kb
+                except ImportError:
+                    from services.proxy_service import get_proxy_by_id
+                    from services.proxy_formatting import format_proxy_card
+                    from keyboards import proxy_card_kb
+                
+                with session_factory() as session:
+                    proxy = get_proxy_by_id(session, user.id, pid)
+                    
+                    if not proxy:
+                        self.answer_callback_query(callback_query["id"], "Не найдено/нет доступа", show_alert=True)
+                        return
+                    
+                    card_text = format_proxy_card(proxy)
+                    self.edit_message_text(chat_id, message_id, card_text, proxy_card_kb(pid, page))
+                    self.answer_callback_query(callback_query["id"], "Отменено")
+            
+            # Proxy test from card
+            elif callback_data.startswith("ptest:"):
+                parts = callback_data.split(":")
+                pid = int(parts[1])
+                page = int(parts[2])
+                
+                # Start FSM for username input
+                self.fsm_states[user_id] = {
+                    "state": "waiting_proxy_test_username",
+                    "proxy_id": pid,
+                    "page": page,
+                    "test_all": False
+                }
+                
+                try:
+                    from .keyboards import cancel_kb
+                except ImportError:
+                    from keyboards import cancel_kb
+                
+                message = (
+                    f"🧪 <b>Тестирование прокси</b>\n\n"
+                    f"Введите Instagram username для проверки:\n\n"
+                    f"💡 Примеры:\n"
+                    f"  • instagram\n"
+                    f"  • cristiano\n"
+                    f"  • leomessi\n\n"
+                    f"Бот проверит доступность аккаунта через прокси и сделает скриншот."
+                )
+                
+                self.edit_message_text(chat_id, message_id, message, cancel_kb())
+                self.answer_callback_query(callback_query["id"])
+            
+            # Test mode selection - all proxies
+            elif callback_data == "ptest_all":
+                # Start FSM for username input
+                self.fsm_states[user_id] = {
+                    "state": "waiting_proxy_test_username",
+                    "test_all": True
+                }
+                
+                try:
+                    from .keyboards import cancel_kb
+                    from .models import Proxy
+                except ImportError:
+                    from keyboards import cancel_kb
+                    from models import Proxy
+                
+                with session_factory() as session:
+                    active_count = session.query(Proxy).filter(
+                        Proxy.user_id == user.id,
+                        Proxy.is_active == True
+                    ).count()
+                
+                message = (
+                    f"🧪 <b>Тестирование всех прокси</b>\n\n"
+                    f"📊 Будет протестировано: {active_count} прокси\n\n"
+                    f"Введите Instagram username для проверки:\n\n"
+                    f"💡 Примеры:\n"
+                    f"  • instagram (рекомендуется)\n"
+                    f"  • cristiano\n"
+                    f"  • nasa\n\n"
+                    f"Бот проверит каждый прокси на этом аккаунте и покажет результаты."
+                )
+                
+                self.edit_message_text(chat_id, message_id, message, cancel_kb())
+                self.answer_callback_query(callback_query["id"])
+            
+            # Test mode selection - select specific proxy
+            elif callback_data == "ptest_select":
+                try:
+                    from .models import Proxy
+                    from .keyboards import proxy_selection_for_test_kb, proxies_menu_kb
+                except ImportError:
+                    from models import Proxy
+                    from keyboards import proxy_selection_for_test_kb, proxies_menu_kb
+                
+                with session_factory() as session:
+                    active_proxies = session.query(Proxy).filter(
+                        Proxy.user_id == user.id,
+                        Proxy.is_active == True
+                    ).order_by(Proxy.priority.asc()).all()
+                    
+                    if not active_proxies:
+                        self.answer_callback_query(callback_query["id"], "Нет активных прокси", show_alert=True)
+                        return
+                
+                message = (
+                    f"🎯 <b>Выбор прокси для тестирования</b>\n\n"
+                    f"Выберите прокси из списка:"
+                )
+                
+                self.edit_message_text(chat_id, message_id, message, proxy_selection_for_test_kb(active_proxies))
+                self.answer_callback_query(callback_query["id"])
+            
+            # Test specific proxy (after selection)
+            elif callback_data.startswith("ptest_one:"):
+                _, pid_s = callback_data.split(":")
+                pid = int(pid_s)
+                
+                # Start FSM for username input
+                self.fsm_states[user_id] = {
+                    "state": "waiting_proxy_test_username",
+                    "proxy_id": pid,
+                    "test_all": False
+                }
+                
+                try:
+                    from .keyboards import cancel_kb
+                except ImportError:
+                    from keyboards import cancel_kb
+                
+                message = (
+                    f"🧪 <b>Тестирование прокси</b>\n\n"
+                    f"Введите Instagram username для проверки:\n\n"
+                    f"💡 Примеры:\n"
+                    f"  • instagram (рекомендуется)\n"
+                    f"  • cristiano\n"
+                    f"  • nasa\n\n"
+                    f"Бот проверит аккаунт через прокси и сделает скриншот."
+                )
+                
+                self.edit_message_text(chat_id, message_id, message, cancel_kb())
+                self.answer_callback_query(callback_query["id"])
+            
+            # Cancel proxy test
+            elif callback_data == "ptest_cancel":
+                try:
+                    from .keyboards import proxies_menu_kb
+                except ImportError:
+                    from keyboards import proxies_menu_kb
+                
+                self.edit_message_text(chat_id, message_id, "❌ Тестирование отменено", proxies_menu_kb())
+                self.answer_callback_query(callback_query["id"])
             
             elif callback_data.startswith("ig_mode:") or callback_data.startswith("ig_session:") or callback_data.startswith("ig_delete:") or callback_data == "ig_back" or callback_data == "ig_sessions":
                 # Instagram callbacks
@@ -688,73 +990,74 @@ class TelegramBot:
                     self.edit_message_text(chat_id, message_id, info_text, keyboard)
                     self.answer_callback_query(callback_query["id"])
             
-            elif callback_data.startswith("set_verify_mode:"):
-                # User wants to change verification mode
+            elif callback_data.startswith("admin_verify_mode:"):
+                # Admin wants to change global verification mode
                 new_mode = callback_data.split(":")[1]
                 
+                
+                # Check admin permissions
+                if not ensure_admin(user):
+                    self.answer_callback_query(callback_query["id"], "⛔ Доступ запрещен", show_alert=True)
+                    return
+                
+                # Update global mode
+                try:
+                    from .services.system_settings import set_global_verify_mode, get_global_verify_mode
+                except ImportError:
+                    from services.system_settings import set_global_verify_mode, get_global_verify_mode
+                
                 with session_factory() as session:
-                    current_user = session.query(User).get(user.id)
-                    if not current_user:
-                        self.answer_callback_query(callback_query["id"], "❌ Пользователь не найден", show_alert=True)
-                        return
-                    
-                    # Update mode
-                    current_user.verify_mode = new_mode
-                    session.commit()
-                    
-                    mode_name = {
-                        "api+instagram": "🔑 API + 📸 Instagram",
-                        "api+proxy": "🔑 API + 🌐 Proxy"
-                    }.get(new_mode, new_mode)
-                    
-                    # Update message to show new selection
-                    mode_descriptions = {
-                        "api+instagram": (
-                            "🔑 <b>API + 📸 Instagram (с логином)</b>\n\n"
-                            "Двухэтапная проверка:\n"
-                            "1️⃣ Быстрая проверка через API (1 сек)\n"
-                            "2️⃣ Проверка через Instagram с авторизацией (5 сек)\n\n"
-                            "✅ Полная информация (подписчики, посты)\n"
-                            "✅ Скриншоты профиля\n"
-                            "✅ Доступ к приватным профилям\n"
-                            "❗ Требуется Instagram сессия"
-                        ),
-                        "api+proxy": (
-                            "🔑 <b>API + 🌐 Proxy (без логина)</b>\n\n"
-                            "Двухэтапная проверка:\n"
-                            "1️⃣ Быстрая проверка через API (1 сек)\n"
-                            "2️⃣ Проверка через Proxy без авторизации (5 сек)\n\n"
-                            "✅ Не требует Instagram аккаунт\n"
-                            "✅ Скриншоты публичных страниц\n"
-                            "✅ Минимальный риск блокировки\n"
-                            "❗ Требуется активный Proxy"
-                        )
-                    }
-                    
-                    current_description = mode_descriptions.get(new_mode, "❓ Неизвестный режим")
-                    
-                    message = (
-                        f"🔄 <b>Текущий режим проверки</b>\n\n"
-                        f"{current_description}\n\n"
-                        f"Выберите новый режим проверки:"
-                    )
-                    
-                    try:
-                        from .keyboards import verify_mode_selection_kb
-                    except ImportError:
-                        from keyboards import verify_mode_selection_kb
-                    self.edit_message_text(chat_id, message_id, message, verify_mode_selection_kb(new_mode))
-                    self.answer_callback_query(callback_query["id"], f"✅ Режим изменен на {mode_name}")
+                    # Логируем смену режима
+                    old_mode = get_global_verify_mode(session)
+                    set_global_verify_mode(session, new_mode)
+                    print(f"[ADMIN] 🔄 Режим проверки изменен администратором {user.username} (ID: {user_id})")
+                    print(f"[ADMIN] 📊 Старый режим: {old_mode} → Новый режим: {new_mode}")
+                    print(f"[ADMIN] 🌍 Изменение применяется ко всем пользователям")
+                
+                # Get mode name for display
+                mode_names = {
+                    "api+instagram": "API + Instagram",
+                    "api+proxy": "API + Proxy", 
+                    "api+proxy+instagram": "API + Proxy + Instagram",
+                    "instagram+proxy": "Instagram + Proxy",
+                    "instagram": "Только Instagram",
+                    "proxy": "Только Proxy"
+                }
+                mode_name = mode_names.get(new_mode, new_mode)
+                
+                # Update message
+                try:
+                    from .keyboards import admin_verify_mode_selection_kb
+                except ImportError:
+                    from keyboards import admin_verify_mode_selection_kb
+                
+                self.edit_message_text(
+                    chat_id,
+                    message_id,
+                    f"🔧 **Режим проверки**\n\n"
+                    f"Текущий режим: **{new_mode}**\n\n"
+                    f"Выберите новый режим проверки для всех пользователей:",
+                    reply_markup=admin_verify_mode_selection_kb(new_mode)
+                )
+                
+                self.answer_callback_query(callback_query["id"], f"✅ Глобальный режим изменен на {mode_name}")
+            
+            elif callback_data.startswith("set_verify_mode:"):
+                # User wants to change verification mode (DISABLED - only admins can change)
+                self.answer_callback_query(callback_query["id"], "⛔ Только администраторы могут изменять режим проверки", show_alert=True)
             
             elif callback_data == "close_settings":
                 # Close settings menu - go back to main menu
                 try:
                     from .keyboards import main_menu
                     from .utils.access import ensure_admin
+                    from .services.system_settings import get_global_verify_mode
                 except ImportError:
                     from keyboards import main_menu
                     from utils.access import ensure_admin
-                self.edit_message_text(chat_id, message_id, "Главное меню:", main_menu(ensure_admin(user)))
+                    from services.system_settings import get_global_verify_mode
+                verify_mode = get_global_verify_mode(session)
+                self.edit_message_text(chat_id, message_id, "Главное меню:", main_menu(ensure_admin(user), verify_mode=verify_mode))
                 self.answer_callback_query(callback_query["id"], "✅ Настройки закрыты")
             
             elif callback_data == "show_inactive_accounts" or callback_data == "close_expiry_info":
@@ -875,7 +1178,7 @@ class TelegramBot:
             else:
                 self.answer_callback_query(callback_query["id"])
 
-    def process_message(self, message: Dict[str, Any], session_factory) -> None:
+    async def process_message(self, message: Dict[str, Any], session_factory) -> None:
         """Process incoming message."""
         chat_id = message.get("chat", {}).get("id")
         text = message.get("text", "")
@@ -908,7 +1211,12 @@ class TelegramBot:
                     )
                     return
                 
-                keyboard = main_menu(is_admin=ensure_admin(user))
+                try:
+                    from .services.system_settings import get_global_verify_mode
+                except ImportError:
+                    from services.system_settings import get_global_verify_mode
+                verify_mode = get_global_verify_mode(session)
+                keyboard = main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode)
                 self.send_message(chat_id, "Главное меню:", keyboard)
             
             elif text and text.lower() in {"меню", "menu"}:
@@ -916,7 +1224,12 @@ class TelegramBot:
                     self.send_message(chat_id, "⛔ Доступ пока не выдан. Обратись к администратору.")
                     return
                 
-                keyboard = main_menu(is_admin=ensure_admin(user))
+                try:
+                    from .services.system_settings import get_global_verify_mode
+                except ImportError:
+                    from services.system_settings import get_global_verify_mode
+                verify_mode = get_global_verify_mode(session)
+                keyboard = main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode)
                 self.send_message(chat_id, "Главное меню:", keyboard)
             
             elif text == "Добавить аккаунт":
@@ -936,18 +1249,21 @@ class TelegramBot:
                 try:
                     from .services.accounts import get_accounts_page
                     from .keyboards import accounts_list_kb, pagination_kb
+                    from .services.system_settings import get_global_verify_mode
                 except ImportError:
                     from services.accounts import get_accounts_page
                     from keyboards import accounts_list_kb, pagination_kb
+                    from services.system_settings import get_global_verify_mode
                 
                 with session_factory() as session:
+                    verify_mode = get_global_verify_mode(session)
                     items, total_pages = get_accounts_page(session, user.id, done=True, page=1)
                     if not items:
-                        self.send_message(chat_id, "📭 Активных аккаунтов пока нет.", main_menu(is_admin=ensure_admin(user)))
+                        self.send_message(chat_id, "📭 Активных аккаунтов пока нет.", main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode))
                         return
                     
                     # Send main menu first
-                    self.send_message(chat_id, "📋 Активные аккаунты:", main_menu(is_admin=ensure_admin(user)))
+                    self.send_message(chat_id, "📋 Активные аккаунты:", main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode))
                     
                     # Send combined list with pagination
                     list_text = "Выберите аккаунт:"
@@ -965,18 +1281,21 @@ class TelegramBot:
                 try:
                     from .services.accounts import get_accounts_page
                     from .keyboards import accounts_list_kb, pagination_kb
+                    from .services.system_settings import get_global_verify_mode
                 except ImportError:
                     from services.accounts import get_accounts_page
                     from keyboards import accounts_list_kb, pagination_kb
+                    from services.system_settings import get_global_verify_mode
                 
                 with session_factory() as session:
+                    verify_mode = get_global_verify_mode(session)
                     items, total_pages = get_accounts_page(session, user.id, done=False, page=1)
                     if not items:
-                        self.send_message(chat_id, "📭 Аккаунтов на проверке нет.", main_menu(is_admin=ensure_admin(user)))
+                        self.send_message(chat_id, "📭 Аккаунтов на проверке нет.", main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode))
                         return
                     
                     # Send main menu first
-                    self.send_message(chat_id, "🕒 Аккаунты на проверке:", main_menu(is_admin=ensure_admin(user)))
+                    self.send_message(chat_id, "🕒 Аккаунты на проверке:", main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode))
                     
                     # Send combined list with pagination
                     list_text = "Выберите аккаунт:"
@@ -990,7 +1309,13 @@ class TelegramBot:
                 # Cancel any FSM operation
                 if user_id in self.fsm_states:
                     del self.fsm_states[user_id]
-                keyboard = main_menu(is_admin=ensure_admin(user))
+                try:
+                    from .services.system_settings import get_global_verify_mode
+                except ImportError:
+                    from services.system_settings import get_global_verify_mode
+                with session_factory() as session:
+                    verify_mode = get_global_verify_mode(session)
+                keyboard = main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode)
                 self.send_message(chat_id, "❌ Отменено.", keyboard)
             
             elif user_id in self.fsm_states:
@@ -1025,9 +1350,22 @@ class TelegramBot:
                     
                     # Check for duplicates and create account immediately
                     with session_factory() as session:
+                        try:
+                            from .services.system_settings import get_global_verify_mode
+                        except ImportError:
+                            from services.system_settings import get_global_verify_mode
+                        
+                        verify_mode = get_global_verify_mode(session)
+                        
                         if find_duplicate(session, user.id, username):
                             del self.fsm_states[user_id]
-                            keyboard = main_menu(is_admin=ensure_admin(user))
+                            # Get verify_mode for keyboard
+                            try:
+                                from .services.system_settings import get_global_verify_mode
+                            except ImportError:
+                                from services.system_settings import get_global_verify_mode
+                            verify_mode = get_global_verify_mode(session)
+                            keyboard = main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode)
                             self.send_message(chat_id, 
                                 "⚠️ Такой аккаунт уже есть у вас в списке.\n"
                                 "Откройте «Активные аккаунты» или добавьте другой.", 
@@ -1037,12 +1375,19 @@ class TelegramBot:
                         
                         # Create account with 30 days by default
                         acc = create_account(session, user.id, username, 30)
+                        
+                        # Get verify_mode for keyboard
+                        try:
+                            from .services.system_settings import get_global_verify_mode
+                        except ImportError:
+                            from services.system_settings import get_global_verify_mode
+                        verify_mode_for_menu = get_global_verify_mode(session)
                     
                     # Clear FSM state
                     del self.fsm_states[user_id]
                     
                     # Send success message
-                    keyboard = main_menu(is_admin=ensure_admin(user))
+                    keyboard = main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode_for_menu)
                     self.send_message(chat_id, 
                         f"✅ Аккаунт <a href='https://www.instagram.com/{username}/'>@{username}</a> добавлен!\n\n"
                         f"📅 Период мониторинга: 30 дней\n"
@@ -1052,15 +1397,13 @@ class TelegramBot:
                         keyboard
                     )
                     
-                    # Auto-check account via hybrid method in separate thread
+                    # Auto-check account via main checker in separate thread
                     try:
-                        from .services.hybrid_checker import check_account_hybrid
-                        from .services.ig_sessions import get_active_session
+                        from .services.main_checker import check_account_main
                         from .utils.encryptor import OptionalFernet
                         from .config import get_settings
                     except ImportError:
-                        from services.hybrid_checker import check_account_hybrid
-                        from services.ig_sessions import get_active_session
+                        from services.main_checker import check_account_main
                         from utils.encryptor import OptionalFernet
                         from config import get_settings
                     
@@ -1085,25 +1428,24 @@ class TelegramBot:
                                     # Skip check if Instagram mode but no session
                                     self.send_message(user.id, f"ℹ️ <a href='https://www.instagram.com/{username}/'>@{username}</a> добавлен. Для проверки нужна IG-сессия.")
                                 else:
-                                    result = loop.run_until_complete(check_account_hybrid(
+                                    result = loop.run_until_complete(check_account_main(
+                                        username=username,
                                         session=session,
                                         user_id=user.id,
-                                        username=username,
-                                        ig_session=ig_session,
-                                        fernet=fernet,
-                                        verify_mode=verify_mode
+                                        screenshot_path=f"screenshots/{username}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
                                     ))
                                     
                                     # Send result based on check outcome
-                                    if result.get("exists") is True:
+                                    success, message, screenshot_path = result
+                                    
+                                    if success:
                                         # Send success message with screenshot if available
-                                        success_message = f"✅ <a href='https://www.instagram.com/{username}/'>@{username}</a> уже активен!"
+                                        success_message = f"✅ <a href='https://www.instagram.com/{username}/'>@{username}</a> найден!\n📸 {message}"
                                         self.send_message(user.id, success_message)
                                         
                                         # Send screenshot if available
-                                        if result.get("screenshot_path"):
+                                        if screenshot_path:
                                             import os
-                                            screenshot_path = result["screenshot_path"]
                                             print(f"[AUTO-CHECK] 📸 Screenshot path found: {screenshot_path}")
                                             
                                             if os.path.exists(screenshot_path):
@@ -1111,17 +1453,18 @@ class TelegramBot:
                                                 try:
                                                     print(f"[AUTO-CHECK] 📸 Sending screenshot to user {user.id}...")
                                                     # Send photo
-                                                    success = self.send_photo(
+                                                    success = loop.run_until_complete(self.send_photo(
                                                         user.id,
                                                         screenshot_path,
                                                         f'📸 <a href="https://www.instagram.com/{username}/">@{username}</a>'
-                                                    )
+                                                    ))
                                                     
                                                     if success:
                                                         print(f"[AUTO-CHECK] 📸 Screenshot sent successfully!")
-                                                        # Delete screenshot after sending
-                                                        os.remove(screenshot_path)
-                                                        print(f"[AUTO-CHECK] 📸 Screenshot deleted: {screenshot_path}")
+                                                        # Delete screenshot after sending (TEMPORARILY DISABLED)
+                                                        # os.remove(screenshot_path)
+                                                        # print(f"[AUTO-CHECK] 📸 Screenshot deleted: {screenshot_path}")
+                                                        print(f"[AUTO-CHECK] 📸 Screenshot kept: {screenshot_path}")
                                                     else:
                                                         print(f"[AUTO-CHECK] ⚠️ Screenshot send returned False")
                                                 except Exception as e:
@@ -1130,12 +1473,10 @@ class TelegramBot:
                                                     traceback.print_exc()
                                             else:
                                                 print(f"[AUTO-CHECK] ⚠️ Screenshot file NOT found: {screenshot_path}")
-                                    elif result.get("exists") is False:
-                                        self.send_message(user.id, f"❌ <a href='https://www.instagram.com/{username}/'>@{username}</a> не найден или удалён")
                                     else:
-                                        # exists is None - error occurred
-                                        error_msg = result.get("error", "unknown error")
-                                        self.send_message(user.id, f"⚠️ <a href='https://www.instagram.com/{username}/'>@{username}</a>: не удалось проверить\n\nОшибка: {error_msg}")
+                                        # Not found
+                                        not_found_message = f"❌ <a href='https://www.instagram.com/{username}/'>@{username}</a> не найден: {message}"
+                                        self.send_message(user.id, not_found_message)
                             
                             loop.close()
                         except Exception as e:
@@ -1301,6 +1642,401 @@ class TelegramBot:
                     
                     self.send_message(chat_id, "✅ Прокси добавлен.", proxies_menu_kb())
                 
+                elif state == "waiting_for_proxy_list":
+                    # Batch proxy import
+                    try:
+                        from .services.proxy_parser import parse_proxy_list, validate_proxy_data, deduplicate_proxies
+                        from .services.proxy_service import get_active_proxies
+                        from .models import Proxy
+                        from .utils.encryptor import OptionalFernet
+                        from .config import get_settings
+                        from .keyboards import proxies_menu_kb
+                    except ImportError:
+                        from services.proxy_parser import parse_proxy_list, validate_proxy_data, deduplicate_proxies
+                        from services.proxy_service import get_active_proxies
+                        from models import Proxy
+                        from utils.encryptor import OptionalFernet
+                        from config import get_settings
+                        from keyboards import proxies_menu_kb
+                    
+                    # Parse list
+                    valid_proxies, parse_errors = parse_proxy_list(text)
+                    
+                    if not valid_proxies and not parse_errors:
+                        self.send_message(chat_id, "⚠️ Не найдено ни одного прокси. Попробуйте снова или нажмите «Отмена».")
+                        return
+                    
+                    # Get existing proxies
+                    with session_factory() as session:
+                        existing = session.query(Proxy).filter(Proxy.user_id == user.id).all()
+                        existing_data = [
+                            {'scheme': p.scheme, 'host': p.host}
+                            for p in existing
+                        ]
+                        
+                        # Deduplicate
+                        unique_proxies, duplicates = deduplicate_proxies(existing_data, valid_proxies)
+                    
+                    # Validate all
+                    validated = []
+                    validation_errors = []
+                    
+                    for proxy_data in unique_proxies:
+                        is_valid, error = validate_proxy_data(proxy_data)
+                        if is_valid:
+                            validated.append(proxy_data)
+                        else:
+                            validation_errors.append(f"{proxy_data['host']}: {error}")
+                    
+                    # Save validated proxies
+                    added_count = 0
+                    
+                    if validated:
+                        settings = get_settings()
+                        encryptor = OptionalFernet(settings.encryption_key)
+                        
+                        with session_factory() as session:
+                            for proxy_data in validated:
+                                proxy = Proxy(
+                                    user_id=user.id,
+                                    scheme=proxy_data['scheme'],
+                                    host=proxy_data['host'],
+                                    username=proxy_data.get('username'),
+                                    password=encryptor.encrypt(proxy_data['password']) if proxy_data.get('password') else None,
+                                    is_active=True,
+                                    priority=5  # Default priority
+                                )
+                                session.add(proxy)
+                                added_count += 1
+                            
+                            session.commit()
+                    
+                    # Clear FSM
+                    del self.fsm_states[user_id]
+                    
+                    # Format result message
+                    result_parts = [
+                        f"📦 <b>Результаты массового добавления:</b>\n"
+                    ]
+                    
+                    if added_count > 0:
+                        result_parts.append(f"✅ Добавлено: {added_count}")
+                    
+                    if duplicates > 0:
+                        result_parts.append(f"⚠️ Дубликатов (пропущено): {duplicates}")
+                    
+                    if parse_errors:
+                        result_parts.append(f"❌ Ошибок парсинга: {len(parse_errors)}")
+                        if len(parse_errors) <= 5:
+                            for err in parse_errors:
+                                result_parts.append(f"  • {err}")
+                        else:
+                            for err in parse_errors[:3]:
+                                result_parts.append(f"  • {err}")
+                            result_parts.append(f"  ... и еще {len(parse_errors) - 3}")
+                    
+                    if validation_errors:
+                        result_parts.append(f"❌ Ошибок валидации: {len(validation_errors)}")
+                        if len(validation_errors) <= 5:
+                            for err in validation_errors:
+                                result_parts.append(f"  • {err}")
+                        else:
+                            for err in validation_errors[:3]:
+                                result_parts.append(f"  • {err}")
+                            result_parts.append(f"  ... и еще {len(validation_errors) - 3}")
+                    
+                    result_message = "\n".join(result_parts)
+                    
+                    if added_count > 0:
+                        result_message += f"\n\n💡 Прокси добавлены с приоритетом 5. Измените при необходимости."
+                    
+                    self.send_message(chat_id, result_message, proxies_menu_kb())
+                
+                elif state == "waiting_for_account_list":
+                    # Batch account import
+                    try:
+                        from .models import Account
+                        from .keyboards import main_menu
+                        from .utils.encryptor import OptionalFernet
+                        from .config import get_settings
+                    except ImportError:
+                        from models import Account
+                        from keyboards import main_menu
+                        from utils.encryptor import OptionalFernet
+                        from config import get_settings
+                    
+                    # Parse account list
+                    lines = [line.strip() for line in text.split('\n') if line.strip()]
+                    accounts = []
+                    errors = []
+                    
+                    for line in lines:
+                        # Clean username
+                        username = line.replace('@', '').strip().lower()
+                        if not username:
+                            continue
+                        
+                        # Validate username
+                        if len(username) < 1 or len(username) > 30:
+                            errors.append(f"Некорректный username: {line}")
+                            continue
+                        
+                        # Check for duplicates in input
+                        if username in [acc['username'] for acc in accounts]:
+                            errors.append(f"Дубликат в списке: {line}")
+                            continue
+                        
+                        accounts.append({
+                            'username': username,
+                            'original': line
+                        })
+                    
+                    if not accounts:
+                        self.send_message(chat_id, "❌ Не найдено валидных аккаунтов.", main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode))
+                        del self.fsm_states[user_id]
+                        return
+                    
+                    # Save accounts to database
+                    settings = get_settings()
+                    fernet = OptionalFernet(settings.encryption_key)
+                    
+                    added_count = 0
+                    duplicates = 0
+                    
+                    with session_factory() as session:
+                        for account_data in accounts:
+                            username = account_data['username']
+                            
+                            # Check if account already exists
+                            existing = session.query(Account).filter(
+                                Account.user_id == user.id,
+                                Account.account == username
+                            ).first()
+                            
+                            if existing:
+                                duplicates += 1
+                                continue
+                            
+                            # Create new account
+                            account = Account(
+                                user_id=user.id,
+                                account=username,
+                                from_date=date.today(),
+                                to_date=date.today() + timedelta(days=30),  # Default 30 days
+                                period=30,
+                                done=False
+                            )
+                            
+                            session.add(account)
+                            added_count += 1
+                        
+                        session.commit()
+                    
+                    # Clear FSM
+                    del self.fsm_states[user_id]
+                    
+                    # Format result message
+                    result_parts = [
+                        f"📝 <b>Результаты массового добавления аккаунтов:</b>\n"
+                    ]
+                    
+                    if added_count > 0:
+                        result_parts.append(f"✅ Добавлено: {added_count}")
+                    
+                    if duplicates > 0:
+                        result_parts.append(f"⚠️ Дубликатов (пропущено): {duplicates}")
+                    
+                    if errors:
+                        result_parts.append(f"❌ Ошибок: {len(errors)}")
+                        if len(errors) <= 5:
+                            for err in errors:
+                                result_parts.append(f"  • {err}")
+                        else:
+                            for err in errors[:3]:
+                                result_parts.append(f"  • {err}")
+                            result_parts.append(f"  ... и еще {len(errors) - 3}")
+                    
+                    result_message = "\n".join(result_parts)
+                    
+                    if added_count > 0:
+                        result_message += f"\n\n💡 Аккаунты добавлены на 30 дней. Измените при необходимости."
+                    
+                    self.send_message(chat_id, result_message, main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode))
+                
+                elif state == "waiting_proxy_test_username":
+                    # Handle username input for proxy testing
+                    username = (text or "").strip().lower().replace("@", "")
+                    
+                    if not username:
+                        self.send_message(chat_id, "⚠️ Введите корректный username или нажмите «Отмена».")
+                        return
+                    
+                    # Import services
+                    try:
+                        from .services.accounts import normalize_username
+                        from .services.checker import is_valid_instagram_username
+                        from .services.proxy_service import get_proxy_by_id
+                        from .services.proxy_tester import test_proxy_with_screenshot, test_multiple_proxies, format_batch_test_results
+                        from .models import Proxy
+                        from .keyboards import proxies_menu_kb
+                        from .config import get_settings
+                    except ImportError:
+                        from services.accounts import normalize_username
+                        from services.checker import is_valid_instagram_username
+                        from services.proxy_service import get_proxy_by_id
+                        from services.proxy_tester import test_proxy_with_screenshot, test_multiple_proxies, format_batch_test_results
+                        from models import Proxy
+                        from keyboards import proxies_menu_kb
+                        from config import get_settings
+                    
+                    # Validate username
+                    username = normalize_username(username)
+                    if not is_valid_instagram_username(username):
+                        self.send_message(chat_id, "⚠️ Неверный формат username. Попробуйте снова или нажмите «Отмена».")
+                        return
+                    
+                    # Get state data
+                    test_all = state_data.get("test_all", False)
+                    proxy_id = state_data.get("proxy_id")
+                    page = state_data.get("page", 1)
+                    
+                    # Clear FSM
+                    del self.fsm_states[user_id]
+                    
+                    if test_all:
+                        # Test all active proxies
+                        self.send_message(
+                            chat_id,
+                            f"⏳ Запускаю тестирование всех активных прокси на аккаунте @{username}...\n\n"
+                            f"Это может занять некоторое время."
+                        )
+                        
+                        with session_factory() as session:
+                            active_proxies = session.query(Proxy).filter(
+                                Proxy.user_id == user.id,
+                                Proxy.is_active == True
+                            ).order_by(Proxy.priority.asc()).all()
+                        
+                        # Test in background thread
+                        import threading
+                        
+                        def run_batch_test():
+                            try:
+                                import asyncio
+                                loop = asyncio.new_event_loop()
+                                asyncio.set_event_loop(loop)
+                                
+                                results = loop.run_until_complete(
+                                    test_multiple_proxies(active_proxies, username, with_screenshot=True)
+                                )
+                                
+                                # Send results
+                                summary = format_batch_test_results(results, active_proxies)
+                                self.send_message(chat_id, summary, proxies_menu_kb())
+                                
+                                # Send individual results with screenshots
+                                for proxy in active_proxies:
+                                    result = results.get(proxy.id, {})
+                                    if result.get('screenshot') and os.path.exists(result['screenshot']):
+                                        loop.run_until_complete(self.send_photo(
+                                            chat_id,
+                                            result['screenshot'],
+                                            caption=f"📸 {proxy.scheme}://{proxy.host}\n\n{result['message']}"
+                                        ))
+                                        # Clean up screenshot
+                                        try:
+                                            os.remove(result['screenshot'])
+                                        except:
+                                            pass
+                                    else:
+                                        self.send_message(
+                                            chat_id,
+                                            f"🌐 {proxy.scheme}://{proxy.host}\n\n{result['message']}"
+                                        )
+                                
+                                loop.close()
+                                
+                            except Exception as e:
+                                self.send_message(chat_id, f"❌ Ошибка при тестировании: {str(e)}")
+                        
+                        test_thread = threading.Thread(target=run_batch_test, daemon=True)
+                        test_thread.start()
+                    
+                    else:
+                        # Test single proxy - получаем прокси сначала
+                        with session_factory() as session:
+                            proxy = get_proxy_by_id(session, user.id, proxy_id)
+                            
+                            if not proxy:
+                                self.send_message(chat_id, "❌ Прокси не найден", proxies_menu_kb())
+                                return
+                        
+                        self.send_message(
+                            chat_id,
+                            f"⏳ <b>Начинаю тестирование прокси</b>\n\n"
+                            f"🔍 Проверяю аккаунт: @{username}\n"
+                            f"🌐 Через прокси: {proxy.scheme}://{proxy.host}\n"
+                            f"📸 Делаю скриншот профиля...\n\n"
+                            f"⏰ Это может занять 10-30 секунд"
+                        )
+                        
+                        # Test in background thread
+                        import threading
+                        
+                        def run_single_test():
+                            try:
+                                import asyncio
+                                
+                                # Получаем прокси внутри функции
+                                with session_factory() as session:
+                                    proxy = get_proxy_by_id(session, user.id, proxy_id)
+                                    
+                                    if not proxy:
+                                        self.send_message(chat_id, "❌ Прокси не найден", proxies_menu_kb())
+                                        return
+                                
+                                # Уведомление о начале проверки
+                                self.send_message(chat_id, "🔄 <b>Проверка запущена</b>\n\nПодключаюсь к Instagram через прокси...")
+                                
+                                loop = asyncio.new_event_loop()
+                                asyncio.set_event_loop(loop)
+                                
+                                success, message, screenshot_path = loop.run_until_complete(
+                                    test_proxy_with_screenshot(proxy, username)
+                                )
+                                
+                                if success:
+                                    if screenshot_path and os.path.exists(screenshot_path):
+                                        # Send with screenshot
+                                        loop.run_until_complete(self.send_photo(
+                                            chat_id,
+                                            screenshot_path,
+                                            caption=f"✅ <b>Тестирование успешно!</b>\n\n📸 Скриншот профиля @{username}\n\n{message}"
+                                        ))
+                                        # Clean up
+                                        try:
+                                            os.remove(screenshot_path)
+                                        except:
+                                            pass
+                                    else:
+                                        # Send without screenshot
+                                        self.send_message(chat_id, f"✅ <b>Тестирование успешно!</b>\n\n{message}")
+                                else:
+                                    # Send error message
+                                    self.send_message(chat_id, f"❌ <b>Тестирование не удалось</b>\n\n{message}")
+                                
+                                # Back to menu
+                                self.send_message(chat_id, "🏠 Возвращаюсь в меню прокси", proxies_menu_kb())
+                                
+                                loop.close()
+                                
+                            except Exception as e:
+                                self.send_message(chat_id, f"❌ Ошибка при тестировании: {str(e)}")
+                                self.send_message(chat_id, "Меню:", proxies_menu_kb())
+                        
+                        test_thread = threading.Thread(target=run_single_test, daemon=True)
+                        test_thread.start()
+                
                 # Admin FSM states
                 elif state in ["waiting_for_interval", "waiting_for_restart_confirm"]:
                     # Import admin handlers
@@ -1440,10 +2176,10 @@ class TelegramBot:
                 
                 # Import Instagram menu handlers
                 try:
-                    from .handlers.ig_menu import register_ig_menu_handlers
+                    from .handlers.ig_menu_simple import register_ig_menu_handlers
                     from .keyboards import instagram_menu_kb
                 except ImportError:
-                    from handlers.ig_menu import register_ig_menu_handlers
+                    from handlers.ig_menu_simple import register_ig_menu_handlers
                     from keyboards import instagram_menu_kb
                 
                 # Register handlers if not already registered
@@ -1454,7 +2190,7 @@ class TelegramBot:
                 
                 # Process Instagram menu
                 if hasattr(self, 'ig_menu_process_message'):
-                    self.ig_menu_process_message(message, session_factory)
+                    await self.ig_menu_process_message(message, session_factory)
                 else:
                     self.send_message(chat_id, "Раздел «Instagram»", reply_markup=instagram_menu_kb())
             
@@ -1465,13 +2201,19 @@ class TelegramBot:
                 
                 # Handle "Назад в меню" first
                 if text == "Назад в меню":
-                    keyboard = main_menu(is_admin=ensure_admin(user))
+                    try:
+                        from .services.system_settings import get_global_verify_mode
+                    except ImportError:
+                        from services.system_settings import get_global_verify_mode
+                    with session_factory() as session:
+                        verify_mode = get_global_verify_mode(session)
+                    keyboard = main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode)
                     self.send_message(chat_id, "Главное меню:", keyboard)
                     return
                 
                 # Process Instagram menu messages
                 if hasattr(self, 'ig_menu_process_message'):
-                    self.ig_menu_process_message(message, session_factory)
+                    await self.ig_menu_process_message(message, session_factory)
                 elif hasattr(self, 'ig_simple_check_process_message'):
                     self.ig_simple_check_process_message(message, session_factory)
             
@@ -1489,18 +2231,14 @@ class TelegramBot:
                         # Import required modules
                         try:
                             from .models import Account
-                            from .services.ig_sessions import get_active_session, decode_cookies
+                            from .services.main_checker import check_account_main
                             from .utils.encryptor import OptionalFernet
                             from .config import get_settings
-                            from .services.ig_simple_checker import check_account_with_screenshot
-                            from .services.hybrid_checker import check_account_hybrid
                         except ImportError:
                             from models import Account
-                            from services.ig_sessions import get_active_session, decode_cookies
+                            from services.main_checker import check_account_main
                             from utils.encryptor import OptionalFernet
                             from config import get_settings
-                            from services.ig_simple_checker import check_account_with_screenshot
-                            from services.hybrid_checker import check_account_hybrid
                         
                         settings = get_settings()
                         fernet = OptionalFernet(settings.encryption_key)
@@ -1548,18 +2286,17 @@ class TelegramBot:
                                 import asyncio
                                 
                                 # Use hybrid checker with user's verify_mode
-                                result = asyncio.run(check_account_hybrid(
+                                result = asyncio.run(check_account_main(
+                                    username=acc.account,
                                     session=session,
                                     user_id=user.id,
-                                    username=acc.account,
-                                    ig_session=ig_session if verify_mode == "api+instagram" else None,
-                                    fernet=fernet,
-                                    skip_instagram_verification=False,
-                                    verify_mode=verify_mode
+                                    screenshot_path=f"screenshots/{acc.account}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
                                 ))
                                 
                                 # Only send message if account exists
-                                if result.get("exists") is True:
+                                success, message, screenshot_path = result
+                                
+                                if success:
                                     # Calculate real days completed
                                     completed_days = 1  # Default fallback
                                     if acc.from_date:
@@ -1589,11 +2326,12 @@ class TelegramBot:
                                 if result.get("screenshot_path") and os.path.exists(result["screenshot_path"]):
                                     try:
                                         screenshot_path = result["screenshot_path"]
-                                        self.send_photo(chat_id, screenshot_path, f'📸 Скриншот <a href="https://www.instagram.com/{acc.account}/">@{acc.account}</a>')
-                                        # Delete screenshot after sending to save disk space
+                                        asyncio.run(self.send_photo(chat_id, screenshot_path, f'📸 Скриншот <a href="https://www.instagram.com/{acc.account}/">@{acc.account}</a>'))
+                                        # Delete screenshot after sending to save disk space (TEMPORARILY DISABLED)
                                         try:
-                                            os.remove(screenshot_path)
-                                            print(f"🗑️ Screenshot deleted: {screenshot_path}")
+                                            # os.remove(screenshot_path)
+                                            # print(f"🗑️ Screenshot deleted: {screenshot_path}")
+                                            print(f"🗑️ Screenshot kept: {screenshot_path}")
                                         except Exception as del_err:
                                             print(f"Warning: Failed to delete screenshot: {del_err}")
                                     except Exception as e:
@@ -1646,7 +2384,7 @@ class TelegramBot:
                 if "Админка" in text_handlers:
                     text_handlers["Админка"](message, user)
             
-            elif text in ["Интервал автопроверки", "Статистика системы", "Перезапуск бота", 
+            elif text in ["Интервал автопроверки", "Режим проверки", "Статистика системы", "Перезапуск бота", 
                           "Управление пользователями", "Все пользователи", "Активные", 
                           "Неактивные", "Администраторы", "Удалить неактивных", "Назад в админку"]:
                 if not ensure_active(user):
@@ -1683,7 +2421,13 @@ class TelegramBot:
                 
                 # Handle "Назад в меню" first
                 if text == "Назад в меню":
-                    keyboard = main_menu(is_admin=ensure_admin(user))
+                    try:
+                        from .services.system_settings import get_global_verify_mode
+                    except ImportError:
+                        from services.system_settings import get_global_verify_mode
+                    with session_factory() as session:
+                        verify_mode = get_global_verify_mode(session)
+                    keyboard = main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode)
                     self.send_message(chat_id, "Главное меню:", keyboard)
                     return
                 
@@ -1780,14 +2524,12 @@ class TelegramBot:
                     elif text == "Проверка (API + скриншот)":
                         try:
                             from .models import Account
-                            from .services.hybrid_checker import check_account_hybrid
-                            from .services.ig_sessions import get_active_session
+                            from .services.main_checker import check_account_main
                             from .utils.encryptor import OptionalFernet
                             from .config import get_settings
                         except ImportError:
                             from models import Account
-                            from services.hybrid_checker import check_account_hybrid
-                            from services.ig_sessions import get_active_session
+                            from services.main_checker import check_account_main
                             from utils.encryptor import OptionalFernet
                             from config import get_settings
                         
@@ -1827,21 +2569,19 @@ class TelegramBot:
                                     
                                     for a in accs:
                                         with session_factory() as s2:
-                                            info = asyncio.run(check_account_hybrid(
+                                            info = asyncio.run(check_account_main(
+                                                username=a.account,
                                                 session=s2,
                                                 user_id=user.id,
-                                                username=a.account,
-                                                ig_session=ig_session,
-                                                fernet=fernet,
-                                                verify_mode=verify_mode
+                                                screenshot_path=f"screenshots/{a.account}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
                                             ))
                                         
-                                        if info["exists"] is True:
+                                        success, message, screenshot_path = info
+                                        
+                                        if success:
                                             ok_count += 1
-                                        elif info["exists"] is False:
-                                            nf_count += 1
                                         else:
-                                            unk_count += 1
+                                            nf_count += 1
                                         
                                         # Calculate real days completed
                                         completed_days = 1  # Default fallback
@@ -1879,11 +2619,12 @@ class TelegramBot:
                                         if info.get("screenshot_path") and os.path.exists(info["screenshot_path"]):
                                             try:
                                                 screenshot_path = info["screenshot_path"]
-                                                self.send_photo(chat_id, screenshot_path, f'📸 Скриншот <a href="https://www.instagram.com/{a.account}/">@{a.account}</a>')
-                                                # Delete screenshot after sending to save disk space
+                                                asyncio.run(self.send_photo(chat_id, screenshot_path, f'📸 Скриншот <a href="https://www.instagram.com/{a.account}/">@{a.account}</a>'))
+                                                # Delete screenshot after sending to save disk space (TEMPORARILY DISABLED)
                                                 try:
-                                                    os.remove(screenshot_path)
-                                                    print(f"🗑️ Screenshot deleted: {screenshot_path}")
+                                                    # os.remove(screenshot_path)
+                                                    # print(f"🗑️ Screenshot deleted: {screenshot_path}")
+                                                    print(f"🗑️ Screenshot kept: {screenshot_path}")
                                                 except Exception as del_err:
                                                     print(f"Warning: Failed to delete screenshot: {del_err}")
                                             except Exception as e:
@@ -1912,38 +2653,61 @@ class TelegramBot:
                     from keyboards import proxies_menu_kb
                 self.send_message(chat_id, "Раздел «Прокси»", proxies_menu_kb())
 
-            elif text == "Назад в меню":
-                keyboard = main_menu(is_admin=ensure_admin(user))
+            elif text in ["Назад в меню", "🏠 Главное меню"]:
+                try:
+                    from .services.system_settings import get_global_verify_mode
+                except ImportError:
+                    from services.system_settings import get_global_verify_mode
+                with session_factory() as session:
+                    verify_mode = get_global_verify_mode(session)
+                keyboard = main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode)
                 self.send_message(chat_id, "Главное меню:", keyboard)
 
             elif text == "Мои прокси":
                 if not ensure_active(user):
                     self.send_message(chat_id, "⛔ Доступ пока не выдан.")
                     return
+                
                 # Import services
                 try:
-                    from .models import Proxy
-                    from .keyboards import proxy_card_kb
+                    from .services.proxy_service import get_proxies_page, count_proxies
+                    from .services.proxy_formatting import format_proxies_list_header
+                    from .keyboards import proxies_list_kb, pagination_kb, proxies_menu_kb
                 except ImportError:
-                    from models import Proxy
-                    from keyboards import proxy_card_kb
+                    from services.proxy_service import get_proxies_page, count_proxies
+                    from services.proxy_formatting import format_proxies_list_header
+                    from keyboards import proxies_list_kb, pagination_kb, proxies_menu_kb
                 
                 with session_factory() as session:
-                    proxies = session.query(Proxy).filter(Proxy.user_id == user.id).order_by(Proxy.priority.asc()).all()
+                    # Get first page
+                    proxies, total_pages = get_proxies_page(session, user.id, page=1, per_page=10)
+                    
                     if not proxies:
                         self.send_message(chat_id, "📭 У вас пока нет прокси.", proxies_menu_kb())
                         return
-                    for p in proxies:
-                        creds = f"{p.username}:{p.password}@" if p.username and p.password else ""
-                        proxy_text = (
-                            f"🧩 Proxy #{p.id}\n"
-                            f"• {p.scheme}://{creds}{p.host}\n"
-                            f"• active: {p.is_active} | prio: {p.priority}\n"
-                            f"• used: {p.used_count} | success: {p.success_count} | fail_streak: {p.fail_streak}\n"
-                            f"• cooldown_until: {p.cooldown_until}\n"
-                            f"• last_checked: {p.last_checked}"
-                        )
-                        self.send_message(chat_id, proxy_text, proxy_card_kb(p.id))
+                    
+                    # Get statistics
+                    stats = count_proxies(session, user.id)
+                    
+                    # Format header
+                    header = format_proxies_list_header(
+                        page=1,
+                        total_pages=total_pages,
+                        total_count=stats['total'],
+                        active_count=stats['active']
+                    )
+                    
+                    # Send main menu first
+                    self.send_message(chat_id, "🌐 Прокси:", proxies_menu_kb())
+                    
+                    # Create combined keyboard (list + pagination)
+                    combined_keyboard = {
+                        "inline_keyboard": proxies_list_kb(proxies)["inline_keyboard"] + 
+                                        pagination_kb("ppg", 1, total_pages)["inline_keyboard"]
+                    }
+                    
+                    # Send list with pagination
+                    self.send_message(chat_id, header, combined_keyboard)
 
             elif text == "Добавить прокси":
                 if not ensure_active(user):
@@ -1967,102 +2731,130 @@ class TelegramBot:
                     proxy_add_cancel_kb()
                 )
 
+            elif text == "Массовое добавление":
+                if not ensure_active(user):
+                    self.send_message(chat_id, "⛔ Доступ пока не выдан.")
+                    return
+                
+                # Show mass addition menu
+                try:
+                    from .keyboards import mass_add_menu_kb
+                    self.send_message(chat_id, "📝 Выберите тип массового добавления:", mass_add_menu_kb())
+                except ImportError:
+                    try:
+                        from keyboards import mass_add_menu_kb
+                        self.send_message(chat_id, "📝 Выберите тип массового добавления:", mass_add_menu_kb())
+                    except Exception as e:
+                        print(f"Error importing mass_add_menu_kb: {e}")
+                        # Get verify_mode for fallback
+                        try:
+                            from .services.system_settings import get_global_verify_mode
+                        except ImportError:
+                            from services.system_settings import get_global_verify_mode
+                        with session_factory() as session:
+                            verify_mode = get_global_verify_mode(session)
+                        self.send_message(chat_id, "❌ Ошибка загрузки меню.", main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode))
+            
+            elif text == "📝 Массовое добавление аккаунтов":
+                if not ensure_active(user):
+                    self.send_message(chat_id, "⛔ Доступ пока не выдан.")
+                    return
+                
+                # Start FSM for batch account import
+                self.fsm_states[user_id] = {"state": "waiting_for_account_list"}
+                
+                try:
+                    from .keyboards import cancel_kb
+                except ImportError:
+                    from keyboards import cancel_kb
+                
+                self.send_message(chat_id, 
+                    "📝 **Массовое добавление аккаунтов**\n\n"
+                    "Отправьте список аккаунтов в формате:\n"
+                    "```\n"
+                    "username1\n"
+                    "username2\n"
+                    "username3\n"
+                    "```\n\n"
+                    "Каждый аккаунт с новой строки, можно с @ или без.",
+                    cancel_kb()
+                )
+            
+            elif text == "🌐 Массовое добавление прокси":
+                if not ensure_active(user):
+                    self.send_message(chat_id, "⛔ Доступ пока не выдан.")
+                    return
+                
+                # Start FSM for batch proxy import
+                self.fsm_states[user_id] = {"state": "waiting_for_proxy_list"}
+                
+                try:
+                    from .services.proxy_parser import format_proxy_examples
+                    from .keyboards import cancel_kb
+                except ImportError:
+                    from services.proxy_parser import format_proxy_examples
+                    from keyboards import cancel_kb
+                
+                examples = format_proxy_examples()
+                
+                message = (
+                    "📦 <b>Массовое добавление прокси</b>\n\n"
+                    "Отправьте список прокси (один на строку):\n\n"
+                    f"{examples}\n\n"
+                    "Или нажмите «Отмена» для выхода."
+                )
+                
+                self.send_message(chat_id, message, cancel_kb())
+
             elif text == "Тестировать прокси":
                 if not ensure_active(user):
                     self.send_message(chat_id, "⛔ Доступ пока не выдан.")
                     return
-                self.send_message(chat_id, "⏳ Тестирую ваши активные прокси...")
-                # Import services
+                
+                # Check if user has any active proxies
                 try:
                     from .models import Proxy
-                    from .services.proxy_checker import test_proxy_connectivity
+                    from .keyboards import proxy_test_mode_kb, proxies_menu_kb
                 except ImportError:
                     from models import Proxy
-                    from services.proxy_checker import test_proxy_connectivity
+                    from keyboards import proxy_test_mode_kb, proxies_menu_kb
                 
                 with session_factory() as session:
-                    proxies = session.query(Proxy).filter(Proxy.user_id == user.id, Proxy.is_active == True).all()
-                    good, bad = 0, 0
-                    for p in proxies:
-                        # Test proxy (simplified for now)
-                        ok = True  # Placeholder - would need async implementation
-                        if ok: 
-                            good += 1
-                        else: 
-                            bad += 1
+                    active_proxies = session.query(Proxy).filter(
+                        Proxy.user_id == user.id,
+                        Proxy.is_active == True
+                    ).all()
                     
-                    # Import keyboards
-                    try:
-                        from .keyboards import proxies_menu_kb
-                    except ImportError:
-                        from keyboards import proxies_menu_kb
-                    
-                    self.send_message(chat_id, f"Готово. Успешных: {good}, неуспешных: {bad}", proxies_menu_kb())
-            
-            elif text == "⚙️ Настройки":
-                if not ensure_active(user):
-                    self.send_message(chat_id, "⛔ Доступ пока не выдан.")
-                    return
+                    if not active_proxies:
+                        self.send_message(
+                            chat_id,
+                            "📭 У вас нет активных прокси для тестирования.\n\n"
+                            "Добавьте прокси или активируйте существующие.",
+                            proxies_menu_kb()
+                        )
+                        return
                 
-                try:
-                    from .keyboards import settings_menu_kb
-                except ImportError:
-                    from keyboards import settings_menu_kb
-                self.send_message(chat_id, "⚙️ <b>Настройки</b>\n\nВыберите раздел:", settings_menu_kb())
-            
-            elif text == "🔄 Режим проверки":
-                if not ensure_active(user):
-                    self.send_message(chat_id, "⛔ Доступ пока не выдан.")
-                    return
-                
-                # Show current mode and options
-                with session_factory() as session:
-                    current_user = session.query(User).get(user.id)
-                    current_mode = current_user.verify_mode or "api+instagram"
-                
-                mode_descriptions = {
-                    "api+instagram": (
-                        "🔑 <b>API + 📸 Instagram (с логином)</b>\n\n"
-                        "Двухэтапная проверка:\n"
-                        "1️⃣ Быстрая проверка через API (1 сек)\n"
-                        "2️⃣ Проверка через Instagram с авторизацией (5 сек)\n\n"
-                        "✅ Полная информация (подписчики, посты)\n"
-                        "✅ Скриншоты профиля\n"
-                        "✅ Доступ к приватным профилям\n"
-                        "❗ Требуется Instagram сессия"
-                    ),
-                    "api+proxy": (
-                        "🔑 <b>API + 🌐 Proxy (без логина)</b>\n\n"
-                        "Двухэтапная проверка:\n"
-                        "1️⃣ Быстрая проверка через API (1 сек)\n"
-                        "2️⃣ Проверка через Proxy без авторизации (5 сек)\n\n"
-                        "✅ Не требует Instagram аккаунт\n"
-                        "✅ Скриншоты публичных страниц\n"
-                        "✅ Минимальный риск блокировки\n"
-                        "❗ Требуется активный Proxy"
-                    )
-                }
-                
-                current_description = mode_descriptions.get(current_mode, "❓ Неизвестный режим")
-                
+                # Show test mode selection
                 message = (
-                    f"🔄 <b>Текущий режим проверки</b>\n\n"
-                    f"{current_description}\n\n"
-                    f"Выберите новый режим проверки:"
+                    f"🧪 <b>Тестирование прокси</b>\n\n"
+                    f"📊 Активных прокси: {len(active_proxies)}\n\n"
+                    f"Выберите режим тестирования:"
                 )
                 
-                try:
-                    from .keyboards import verify_mode_selection_kb
-                except ImportError:
-                    from keyboards import verify_mode_selection_kb
-                self.send_message(chat_id, message, verify_mode_selection_kb(current_mode))
+                self.send_message(chat_id, message, proxy_test_mode_kb())
+            
+            
             
             elif text == "⬅️ Назад в меню":
                 try:
                     from .keyboards import main_menu
+                    from .services.system_settings import get_global_verify_mode
                 except ImportError:
                     from keyboards import main_menu
-                self.send_message(chat_id, "Главное меню:", main_menu(ensure_admin(user)))
+                    from services.system_settings import get_global_verify_mode
+                with session_factory() as session:
+                    verify_mode = get_global_verify_mode(session)
+                self.send_message(chat_id, "Главное меню:", main_menu(ensure_admin(user), verify_mode=verify_mode))
             
             elif text == "Админка":
                 if not ensure_admin(user):
@@ -2078,7 +2870,7 @@ class TelegramBot:
                     self.send_message(chat_id, "⛔ Доступ пока не выдан. Обратись к администратору.")
 
 
-def main():
+async def main():
     """Main function to start the bot."""
     # Setup logging
     settings = get_settings()
@@ -2128,6 +2920,16 @@ def main():
     if next_run:
         logger.info(f"Next check scheduled at: {next_run}")
     
+    # 🏥 Start Proxy Health Checker (background monitoring)
+    try:
+        from .services.proxy_health_checker import start_proxy_health_checker
+    except ImportError:
+        from services.proxy_health_checker import start_proxy_health_checker
+    
+    logger.info("🏥 Starting Proxy Health Checker (checks every 5 minutes)...")
+    asyncio.create_task(start_proxy_health_checker())
+    logger.info("✅ Proxy Health Checker started in background")
+    
     # Initialize and start expiry notification scheduler (daily at 10:00 AM)
     from datetime import time as datetime_time
     _expiry_scheduler = ExpiryNotificationScheduler(
@@ -2161,7 +2963,7 @@ def main():
                         if "web_app_data" in message:
                             bot.process_web_app_data(message, session_factory)
                         else:
-                            bot.process_message(message, session_factory)
+                            await bot.process_message(message, session_factory)
                     elif "callback_query" in update:
                         bot.process_callback_query(update["callback_query"], session_factory)
             

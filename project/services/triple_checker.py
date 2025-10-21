@@ -55,6 +55,9 @@ async def check_account_triple(
         - error: Error message if any
         - checked_via: "api+proxy+instagram"
     """
+    # Логирование режима проверки
+    print(f"[TRIPLE-CHECK] 🔧 Режим проверки: api+proxy+instagram (тройная) для @{username}")
+    
     result = {
         "username": username,
         "exists": None,
@@ -80,20 +83,25 @@ async def check_account_triple(
     
     print(f"✅ API shows @{username} is active - proceeding to Step 2")
     
-    # Step 2: Check if user has proxy
-    print(f"🔗 Step 2: Checking proxy for user {user_id}")
-    proxy = session.query(Proxy).filter(
-        Proxy.user_id == user_id,
-        Proxy.is_active == True
-    ).order_by(Proxy.priority.asc()).first()
+    # Step 2: Get best proxy using ProxyManager (with rotation!)
+    print(f"🔗 Step 2: Getting best proxy for user {user_id} (with rotation)")
     
-    if not proxy:
-        print(f"⚠️ No active proxy for user {user_id}")
-        result["error"] = "no_active_proxy"
-        result["exists"] = False
-        return result
+    try:
+        from .proxy_manager import ProxyManager
+    except ImportError:
+        from services.proxy_manager import ProxyManager
     
-    print(f"✅ Found active proxy: {proxy.scheme}://{proxy.host}")
+    with ProxyManager(session) as manager:
+        proxy = manager.get_best_proxy(user_id, strategy='adaptive')
+        
+        if not proxy:
+            print(f"⚠️ No available proxy for user {user_id}")
+            result["error"] = "no_active_proxy"
+            result["exists"] = False
+            return result
+        
+        print(f"✅ Selected proxy: {proxy.host} (success rate: {proxy.success_count}/{proxy.used_count})")
+        proxy_id = proxy.id  # Save for marking success/failure later
     
     # Step 3: Check if user has Instagram session
     print(f"🔐 Step 3: Checking Instagram session for user {user_id}")
@@ -249,6 +257,23 @@ async def check_account_triple(
         print(f"❌ Triple check error for @{username}: {e}")
         result["error"] = f"triple_check_error: {e}"
         result["exists"] = False
+    
+    # Mark proxy success/failure
+    try:
+        from .proxy_manager import ProxyManager
+    except ImportError:
+        from services.proxy_manager import ProxyManager
+    
+    with ProxyManager(session) as manager:
+        if result.get("exists") is True and result.get("profile_exists") is True:
+            # Success: profile found and screenshot taken
+            manager.mark_success(proxy_id)
+            print(f"✅ Marked proxy {proxy.host} as successful")
+        elif result.get("error"):
+            # Failure: error occurred
+            manager.mark_failure(proxy_id, apply_cooldown=True)
+            print(f"❌ Marked proxy {proxy.host} as failed (with cooldown)")
+        # If API says not found, don't penalize proxy (it worked correctly)
     
     return result
 

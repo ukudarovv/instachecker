@@ -8,22 +8,30 @@ except ImportError:
     KeyboardButton = dict
 
 
-def main_menu(is_admin: bool = False) -> dict:
+def main_menu(is_admin: bool = False, verify_mode: str = None) -> dict:
     """
     Create main menu keyboard with optional admin button.
     
     Args:
         is_admin: Whether to show admin button
+        verify_mode: Current verification mode (to show/hide Instagram button)
         
     Returns:
         dict with keyboard configuration
     """
+    # Build third row based on verify_mode
+    third_row = [{"text": "API"}, {"text": "Прокси"}]
+    
+    # Show Instagram button only if verify_mode contains "instagram"
+    if verify_mode and "instagram" in verify_mode.lower():
+        third_row.append({"text": "Instagram"})
+    
     keyboard = {
         "keyboard": [
             [{"text": "Добавить аккаунт"}, {"text": "Активные аккаунты"}],
             [{"text": "Аккаунты на проверке"}, {"text": "Проверить аккаунты"}],
-            [{"text": "API"}, {"text": "Прокси"}, {"text": "Instagram"}],
-            [{"text": "⚙️ Настройки"}]
+            [{"text": "Массовое добавление"}],
+            third_row
         ],
         "resize_keyboard": True,
         "one_time_keyboard": False
@@ -53,6 +61,43 @@ def settings_menu_kb() -> dict:
     return keyboard
 
 
+def admin_verify_mode_selection_kb(current_mode: str) -> dict:
+    """
+    Create admin verify mode selection keyboard.
+    
+    Args:
+        current_mode: Current global verification mode
+    
+    Returns:
+        dict with inline keyboard for admin mode selection
+    """
+    modes = [
+        ("api+instagram", "🔑 API + 📸 Instagram (🚀 Undetected)"),
+        ("api+proxy", "🔑 API + 🌐 Proxy (🚀 Undetected)"),
+        ("api+proxy+instagram", "🔑 API + 🌐 Proxy + 📸 Instagram (тройная)"),
+        ("instagram+proxy", "📸 Instagram + 🌐 Proxy (без API)"),
+        ("instagram", "📸 Только Instagram (🚀 Undetected)"),
+        ("proxy", "🌐 Только Proxy (🚀 Undetected)"),
+        ("simple_monitor", "⚡ Простой мониторинг (app.py стиль)"),
+        ("full_bypass", "🛡️ Полный обход защиты (все методы)")
+    ]
+    
+    keyboard = []
+    for mode_value, mode_label in modes:
+        # Add checkmark to current mode
+        if mode_value == current_mode:
+            button_text = f"✅ {mode_label}"
+        else:
+            button_text = mode_label
+        
+        keyboard.append([{"text": button_text, "callback_data": f"admin_verify_mode:{mode_value}"}])
+    
+    
+    return {
+        "inline_keyboard": keyboard
+    }
+
+
 def verify_mode_selection_kb(current_mode: str) -> dict:
     """
     Create verification mode selection keyboard.
@@ -69,7 +114,9 @@ def verify_mode_selection_kb(current_mode: str) -> dict:
         ("api+proxy+instagram", "🔑 API + 🌐 Proxy + 📸 Instagram (тройная)"),
         ("instagram+proxy", "📸 Instagram + 🌐 Proxy (без API)"),
         ("instagram", "📸 Только Instagram"),
-        ("proxy", "🌐 Только Proxy")
+        ("proxy", "🌐 Только Proxy"),
+        ("simple_monitor", "⚡ Простой мониторинг (как app.py)"),
+        ("full_bypass", "🛡️ Полный обход защиты (все методы)")
     ]
     
     keyboard = []
@@ -204,7 +251,7 @@ def proxies_menu_kb() -> dict:
     return {
         "keyboard": [
             [{"text": "Мои прокси"}, {"text": "Добавить прокси"}],
-            [{"text": "Тестировать прокси"}],
+            [{"text": "Массовое добавление"}, {"text": "Тестировать прокси"}],
             [{"text": "Назад в меню"}]
         ],
         "resize_keyboard": True,
@@ -212,12 +259,35 @@ def proxies_menu_kb() -> dict:
     }
 
 
-def proxy_card_kb(proxy_id: int) -> dict:
+def proxies_list_kb(items: list) -> dict:
+    """
+    Create proxies list keyboard (inline).
+    
+    Args:
+        items: list of proxies
+        
+    Returns:
+        dict with proxies list keyboard
+    """
+    keyboard = []
+    for proxy in items:
+        status = "✅" if proxy.is_active else "❌"
+        label = f"{status} {proxy.scheme}://{proxy.host[:30]}"
+        keyboard.append([{
+            "text": label,
+            "callback_data": f"pinfo:{proxy.id}"
+        }])
+    
+    return {"inline_keyboard": keyboard}
+
+
+def proxy_card_kb(proxy_id: int, page: int = 1) -> dict:
     """
     Create proxy card keyboard.
     
     Args:
         proxy_id: proxy ID
+        page: current page number
         
     Returns:
         dict with proxy card keyboard
@@ -225,16 +295,67 @@ def proxy_card_kb(proxy_id: int) -> dict:
     return {
         "inline_keyboard": [
             [
-                {"text": "Отключить", "callback_data": f"prx_off:{proxy_id}"},
-                {"text": "Включить", "callback_data": f"prx_on:{proxy_id}"}
+                {"text": "🧪 Проверить с аккаунтом", "callback_data": f"ptest:{proxy_id}:{page}"}
             ],
             [
-                {"text": "Приоритет −", "callback_data": f"prx_pdec:{proxy_id}"},
-                {"text": "Приоритет +", "callback_data": f"prx_pinc:{proxy_id}"}
+                {"text": "✅ Активировать", "callback_data": f"pactive:{proxy_id}:{page}"},
+                {"text": "❌ Деактивировать", "callback_data": f"pinactive:{proxy_id}:{page}"}
             ],
-            [{"text": "Удалить", "callback_data": f"prx_del:{proxy_id}"}]
+            [
+                {"text": "🗑️ Удалить", "callback_data": f"pdelask:{proxy_id}:{page}"}
+            ],
+            [
+                {"text": "⬅️ К списку", "callback_data": f"ppg:{page}"}
+            ]
         ]
     }
+
+
+def proxy_test_mode_kb() -> dict:
+    """
+    Create proxy test mode selection keyboard.
+    
+    Returns:
+        dict with test mode keyboard
+    """
+    return {
+        "inline_keyboard": [
+            [
+                {"text": "🧪 Проверить все активные", "callback_data": "ptest_all"}
+            ],
+            [
+                {"text": "🎯 Выбрать конкретный прокси", "callback_data": "ptest_select"}
+            ],
+            [
+                {"text": "❌ Отмена", "callback_data": "ptest_cancel"}
+            ]
+        ]
+    }
+
+
+def proxy_selection_for_test_kb(proxies: list) -> dict:
+    """
+    Create proxy selection keyboard for testing.
+    
+    Args:
+        proxies: List of active proxies
+        
+    Returns:
+        dict with proxy selection keyboard
+    """
+    keyboard = []
+    
+    for proxy in proxies:
+        label = f"{proxy.scheme}://{proxy.host[:40]}"
+        keyboard.append([
+            {"text": label, "callback_data": f"ptest_one:{proxy.id}"}
+        ])
+    
+    keyboard.append([
+        {"text": "❌ Отмена", "callback_data": "ptest_cancel"}
+    ])
+    
+    return {"inline_keyboard": keyboard}
 
 
 def instagram_menu_kb(mini_app_url: str = None) -> dict:
@@ -365,6 +486,7 @@ def admin_menu_kb() -> dict:
     return {
         "keyboard": [
             [{"text": "Интервал автопроверки"}],
+            [{"text": "Режим проверки"}],
             [{"text": "Статистика системы"}],
             [{"text": "Управление пользователями"}],
             [{"text": "Перезапуск бота"}],
@@ -591,6 +713,44 @@ def user_accounts_kb(user_id: int, page: int, total_pages: int, show_active: boo
     }])
     
     return {"inline_keyboard": keyboard}
+
+
+def mass_add_menu_kb() -> dict:
+    """
+    Create keyboard for mass addition menu.
+    
+    Returns:
+        dict with keyboard configuration
+    """
+    keyboard = {
+        "keyboard": [
+            [{"text": "📝 Массовое добавление аккаунтов"}],
+            [{"text": "🌐 Массовое добавление прокси"}],
+            [{"text": "🏠 Главное меню"}]
+        ],
+        "resize_keyboard": True,
+        "one_time_keyboard": False
+    }
+    
+    return keyboard
+
+
+def back_to_main_kb() -> dict:
+    """
+    Create keyboard with back to main menu button.
+    
+    Returns:
+        dict with keyboard configuration
+    """
+    keyboard = {
+        "keyboard": [
+            [{"text": "🏠 Главное меню"}]
+        ],
+        "resize_keyboard": True,
+        "one_time_keyboard": False
+    }
+    
+    return keyboard
 
 
 def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
