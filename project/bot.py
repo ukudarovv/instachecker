@@ -1571,10 +1571,10 @@ class TelegramBot:
                     
                     # Process proxy URL input
                     try:
-                        from .services.proxy_utils import parse_proxy_url
+                        from .services.proxy_parser import parse_proxy_url
                         from .keyboards import proxies_menu_kb
                     except ImportError:
-                        from services.proxy_utils import parse_proxy_url
+                        from services.proxy_parser import parse_proxy_url
                         from keyboards import proxies_menu_kb
                     
                     data = parse_proxy_url(text)
@@ -2725,9 +2725,12 @@ class TelegramBot:
                 self.send_message(chat_id, 
                     "Введите прокси в формате:\n"
                     "`scheme://[user:pass@]host:port`\n"
+                    "или\n"
+                    "`host:port:user:pass`\n\n"
                     "Примеры:\n"
                     "`http://1.2.3.4:8080`\n"
-                    "`socks5://user:pass@5.6.7.8:1080`",
+                    "`socks5://user:pass@5.6.7.8:1080`\n"
+                    "`proxy.resi.gg:12321:74276e667af9:d9754cc35e1e`",
                     proxy_add_cancel_kb()
                 )
 
