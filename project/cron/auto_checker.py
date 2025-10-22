@@ -57,12 +57,12 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
                 # Use new main_checker with API + Proxy logic
                 success, message, screenshot_path = await check_account_main(
                     username=acc.account,
-                    session=session,
+                        session=session,
                     user_id=user_id
-                )
+                    )
                 
                 checked += 1
-                
+                    
                 if success:
                     found += 1
                     print(f"[AUTO-CHECK] ✅ @{acc.account} - FOUND: {message}")
@@ -77,47 +77,47 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
                         account.date_of_finish = date.today()
                         session.commit()
                         print(f"[AUTO-CHECK] ✅ Marked @{acc.account} as done")
-                    
-                    # Send notification to user if bot is provided
-                    if bot:
-                        try:
-                            # Calculate real days completed
-                            completed_days = 1
-                            if acc.from_date:
-                                if isinstance(acc.from_date, datetime):
-                                    start_date = acc.from_date.date()
-                                else:
-                                    start_date = acc.from_date
+                        
+                        # Send notification to user if bot is provided
+                        if bot:
+                            try:
+                                # Calculate real days completed
+                                completed_days = 1
+                                if acc.from_date:
+                                    if isinstance(acc.from_date, datetime):
+                                        start_date = acc.from_date.date()
+                                    else:
+                                        start_date = acc.from_date
+                                    
+                                    current_date = date.today()
+                                    completed_days = (current_date - start_date).days + 1
+                                    completed_days = max(1, completed_days)
                                 
-                                current_date = date.today()
-                                completed_days = (current_date - start_date).days + 1
-                                completed_days = max(1, completed_days)
-                            
-                            message = f"""Имя пользователя: <a href="https://www.instagram.com/{acc.account}/">{acc.account}</a>
+                                message = f"""Имя пользователя: <a href="https://www.instagram.com/{acc.account}/">{acc.account}</a>
 Начало работ: {acc.from_date.strftime("%d.%m.%Y") if acc.from_date else "N/A"}
 Заявлено: {acc.period} дней
 Завершено за: {completed_days} дней
 Конец работ: {acc.to_date.strftime("%d.%m.%Y") if acc.to_date else "N/A"}
 Статус: Аккаунт разблокирован✅"""
                             
-                            await bot.send_message(user.id, message)
-                            
-                            # Send screenshot if available
-                            if screenshot_path and os.path.exists(screenshot_path):
-                                try:
-                                    success = await bot.send_photo(
-                                        user.id,
-                                        screenshot_path,
-                                        f'📸 <a href="https://www.instagram.com/{acc.account}/">@{acc.account}</a>'
-                                    )
-                                    if success:
-                                        print(f"[AUTO-CHECK] 📸 Screenshot sent successfully!")
-                                except Exception as e:
-                                    print(f"[AUTO-CHECK] ❌ Failed to send photo: {e}")
-                            
-                        except Exception as e:
-                            print(f"[AUTO-CHECK] ❌ Failed to send notification to user {user.id}: {e}")
-                
+                                await bot.send_message(user.id, message)
+                                
+                                # Send screenshot if available
+                                if screenshot_path and os.path.exists(screenshot_path):
+                                    try:
+                                                success = await bot.send_photo(
+                                                    user.id,
+                                                    screenshot_path,
+                                                    f'📸 <a href="https://www.instagram.com/{acc.account}/">@{acc.account}</a>'
+                                                )
+                                                if success:
+                                                    print(f"[AUTO-CHECK] 📸 Screenshot sent successfully!")
+                                    except Exception as e:
+                                        print(f"[AUTO-CHECK] ❌ Failed to send photo: {e}")
+                                    
+                            except Exception as e:
+                                print(f"[AUTO-CHECK] ❌ Failed to send notification to user {user.id}: {e}")
+                    
                 else:
                     not_found += 1
                     print(f"[AUTO-CHECK] ❌ @{acc.account} - NOT FOUND: {message}")
@@ -127,7 +127,7 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
                     delay = random.uniform(3, 7)
                     print(f"[AUTO-CHECK] ⏳ Waiting {delay:.1f}s before next check...")
                     await asyncio.sleep(delay)
-                    
+                        
             except Exception as e:
                 errors += 1
                 print(f"[AUTO-CHECK] ❌ Error checking @{acc.account}: {str(e)}")
