@@ -761,3 +761,16 @@ def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
         ReplyKeyboardMarkup with main menu buttons
     """
     return main_menu(is_admin=True)
+
+
+def account_period_kb() -> dict:
+    """Keyboard for selecting account period."""
+    return {
+        "keyboard": [
+            [{"text": "📅 7 дней"}, {"text": "📅 14 дней"}],
+            [{"text": "📅 30 дней"}, {"text": "📅 60 дней"}],
+            [{"text": "❌ Отмена"}]
+        ],
+        "resize_keyboard": True,
+        "one_time_keyboard": False
+    }

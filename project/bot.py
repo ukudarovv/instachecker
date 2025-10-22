@@ -5,7 +5,7 @@ import time
 import json
 import os
 import requests
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import Dict, Any
 
 try:
@@ -1752,6 +1752,52 @@ class TelegramBot:
                     
                     self.send_message(chat_id, result_message, proxies_menu_kb())
                 
+                elif state == "waiting_for_account_period":
+                    # Handle period selection
+                    period_map = {
+                        "📅 7 дней": 7,
+                        "📅 14 дней": 14,
+                        "📅 30 дней": 30,
+                        "📅 60 дней": 60
+                    }
+                    
+                    if text in period_map:
+                        period = period_map[text]
+                        # Store period and move to account list input
+                        self.fsm_states[user_id]["period"] = period
+                        self.fsm_states[user_id]["state"] = "waiting_for_account_list"
+                        
+                        try:
+                            from .keyboards import cancel_kb
+                        except ImportError:
+                            from keyboards import cancel_kb
+                        
+                        self.send_message(chat_id, 
+                            f"📝 **Массовое добавление аккаунтов** (период: {period} дней)\n\n"
+                            "Отправьте список аккаунтов в формате:\n"
+                            "```\n"
+                            "username1\n"
+                            "username2\n"
+                            "username3\n"
+                            "```\n\n"
+                            "Каждый аккаунт с новой строки, можно с @ или без.",
+                            cancel_kb()
+                        )
+                    elif text == "❌ Отмена":
+                        del self.fsm_states[user_id]
+                        try:
+                            from .keyboards import main_menu
+                            from .services.system_settings import get_global_verify_mode
+                        except ImportError:
+                            from keyboards import main_menu
+                            from services.system_settings import get_global_verify_mode
+                        
+                        with session_factory() as session:
+                            verify_mode = get_global_verify_mode(session)
+                        self.send_message(chat_id, "❌ Отменено.", main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode))
+                    else:
+                        self.send_message(chat_id, "❌ Выберите период из предложенных вариантов.")
+                
                 elif state == "waiting_for_account_list":
                     # Batch account import
                     try:
@@ -1776,9 +1822,25 @@ class TelegramBot:
                         if not username:
                             continue
                         
-                        # Validate username
+                        # Validate username (Instagram rules)
                         if len(username) < 1 or len(username) > 30:
-                            errors.append(f"Некорректный username: {line}")
+                            errors.append(f"Некорректная длина username: {line}")
+                            continue
+                        
+                        # Check for valid characters (letters, numbers, dots, underscores)
+                        import re
+                        if not re.match(r'^[a-zA-Z0-9._]+$', username):
+                            errors.append(f"Некорректные символы в username: {line}")
+                            continue
+                        
+                        # Check for consecutive dots or underscores
+                        if '..' in username or '__' in username:
+                            errors.append(f"Некорректный формат username: {line}")
+                            continue
+                        
+                        # Check for starting/ending with dot or underscore
+                        if username.startswith('.') or username.endswith('.') or username.startswith('_') or username.endswith('_'):
+                            errors.append(f"Username не может начинаться/заканчиваться точкой или подчеркиванием: {line}")
                             continue
                         
                         # Check for duplicates in input
@@ -1795,6 +1857,9 @@ class TelegramBot:
                         self.send_message(chat_id, "❌ Не найдено валидных аккаунтов.", main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode))
                         del self.fsm_states[user_id]
                         return
+                    
+                    # Get selected period
+                    period = self.fsm_states[user_id].get("period", 30)
                     
                     # Save accounts to database
                     settings = get_settings()
@@ -1817,13 +1882,13 @@ class TelegramBot:
                                 duplicates += 1
                                 continue
                             
-                            # Create new account
+                            # Create new account with selected period
                             account = Account(
                                 user_id=user.id,
                                 account=username,
                                 from_date=date.today(),
-                                to_date=date.today() + timedelta(days=30),  # Default 30 days
-                                period=30,
+                                to_date=date.today() + timedelta(days=period),
+                                period=period,
                                 done=False
                             )
                             
@@ -1859,7 +1924,7 @@ class TelegramBot:
                     result_message = "\n".join(result_parts)
                     
                     if added_count > 0:
-                        result_message += f"\n\n💡 Аккаунты добавлены на 30 дней. Измените при необходимости."
+                        result_message += f"\n\n💡 Аккаунты добавлены на {period} дней. Измените при необходимости."
                     
                     self.send_message(chat_id, result_message, main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode))
                 
@@ -2768,16 +2833,18 @@ class TelegramBot:
                 except ImportError:
                     from keyboards import cancel_kb
                 
+                # Start FSM for period selection
+                self.fsm_states[user_id] = {"state": "waiting_for_account_period"}
+                
+                try:
+                    from .keyboards import account_period_kb
+                except ImportError:
+                    from keyboards import account_period_kb
+                
                 self.send_message(chat_id, 
                     "📝 **Массовое добавление аккаунтов**\n\n"
-                    "Отправьте список аккаунтов в формате:\n"
-                    "```\n"
-                    "username1\n"
-                    "username2\n"
-                    "username3\n"
-                    "```\n\n"
-                    "Каждый аккаунт с новой строки, можно с @ или без.",
-                    cancel_kb()
+                    "Сначала выберите период для аккаунтов:",
+                    account_period_kb()
                 )
             
             elif text == "🌐 Массовое добавление прокси":
