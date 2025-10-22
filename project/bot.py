@@ -1929,8 +1929,69 @@ class TelegramBot:
                     
                     if added_count > 0:
                         result_message += f"\n\n💡 Аккаунты добавлены на {period} дней. Измените при необходимости."
-                    
-                    self.send_message(chat_id, result_message, main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode))
+                        
+                        # Start automatic check for added accounts
+                        try:
+                            import asyncio
+                            from .services.main_checker import check_account_main
+                            
+                            async def auto_check_added_accounts():
+                                """Auto-check newly added accounts in background."""
+                                try:
+                                    with session_factory() as session:
+                                        # Get recently added accounts for this user
+                                        recent_accounts = session.query(Account).filter(
+                                            Account.user_id == user.id,
+                                            Account.done == False
+                                        ).order_by(Account.id.desc()).limit(added_count).all()
+                                        
+                                        checked_count = 0
+                                        found_count = 0
+                                        
+                                        for acc in recent_accounts:
+                                            try:
+                                                success, message, screenshot_path = await check_account_main(
+                                                    username=acc.account,
+                                                    session=session,
+                                                    user_id=user.id,
+                                                    screenshot_path=f"screenshots/{acc.account}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+                                                )
+                                                
+                                                if success:
+                                                    found_count += 1
+                                                    # Mark as done
+                                                    acc.done = True
+                                                    acc.date_of_finish = date.today()
+                                                
+                                                checked_count += 1
+                                                
+                                                # Small delay between checks
+                                                await asyncio.sleep(2)
+                                                
+                                            except Exception as e:
+                                                print(f"[AUTO-CHECK] ❌ Error checking @{acc.account}: {e}")
+                                                continue
+                                        
+                                        session.commit()
+                                        
+                                        # Send results
+                                        if found_count > 0:
+                                            result_message += f"\n\n🔍 <b>Автопроверка завершена:</b>\n✅ Найдено: {found_count}\n❌ Не найдено: {checked_count - found_count}"
+                                        
+                                        self.send_message(chat_id, result_message)
+                                        
+                                except Exception as e:
+                                    print(f"[AUTO-CHECK] ❌ Error in auto-check: {e}")
+                                    self.send_message(chat_id, result_message)
+                            
+                            # Start auto-check in background
+                            asyncio.create_task(auto_check_added_accounts())
+                            
+                        except Exception as e:
+                            print(f"[AUTO-CHECK] ❌ Failed to start auto-check: {e}")
+                            self.send_message(chat_id, result_message, main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode))
+                    else:
+                        self.send_message(chat_id, result_message, main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode))
                 
                 elif state == "waiting_proxy_test_username":
                     # Handle username input for proxy testing
