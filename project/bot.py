@@ -1776,11 +1776,9 @@ class TelegramBot:
                             f"📝 **Массовое добавление аккаунтов** (период: {period} дней)\n\n"
                             "Отправьте список аккаунтов в формате:\n"
                             "```\n"
-                            "username1\n"
-                            "username2\n"
-                            "username3\n"
+                            "username1; username2; username3\n"
                             "```\n\n"
-                            "Каждый аккаунт с новой строки, можно с @ или без.",
+                            "Аккаунты через точку с запятой, можно с @ или без.",
                             cancel_kb()
                         )
                     elif text == "❌ Отмена":
@@ -1811,46 +1809,46 @@ class TelegramBot:
                         from utils.encryptor import OptionalFernet
                         from config import get_settings
                     
-                    # Parse account list
-                    lines = [line.strip() for line in text.split('\n') if line.strip()]
+                    # Parse account list (semicolon-separated)
+                    usernames = [username.strip() for username in text.split(';') if username.strip()]
                     accounts = []
                     errors = []
                     
-                    for line in lines:
+                    for username_input in usernames:
                         # Clean username
-                        username = line.replace('@', '').strip().lower()
+                        username = username_input.replace('@', '').strip().lower()
                         if not username:
                             continue
                         
                         # Validate username (Instagram rules)
                         if len(username) < 1 or len(username) > 30:
-                            errors.append(f"Некорректная длина username: {line}")
+                            errors.append(f"Некорректная длина username: {username_input}")
                             continue
                         
                         # Check for valid characters (letters, numbers, dots, underscores)
                         import re
                         if not re.match(r'^[a-zA-Z0-9._]+$', username):
-                            errors.append(f"Некорректные символы в username: {line}")
+                            errors.append(f"Некорректные символы в username: {username_input}")
                             continue
                         
                         # Check for consecutive dots or underscores
                         if '..' in username or '__' in username:
-                            errors.append(f"Некорректный формат username: {line}")
+                            errors.append(f"Некорректный формат username: {username_input}")
                             continue
                         
                         # Check for starting/ending with dot or underscore
                         if username.startswith('.') or username.endswith('.') or username.startswith('_') or username.endswith('_'):
-                            errors.append(f"Username не может начинаться/заканчиваться точкой или подчеркиванием: {line}")
+                            errors.append(f"Username не может начинаться/заканчиваться точкой или подчеркиванием: {username_input}")
                             continue
                         
                         # Check for duplicates in input
                         if username in [acc['username'] for acc in accounts]:
-                            errors.append(f"Дубликат в списке: {line}")
+                            errors.append(f"Дубликат в списке: {username_input}")
                             continue
                         
                         accounts.append({
                             'username': username,
-                            'original': line
+                            'original': username_input
                         })
                     
                     if not accounts:
