@@ -1931,12 +1931,14 @@ class TelegramBot:
                         result_message += f"\n\n💡 Аккаунты добавлены на {period} дней. Измените при необходимости."
                         
                         # Start automatic check for added accounts
+                        print(f"[MASS-ADD] 🚀 Starting auto-check for {added_count} accounts")
                         try:
                             import asyncio
                             from .services.main_checker import check_account_main
                             
                             async def auto_check_added_accounts():
                                 """Auto-check newly added accounts in background."""
+                                print(f"[AUTO-CHECK] 🔍 Starting auto-check for user {user.id}")
                                 try:
                                     with session_factory() as session:
                                         # Get recently added accounts for this user
@@ -1945,10 +1947,13 @@ class TelegramBot:
                                             Account.done == False
                                         ).order_by(Account.id.desc()).limit(added_count).all()
                                         
+                                        print(f"[AUTO-CHECK] 📋 Found {len(recent_accounts)} accounts to check")
+                                        
                                         checked_count = 0
                                         found_count = 0
                                         
                                         for acc in recent_accounts:
+                                            print(f"[AUTO-CHECK] 🔍 Checking @{acc.account}")
                                             try:
                                                 success, message, screenshot_path = await check_account_main(
                                                     username=acc.account,
@@ -1956,6 +1961,7 @@ class TelegramBot:
                                                     user_id=user.id,
                                                     screenshot_path=f"screenshots/{acc.account}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
                                                 )
+                                                print(f"[AUTO-CHECK] 📊 Result for @{acc.account}: {success} - {message}")
                                                 
                                                 if success:
                                                     found_count += 1
@@ -1984,8 +1990,23 @@ class TelegramBot:
                                     print(f"[AUTO-CHECK] ❌ Error in auto-check: {e}")
                                     self.send_message(chat_id, result_message)
                             
-                            # Start auto-check in background
-                            asyncio.create_task(auto_check_added_accounts())
+                            # Start auto-check in background thread
+                            import threading
+                            
+                            def run_auto_check():
+                                """Run auto-check in separate thread."""
+                                try:
+                                    loop = asyncio.new_event_loop()
+                                    asyncio.set_event_loop(loop)
+                                    loop.run_until_complete(auto_check_added_accounts())
+                                except Exception as e:
+                                    print(f"[AUTO-CHECK] ❌ Thread error: {e}")
+                                finally:
+                                    loop.close()
+                            
+                            # Start in background thread
+                            thread = threading.Thread(target=run_auto_check, daemon=True)
+                            thread.start()
                             
                         except Exception as e:
                             print(f"[AUTO-CHECK] ❌ Failed to start auto-check: {e}")
