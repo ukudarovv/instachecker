@@ -2323,9 +2323,8 @@ class TelegramBot:
                                     self.send_message(chat_id, caption)
                                 
                                 # Send screenshot if available
-                                if result.get("screenshot_path") and os.path.exists(result["screenshot_path"]):
+                                if screenshot_path and os.path.exists(screenshot_path):
                                     try:
-                                        screenshot_path = result["screenshot_path"]
                                         asyncio.run(self.send_photo(chat_id, screenshot_path, f'📸 Скриншот <a href="https://www.instagram.com/{acc.account}/">@{acc.account}</a>'))
                                         # Delete screenshot after sending to save disk space (TEMPORARILY DISABLED)
                                         try:
@@ -2338,17 +2337,15 @@ class TelegramBot:
                                         print(f"Failed to send photo: {e}")
                                 
                                 # Update account status
-                                if result.get("exists") is True:
+                                if success:
                                     with session_factory() as s2:
                                         account = s2.query(Account).get(acc.id)
                                         if account:
                                             account.done = True
                                             s2.commit()
                                     ok += 1
-                                elif result.get("exists") is False:
-                                    nf += 1
                                 else:
-                                    unk += 1
+                                    nf += 1
                             
                             except Exception as e:
                                 self.send_message(chat_id, f"❌ Ошибка при проверке <a href=\"https://www.instagram.com/{acc.account}/\">@{acc.account}</a>: {str(e)}")
