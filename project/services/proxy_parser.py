@@ -94,7 +94,7 @@ def parse_proxy_list(text: str) -> Tuple[List[Dict], List[str]]:
     Parse list of proxies from text.
     
     Args:
-        text: Text with proxies (one per line)
+        text: Text with proxies (one per line or semicolon-separated)
         
     Returns:
         Tuple of (valid_proxies, errors)
@@ -104,7 +104,11 @@ def parse_proxy_list(text: str) -> Tuple[List[Dict], List[str]]:
     valid_proxies = []
     errors = []
     
-    lines = text.strip().split('\n')
+    # Support both newline and semicolon separation
+    if ';' in text:
+        lines = text.strip().split(';')
+    else:
+        lines = text.strip().split('\n')
     
     for line_num, line in enumerate(lines, 1):
         line = line.strip()
@@ -186,10 +190,16 @@ def format_proxy_examples() -> str:
         "<code>proxy.com:8080:user:pass</code>\n"
         "<code>192.168.1.1:8080</code>\n\n"
         "⚠️ <b>Правила:</b>\n"
-        "• Один прокси на строку\n"
+        "• Один прокси на строку ИЛИ через точку с запятой\n"
         "• Строки начинающиеся с # игнорируются\n"
         "• Пустые строки игнорируются\n"
-        "• Поддерживаются http, https, socks5"
+        "• Поддерживаются http, https, socks5\n\n"
+        "💡 <b>Примеры форматов:</b>\n"
+        "• По строкам:\n"
+        "  <code>proxy1.com:8080</code>\n"
+        "  <code>proxy2.com:8080:user:pass</code>\n\n"
+        "• Через ;:\n"
+        "  <code>proxy1.com:8080;proxy2.com:8080:user:pass;proxy3.com:8080</code>"
     )
 
 
