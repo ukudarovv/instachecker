@@ -1803,11 +1803,17 @@ class TelegramBot:
                         from .keyboards import main_menu
                         from .utils.encryptor import OptionalFernet
                         from .config import get_settings
+                        from .services.system_settings import get_global_verify_mode
                     except ImportError:
                         from models import Account
                         from keyboards import main_menu
                         from utils.encryptor import OptionalFernet
                         from config import get_settings
+                        from services.system_settings import get_global_verify_mode
+                    
+                    # Get verify_mode
+                    with session_factory() as session:
+                        verify_mode = get_global_verify_mode(session)
                     
                     # Parse account list (semicolon-separated)
                     usernames = [username.strip() for username in text.split(';') if username.strip()]
