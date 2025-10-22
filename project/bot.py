@@ -2312,7 +2312,7 @@ class TelegramBot:
                                         completed_days = max(1, completed_days)
                                     
                                     # Format result in old bot format
-                                    caption = f"""Имя пользователя: <a href="https://www.instagram.com/{result['username']}/">{result['username']}</a>
+                                    caption = f"""Имя пользователя: <a href="https://www.instagram.com/{acc.account}/">{acc.account}</a>
 Начало работ: {acc.from_date.strftime("%d.%m.%Y") if acc.from_date else "N/A"}
 Заявлено: {acc.period} дней
 Завершено за: {completed_days} дней
