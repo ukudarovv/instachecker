@@ -1,7 +1,7 @@
 """API keys management service."""
 
 from __future__ import annotations
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Dict, Any
 from datetime import datetime, date
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
@@ -48,7 +48,9 @@ def list_keys_for_user(session: Session, user_id: int) -> List[APIKey]:
 
 def pick_best_key(session: Session, user_id: int) -> Optional[APIKey]:
     """
-    Pick the best working API key with lowest usage that hasn't exceeded daily limit.
+    Pick the best working API key with rotation logic.
+    Keys are used in order, and when one reaches the limit (950), 
+    the system moves to the next key.
     
     Args:
         session: Database session
@@ -61,13 +63,16 @@ def pick_best_key(session: Session, user_id: int) -> Optional[APIKey]:
     keys = (
         session.query(APIKey)
         .filter(and_(APIKey.user_id == user_id, APIKey.is_work == True))
-        .order_by(APIKey.qty_req.asc(), APIKey.ref_date.asc())
+        .order_by(APIKey.id.asc())  # Use keys in order of creation (rotation)
         .all()
     )
+    
     for k in keys:
         _reset_if_new_day(k)
+        # Check if this key hasn't reached the daily limit
         if (k.qty_req or 0) < settings.api_daily_limit:
             return k
+    
     return None
 
 
@@ -80,9 +85,19 @@ def incr_usage(session: Session, key: APIKey) -> None:
         key: API key to increment
     """
     _reset_if_new_day(key)
-    key.qty_req = (key.qty_req or 0) + 1
+    old_count = key.qty_req or 0
+    key.qty_req = old_count + 1
     key.ref_date = datetime.utcnow()
     session.commit()
+    
+    # Log usage for monitoring
+    settings = get_settings()
+    remaining = settings.api_daily_limit - key.qty_req
+    print(f"🔑 API Key {key.id}: {key.qty_req}/{settings.api_daily_limit} requests used (remaining: {remaining})")
+    
+    # Warn when approaching limit
+    if remaining <= 50:
+        print(f"⚠️ API Key {key.id} is approaching limit: {remaining} requests remaining")
 
 
 def set_work_status(session: Session, key: APIKey, ok: bool) -> None:
@@ -96,6 +111,43 @@ def set_work_status(session: Session, key: APIKey, ok: bool) -> None:
     """
     key.is_work = bool(ok)
     session.commit()
+
+
+def get_api_keys_status(session: Session, user_id: int) -> List[Dict[str, Any]]:
+    """
+    Get status information for all API keys of a user.
+    
+    Args:
+        session: Database session
+        user_id: User ID
+        
+    Returns:
+        List of dictionaries with key status information
+    """
+    settings = get_settings()
+    keys = (
+        session.query(APIKey)
+        .filter(APIKey.user_id == user_id)
+        .order_by(APIKey.id.asc())
+        .all()
+    )
+    
+    status_list = []
+    for key in keys:
+        _reset_if_new_day(key)
+        remaining = max(0, settings.api_daily_limit - (key.qty_req or 0))
+        status_list.append({
+            "id": key.id,
+            "key": key.key[:8] + "..." if len(key.key) > 8 else key.key,
+            "qty_req": key.qty_req or 0,
+            "limit": settings.api_daily_limit,
+            "remaining": remaining,
+            "is_work": key.is_work,
+            "ref_date": key.ref_date,
+            "is_available": key.is_work and remaining > 0
+        })
+    
+    return status_list
 
 
 async def test_api_key(key_value: str, test_username: str = "instagram") -> Tuple[bool, Optional[str]]:

@@ -435,53 +435,17 @@ async def check_instagram_account_universal(
                         # Создаем папку
                         os.makedirs(os.path.dirname(screenshot_path), exist_ok=True)
                         
-                        # Делаем полный скриншот во временный файл
-                        temp_screenshot = screenshot_path.replace('.png', '_temp.png')
-                        await page.screenshot(path=temp_screenshot, full_page=False)
+                        # Делаем полный скриншот страницы профиля БЕЗ обрезки
+                        print(f"[PLAYWRIGHT] 📸 Создание полного скриншота профиля...")
+                        await page.screenshot(path=screenshot_path, full_page=False)
                         
-                        if os.path.exists(temp_screenshot):
-                            # Обрезаем скриншот - оставляем только верхние 25% (только header)
-                            try:
-                                from PIL import Image
-                                
-                                img = Image.open(temp_screenshot)
-                                width, height = img.size
-                                
-                                # Обрезаем скриншот - оставляем только верхние 25% (только header)
-                                crop_ratio = 0.25  # Оставляем только 25% верха (только header)
-                                new_height = int(height * crop_ratio)
-                                print(f"[PLAYWRIGHT] ✂️ Обрезка header'а: {crop_ratio*100:.0f}% верха ({height}px -> {new_height}px)")
-                                
-                                # Обрезаем (оставляем только header)
-                                cropped = img.crop((0, 0, width, new_height))
-                                
-                                # Сохраняем без темной темы (оригинальные цвета)
-                                cropped.save(screenshot_path)
-                                
-                                # Удаляем временный файл
-                                os.remove(temp_screenshot)
-                                
-                                size = os.path.getsize(screenshot_path) / 1024
-                                print(f"[PLAYWRIGHT] ✂️ Скриншот обрезан: {width}x{height} → {width}x{new_height}")
-                                print(f"[PLAYWRIGHT] 📸 Финальный размер: {size:.1f} KB")
-                                profile_data['screenshot'] = screenshot_path
-                                
-                            except ImportError:
-                                print(f"[PLAYWRIGHT] ⚠️ PIL не установлен, сохраняем без обрезки")
-                                # Переименовываем temp в финальный
-                                os.rename(temp_screenshot, screenshot_path)
-                                size = os.path.getsize(screenshot_path) / 1024
-                                print(f"[PLAYWRIGHT] 📸 Скриншот (без обрезки): {size:.1f} KB")
-                                profile_data['screenshot'] = screenshot_path
-                            
-                            except Exception as crop_error:
-                                print(f"[PLAYWRIGHT] ⚠️ Ошибка обрезки: {crop_error}")
-                                # Переименовываем temp в финальный
-                                if os.path.exists(temp_screenshot):
-                                    os.rename(temp_screenshot, screenshot_path)
-                                size = os.path.getsize(screenshot_path) / 1024
-                                print(f"[PLAYWRIGHT] 📸 Скриншот (без обрезки): {size:.1f} KB")
-                                profile_data['screenshot'] = screenshot_path
+                        if os.path.exists(screenshot_path):
+                            size = os.path.getsize(screenshot_path) / 1024
+                            print(f"[PLAYWRIGHT] ✅ Скриншот профиля создан: {size:.1f} KB")
+                            profile_data['screenshot'] = screenshot_path
+                        else:
+                            print(f"[PLAYWRIGHT] ❌ Скриншот не создан")
+                            screenshot_path = None
                         
                     except Exception as e:
                         print(f"[PLAYWRIGHT] ⚠️ Ошибка скриншота: {e}")

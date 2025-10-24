@@ -137,24 +137,39 @@ async def check_account_main(
     
     print(f"[MAIN-CHECKER] 🌐 Найден прокси: {proxy_url[:50]}...")
     
-    # ШАГ 3: Proxy + скриншот (детальная проверка)
-    print(f"[MAIN-CHECKER] 📸 Шаг 2: Proxy проверка + скриншот...")
+    # ШАГ 3: Proxy + скриншот header'а с темной темой (детальная проверка)
+    print(f"[MAIN-CHECKER] 📸 Шаг 2: Proxy проверка + header скриншот (темная тема)...")
     
     # Генерируем путь для скриншота если не указан
     if not screenshot_path:
         screenshots_dir = "screenshots"
         os.makedirs(screenshots_dir, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        screenshot_path = os.path.join(screenshots_dir, f"{username}_{timestamp}.png")
+        screenshot_path = os.path.join(screenshots_dir, f"{username}_header_{timestamp}.png")
     
-    # Проверяем через универсальный чекер с прокси
-    proxy_success, proxy_message, screenshot, profile_data = await check_instagram_account_universal(
+    # Импортируем новую функцию проверки
+    try:
+        from .ig_screenshot import check_account_with_header_screenshot
+    except ImportError:
+        from services.ig_screenshot import check_account_with_header_screenshot
+    
+    # Проверяем через новый чекер с темной темой и header скриншотом
+    proxy_result = await check_account_with_header_screenshot(
         username=username,
         proxy_url=proxy_url,
         screenshot_path=screenshot_path,
         headless=True,
-        timeout=30
+        timeout_ms=30000,
+        dark_theme=True,  # Темная тема (черный фон)
+        mobile_emulation=True,  # Мобильная эмуляция (iPhone 12)
+        crop_ratio=0  # БЕЗ обрезки - скриншот header элемента
     )
+    
+    # Адаптируем результат к старому формату
+    proxy_success = proxy_result.get("exists", False)
+    proxy_message = proxy_result.get("checked_via", "proxy_screenshot")
+    screenshot = screenshot_path if os.path.exists(screenshot_path) else None
+    profile_data = proxy_result  # Сохраняем полный результат
     
     # Обновляем статистику прокси
     try:
@@ -247,3 +262,92 @@ async def check_account_manual(
     print(f"[MAIN-CHECKER] 👆 Ручная проверка @{username}")
     return await check_account_main(username, session, user_id)
 
+
+async def check_account_with_header_dark_theme(
+    username: str,
+    session: Session,
+    user_id: int,
+    screenshot_path: Optional[str] = None
+) -> Tuple[bool, str, Optional[str]]:
+    """
+    Проверка аккаунта через proxy БЕЗ IG сессии.
+    Делает скриншот только header'а профиля с темной темой (черный фон).
+    
+    Args:
+        username: Instagram username
+        session: Database session
+        user_id: User ID
+        screenshot_path: Path for screenshot (auto-generated if None)
+        
+    Returns:
+        Tuple of (success, message, screenshot_path)
+    """
+    print(f"\n[MAIN-CHECKER] 🌙 Проверка @{username} с header-скриншотом (темная тема)")
+    
+    # Проверяем наличие прокси
+    proxy_url = get_best_proxy(session, user_id)
+    
+    if not proxy_url:
+        print(f"[MAIN-CHECKER] ❌ Прокси не найден")
+        return False, "Прокси не найден", None
+    
+    print(f"[MAIN-CHECKER] 🌐 Найден прокси: {proxy_url[:50]}...")
+    
+    # Генерируем путь для скриншота если не указан
+    if not screenshot_path:
+        screenshots_dir = "screenshots"
+        os.makedirs(screenshots_dir, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        screenshot_path = os.path.join(screenshots_dir, f"{username}_header_dark_{timestamp}.png")
+    
+    # Импортируем функцию проверки
+    try:
+        from .ig_screenshot import check_account_with_header_screenshot
+    except ImportError:
+        from services.ig_screenshot import check_account_with_header_screenshot
+    
+    # Проверяем через proxy с header-скриншотом и темной темой
+    result = await check_account_with_header_screenshot(
+        username=username,
+        proxy_url=proxy_url,
+        screenshot_path=screenshot_path,
+        headless=True,
+        timeout_ms=30000,
+        dark_theme=True,  # Темная тема (черный фон)
+        mobile_emulation=True,  # Мобильная эмуляция (iPhone 12)
+        crop_ratio=0  # БЕЗ обрезки - скриншот header элемента
+    )
+    
+    # Обновляем статистику прокси
+    try:
+        from .proxy_service import update_proxy_stats
+        
+        # Находим прокси для обновления статистики
+        proxies = session.query(Proxy).filter(
+            Proxy.user_id == user_id,
+            Proxy.is_active == True
+        ).all()
+        
+        for proxy in proxies:
+            if build_proxy_url_from_object(proxy) == proxy_url:
+                update_proxy_stats(session, proxy, result.get("exists", False))
+                print(f"[MAIN-CHECKER] 📊 Статистика прокси обновлена")
+                break
+                
+    except Exception as e:
+        print(f"[MAIN-CHECKER] ⚠️ Не удалось обновить статистику прокси: {e}")
+    
+    # Результат
+    success = result.get("exists", False)
+    screenshot = result.get("screenshot_path")
+    error = result.get("error")
+    
+    if success:
+        print(f"[MAIN-CHECKER] ✅ Успешно (header-скриншот с темной темой)")
+        return True, "Профиль найден (header-скриншот с темной темой)", screenshot
+    elif error:
+        print(f"[MAIN-CHECKER] ❌ Ошибка: {error}")
+        return False, f"Ошибка: {error}", None
+    else:
+        print(f"[MAIN-CHECKER] ❌ Профиль не найден")
+        return False, "Профиль не найден", None

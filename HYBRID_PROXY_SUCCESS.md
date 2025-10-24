@@ -272,3 +272,4 @@ if result["screenshot_created"]:
 **API (aiohttp) + Firefox (Selenium) = Идеальное решение!** 🎯
 
 
+

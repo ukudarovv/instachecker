@@ -36,11 +36,14 @@ async def check_account_exists_via_api(session: Session, user_id: int, username:
     key = pick_best_key(session, user_id)
     
     if not key:
+        print(f"❌ No available API key for user {user_id} (all keys may have reached daily limit)")
         return {
             "username": username,
             "exists": None,
             "error": "no_available_api_key"
         }
+    
+    print(f"🔑 Using API key {key.id} for @{username} (current usage: {key.qty_req or 0}/{settings.api_daily_limit})")
 
     timeout = ClientTimeout(total=settings.rapidapi_timeout_seconds)
     headers = {
