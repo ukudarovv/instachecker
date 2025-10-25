@@ -225,8 +225,8 @@ async def check_account_with_header_screenshot(
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
                 "--disable-dev-shm-usage",
-                "--virtual-time-budget=10000",  # Даем время для отрисовки
-                "--run-all-compositor-stages-before-draw",  # Принудительная отрисовка всех слоев
+                # "--virtual-time-budget=10000",  # ОТКЛЮЧЕНО: конфликт с headless
+                # "--run-all-compositor-stages-before-draw",  # ОТКЛЮЧЕНО: конфликт с headless
                 "--disable-gpu-compositing",  # Отключаем GPU композитинг (может вызывать белые скриншоты)
             ]
             
