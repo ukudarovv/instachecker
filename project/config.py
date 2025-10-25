@@ -38,8 +38,8 @@ class Settings:
         self.ig_mini_app_url: str = os.getenv("IG_MINI_APP_URL", "")  # URL for Telegram Mini App
 
         # RapidAPI settings
-        self.rapidapi_host: str = os.getenv("RAPIDAPI_HOST", "instagram210.p.rapidapi.com")
-        self.rapidapi_url: str = os.getenv("RAPIDAPI_URL", "https://instagram210.p.rapidapi.com/ig_profile")
+        self.rapidapi_host: str = os.getenv("RAPIDAPI_HOST", "instagram120.p.rapidapi.com")
+        self.rapidapi_url: str = os.getenv("RAPIDAPI_URL", "https://instagram120.p.rapidapi.com/api/instagram/profile")
         self.api_daily_limit: int = int(os.getenv("API_DAILY_LIMIT", "950"))
         self.rapidapi_timeout_seconds: int = int(os.getenv("RAPIDAPI_TIMEOUT_SECONDS", "10"))
     

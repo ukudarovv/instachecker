@@ -453,9 +453,13 @@ async def check_account_via_proxy_with_screenshot(
                     proxy_url = f"{proxy.scheme}://{proxy.username}:{proxy.password}@{proxy.host}"
                 options.add_argument(f'--proxy-server={proxy_url}')
             
-            # Headless режим
+            # Headless режим с GPU поддержкой для скриншотов
             if headless:
-                options.add_argument('--headless')
+                options.add_argument('--headless=new')  # Новый headless режим
+                options.add_argument('--disable-gpu-sandbox')  # GPU поддержка
+                options.add_argument('--enable-gpu')  # Включаем GPU
+                options.add_argument('--no-sandbox')  # Отключаем sandbox для GPU
+                options.add_argument('--disable-dev-shm-usage')  # Память для GPU
             
             # Создаем драйвер
             driver = uc.Chrome(options=options, version_main=None)

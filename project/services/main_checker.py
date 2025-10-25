@@ -120,7 +120,16 @@ async def check_account_main(
     print(f"[MAIN-CHECKER] 📡 Шаг 1: API проверка...")
     api_result = await check_account_exists_via_api(session, user_id, username)
     api_success = api_result.get("exists", False)
+    api_error = api_result.get("error")
     api_message = "найден" if api_success else "не найден"
+    
+    # Check for API key exhaustion
+    if api_error == "all_api_keys_exhausted":
+        print(f"[MAIN-CHECKER] ❌ Все API ключи исчерпаны для пользователя {user_id}")
+        return False, "Все API ключи исчерпаны.", None
+    elif api_error == "no_api_keys_available":
+        print(f"[MAIN-CHECKER] ❌ Нет доступных API ключей для пользователя {user_id}")
+        return False, "Нет доступных API ключей.", None
     
     if not api_success:
         print(f"[MAIN-CHECKER] ❌ API проверка не прошла: {api_message}")
@@ -137,32 +146,32 @@ async def check_account_main(
     
     print(f"[MAIN-CHECKER] 🌐 Найден прокси: {proxy_url[:50]}...")
     
-    # ШАГ 3: Proxy + скриншот header'а с темной темой (детальная проверка)
-    print(f"[MAIN-CHECKER] 📸 Шаг 2: Proxy проверка + header скриншот (темная тема)...")
+    # ШАГ 3: Proxy + полный скриншот с темной темой в desktop формате
+    print(f"[MAIN-CHECKER] 📸 Шаг 2: Proxy проверка + полный скриншот (темная тема, desktop)...")
     
     # Генерируем путь для скриншота если не указан
     if not screenshot_path:
         screenshots_dir = "screenshots"
         os.makedirs(screenshots_dir, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        screenshot_path = os.path.join(screenshots_dir, f"{username}_header_{timestamp}.png")
+        screenshot_path = os.path.join(screenshots_dir, f"{username}_{timestamp}.png")
     
-    # Импортируем новую функцию проверки
+    # Импортируем функцию проверки с полным скриншотом
     try:
         from .ig_screenshot import check_account_with_header_screenshot
     except ImportError:
         from services.ig_screenshot import check_account_with_header_screenshot
     
-    # Проверяем через новый чекер с темной темой и header скриншотом
+    # Проверяем через чекер с обычным скриншотом в desktop формате
     proxy_result = await check_account_with_header_screenshot(
         username=username,
         proxy_url=proxy_url,
         screenshot_path=screenshot_path,
         headless=True,
-        timeout_ms=30000,
+        timeout_ms=60000,  # Увеличиваем timeout до 60 секунд
         dark_theme=True,  # Темная тема (черный фон)
-        mobile_emulation=True,  # Мобильная эмуляция (iPhone 12)
-        crop_ratio=0  # БЕЗ обрезки - скриншот header элемента
+        mobile_emulation=False,  # Desktop формат (не мобильная эмуляция)
+        crop_ratio=0  # БЕЗ обрезки - полный скриншот страницы
     )
     
     # Адаптируем результат к старому формату
@@ -196,7 +205,14 @@ async def check_account_main(
         return True, f"API: {api_message} | Proxy: {proxy_message}", screenshot
     else:
         print(f"[MAIN-CHECKER] ⚠️ API успешно, но Proxy не прошел: {proxy_message}")
-        return True, f"API: {api_message} | Proxy: {proxy_message}", None
+        # Если API показал, что аккаунт существует, но Proxy не сработал,
+        # все равно возвращаем скриншот (если он был создан)
+        if screenshot and os.path.exists(screenshot):
+            print(f"[MAIN-CHECKER] 📸 Возвращаем скриншот несмотря на проблемы с Proxy")
+            return True, f"API: {api_message} | Proxy: {proxy_message}", screenshot
+        else:
+            print(f"[MAIN-CHECKER] ❌ Скриншот не создан из-за проблем с Proxy")
+            return True, f"API: {api_message} | Proxy: {proxy_message}", None
 
 
 async def check_account_on_add(

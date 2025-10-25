@@ -152,3 +152,81 @@ def get_accounts_expiring_soon(session: Session, days_ahead: int = 3) -> List[Ac
         .order_by(Account.to_date.asc())
         .all()
     )
+
+
+def mass_delete_accounts_by_usernames(session: Session, user_id: int, usernames: List[str], delete_type: str = "all") -> Tuple[int, List[str]]:
+    """
+    Mass delete accounts by usernames list.
+    
+    Args:
+        session: Database session
+        user_id: User ID
+        usernames: List of usernames to delete
+        delete_type: Type of deletion - "active", "inactive", or "all"
+        
+    Returns:
+        Tuple of (deleted_count, not_found_usernames)
+    """
+    deleted_count = 0
+    not_found_usernames = []
+    
+    for username in usernames:
+        normalized_username = normalize_username(username)
+        
+        # Find account by username and user_id
+        account = (
+            session.query(Account)
+            .filter(Account.user_id == user_id, Account.account == normalized_username)
+            .one_or_none()
+        )
+        
+        if not account:
+            not_found_usernames.append(username)
+            continue
+            
+        # Check deletion type
+        if delete_type == "active" and not account.done:
+            session.delete(account)
+            deleted_count += 1
+        elif delete_type == "inactive" and account.done:
+            session.delete(account)
+            deleted_count += 1
+        elif delete_type == "all":
+            session.delete(account)
+            deleted_count += 1
+        else:
+            # Account doesn't match the deletion criteria
+            continue
+    
+    session.commit()
+    return deleted_count, not_found_usernames
+
+
+def mass_delete_all_accounts(session: Session, user_id: int, delete_type: str = "all") -> int:
+    """
+    Mass delete all accounts for user by type.
+    
+    Args:
+        session: Database session
+        user_id: User ID
+        delete_type: Type of deletion - "active", "inactive", or "all"
+        
+    Returns:
+        Number of deleted accounts
+    """
+    query = session.query(Account).filter(Account.user_id == user_id)
+    
+    if delete_type == "active":
+        query = query.filter(Account.done == False)
+    elif delete_type == "inactive":
+        query = query.filter(Account.done == True)
+    # For "all", no additional filter needed
+    
+    accounts = query.all()
+    deleted_count = len(accounts)
+    
+    for account in accounts:
+        session.delete(account)
+    
+    session.commit()
+    return deleted_count

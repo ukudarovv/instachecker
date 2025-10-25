@@ -165,24 +165,31 @@ async def test_api_key(key_value: str, test_username: str = "instagram") -> Tupl
     timeout = ClientTimeout(total=settings.rapidapi_timeout_seconds)
     headers = {
         "X-RapidAPI-Key": key_value,
-        "X-RapidAPI-Host": settings.rapidapi_host
+        "X-RapidAPI-Host": settings.rapidapi_host,
+        "Content-Type": "application/json"
     }
-    params = {"ig": test_username.lower()}
+    payload = {"username": test_username.lower()}
     
     try:
         async with ClientSession(timeout=timeout, headers=headers) as sess:
-            async with sess.get(settings.rapidapi_url, params=params) as resp:
+            async with sess.post(settings.rapidapi_url, json=payload) as resp:
                 data = await resp.json(content_type=None)
                 
-                # Check if response is valid according to your schema
+                # Check if response is valid according to new API schema
                 ok = False
-                if isinstance(data, list) and data:
-                    u = (data[0] or {}).get("username")
-                    ok = (u == test_username.lower())
-                elif isinstance(data, dict):
-                    # Sometimes API returns object instead of array
-                    u = data.get("username")
-                    ok = (u == test_username.lower())
+                if isinstance(data, dict):
+                    # Check for success response with result
+                    if "result" in data and data["result"]:
+                        result_data = data["result"]
+                        ok = result_data.get("username", "").lower() == test_username.lower()
+                    # Check for error response (account not found)
+                    elif "success" in data and data["success"] is False:
+                        # This is actually a valid response - account not found
+                        ok = True
+                    else:
+                        ok = False
+                else:
+                    ok = False
                 
                 return ok, None if ok else "unexpected_response"
     except Exception as e:

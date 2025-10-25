@@ -78,11 +78,11 @@ class InstagramPlaywrightAdvanced:
         
         self.browser = await self.playwright.chromium.launch(**launch_options)
         
-        # Выбор устройства
+        # Используем фиксированное desktop устройство
         if not device:
-            device = random.choice(self.mobile_devices)
+            device = "Desktop Chrome"
         
-        print(f"[PLAYWRIGHT-ADV] 📱 Эмуляция устройства: {device}")
+        print(f"[PLAYWRIGHT-ADV] 🖥️ Используем фиксированное desktop устройство: {device}")
         
         device_config = self.playwright.devices[device]
         

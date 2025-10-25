@@ -212,13 +212,15 @@ class InstagramPlaywrightChecker:
                     proxy=proxy_config
                 )
                 
-                # Создаем контекст с мобильной эмуляцией
-                import random
-                device_name = random.choice(list(self.mobile_devices.keys()))
-                device = self.mobile_devices[device_name]
-                user_agent = random.choice(self.mobile_user_agents)
+                # Создаем контекст с фиксированным desktop устройством
+                device_name = "desktop_windows"
+                device = {
+                    "width": 1920,
+                    "height": 1080
+                }
+                user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
                 
-                print(f"[PLAYWRIGHT] 📱 Эмуляция устройства: {device_name}")
+                print(f"[PLAYWRIGHT] 🖥️ Используем фиксированное desktop устройство: {device_name}")
                 print(f"[PLAYWRIGHT] 🌐 User-Agent: {user_agent[:50]}...")
                 
                 context = await browser.new_context(

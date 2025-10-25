@@ -162,32 +162,43 @@ async def test_proxy_with_screenshot(
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         screenshot_path = os.path.join(screenshots_dir, f"{test_username}_{timestamp}.png")
         
-        # Test with universal checker
-        success, message, screenshot, profile_data = await check_instagram_account_universal(
+        # Test with header screenshot (same as ptest_screenshot mode)
+        try:
+            from .ig_screenshot import check_account_with_header_screenshot
+        except ImportError:
+            from ig_screenshot import check_account_with_header_screenshot
+        
+        result = await check_account_with_header_screenshot(
             username=test_username,
             proxy_url=proxy_url,
             screenshot_path=screenshot_path,
             headless=True,
-            timeout=90
+            timeout_ms=60000,
+            dark_theme=True,
+            mobile_emulation=False,  # Desktop режим (как в ptest_screenshot)
+            crop_ratio=0
         )
         
-        if success and screenshot and os.path.exists(screenshot):
-            # Get profile data
-            followers = 0
-            if profile_data:
-                followers = profile_data.get('followers', 0)
+        success = result.get('exists', False)
+        
+        if success and result.get('screenshot_path') and os.path.exists(result['screenshot_path']):
+            file_size = os.path.getsize(result['screenshot_path']) / 1024
             
             message = (
                 f"✅ <b>Прокси работает отлично!</b>\n\n"
                 f"📸 Скриншот профиля @{test_username}\n"
-                f"👥 Подписчиков: {followers:,}\n\n"
+                f"📁 Размер файла: {file_size:.1f} KB\n"
                 f"🌐 Прокси: {proxy.scheme}://{proxy.host}\n"
                 f"⚡ Статус: Активен"
             )
             
-            return True, message, screenshot
+            if result.get('error'):
+                message += f"\n⚠️ Предупреждение: {result['error']}"
+            
+            return True, message, result['screenshot_path']
         else:
-            return False, f"❌ Прокси не работает: {message}", None
+            error_msg = result.get('error', 'Неизвестная ошибка')
+            return False, f"❌ Прокси не работает: {error_msg}", None
             
     except Exception as e:
         return False, f"❌ Ошибка тестирования: {str(e)[:100]}", None

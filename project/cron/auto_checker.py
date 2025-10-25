@@ -121,6 +121,21 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
                 else:
                     not_found += 1
                     print(f"[AUTO-CHECK] ❌ @{acc.account} - NOT FOUND: {message}")
+                    
+                    # Send notification to user for API key exhaustion
+                    if bot and "Все API ключи исчерпаны" in message:
+                        try:
+                            notification = f"""⚠️ **Проблема с API ключами**
+
+Все API ключи исчерпаны.
+
+Аккаунт: @{acc.account}
+Время: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}"""
+                            
+                            await bot.send_message(user.id, notification)
+                            print(f"[AUTO-CHECK] 📤 Sent API exhaustion notification to user {user.id}")
+                        except Exception as e:
+                            print(f"[AUTO-CHECK] ❌ Failed to send API exhaustion notification: {e}")
                 
                 # Delay between checks (3-7 seconds)
                 if idx < len(user_accounts) - 1:

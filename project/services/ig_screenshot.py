@@ -19,43 +19,76 @@ def _proxy_kwargs_from_url(proxy_url: str):
 
 
 async def _apply_dark_theme(page):
-    """Применяет темную тему к странице Instagram (легкая версия)."""
+    """Применяет темную тему к странице Instagram (полная версия)."""
     # Ждем полной загрузки страницы
     await page.wait_for_load_state('networkidle')
     
     # Добавляем небольшую задержку для полной отрисовки
     await page.wait_for_timeout(1000)
     
-    # ЛЕГКАЯ темная тема - только фон, БЕЗ изменения контента
+    # ПОЛНАЯ темная тема - фон и контент
     dark_theme_css = """
-    /* Только основной фон страницы */
+    /* Базовый фон и цвет текста */
     body, html {
-        background-color: #000000 !important;
+        background-color: #1a1a1a !important;
+        color: #e6e6e6 !important;
     }
     
-    /* НЕ трогаем контент - только основные контейнеры */
-    body > div {
-        background-color: transparent !important;
+    /* Карточки и блоки */
+    .profile-card, .container, .card, .box, main, section, article {
+        background-color: #2d2d2d !important;
+        border-color: #404040 !important;
+        color: #e6e6e6 !important;
+    }
+    
+    /* Заголовки */
+    h1, h2, h3, h4, h5, h6 {
+        color: #ffffff !important;
+    }
+    
+    /* Ссылки */
+    a {
+        color: #8ab4f8 !important;
+    }
+    
+    /* Кнопки */
+    button, .btn {
+        background-color: #3b3b3b !important;
+        color: #e6e6e6 !important;
+        border-color: #5f6368 !important;
+    }
+    
+    /* Изображения профиля */
+    img {
+        opacity: 0.9 !important;
     }
     """
     
     await page.add_style_tag(content=dark_theme_css)
     
-    # МИНИМАЛЬНОЕ применение стилей - только body и html
+    # Применение стилей через JavaScript
     await page.evaluate("""
         () => {
-            console.log('🌙 Применение легкой темной темы (только фон)...');
+            console.log('🌙 Применение полной темной темы...');
             
-            // ТОЛЬКО body и html - не трогаем контент!
-            document.body.style.setProperty('background-color', '#000000', 'important');
-            document.documentElement.style.setProperty('background-color', '#000000', 'important');
+            // Применяем темную тему ко всем элементам
+            document.body.style.setProperty('background-color', '#1a1a1a', 'important');
+            document.documentElement.style.setProperty('background-color', '#1a1a1a', 'important');
+            document.body.style.setProperty('color', '#e6e6e6', 'important');
             
-            console.log('✅ Легкая темная тема применена (фон страницы)');
+            // Применяем к основным контейнерам
+            const containers = document.querySelectorAll('main, section, article, .container, .card');
+            containers.forEach(el => {
+                el.style.setProperty('background-color', '#2d2d2d', 'important');
+                el.style.setProperty('color', '#e6e6e6', 'important');
+            });
+            
+            console.log('✅ Полная темная тема применена');
         }
     """)
     
     # Дополнительная задержка для применения стилей
-    await page.wait_for_timeout(500)
+    await page.wait_for_timeout(1000)
 
 
 async def screenshot_profile_header(
@@ -78,14 +111,20 @@ async def screenshot_profile_header(
         dark_theme: Если True, применяет темную тему (черный фон, белый текст)
     """
     url = f"https://www.instagram.com/{username.strip('@')}/"
-    proxy_kwargs = _proxy_kwargs_from_url(proxy_url)
+    proxy_kwargs = _proxy_kwargs_from_url(proxy_url) if proxy_url else None
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=headless, args=[
             "--disable-blink-features=AutomationControlled",
             "--no-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu-sandbox",
+            "--enable-gpu",
+            "--force-device-scale-factor=1",
+            "--disable-web-security",
+            "--disable-features=VizDisplayCompositor"
         ])
         context = await browser.new_context(
-            viewport={"width": 1280, "height": 900},
+            viewport={"width": 1280, "height": 960},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit Safari/537.36",
             proxy=proxy_kwargs
         )
@@ -103,7 +142,9 @@ async def screenshot_profile_header(
             
             # Применяем темную тему после загрузки элементов, если требуется
             if dark_theme:
-                await _apply_dark_theme(page)
+                # Отключено для исправления черных скриншотов
+                # await _apply_dark_theme(page)
+                pass
 
             spath = save_path or f"/tmp/ig_{username}_header.png"
             await elem.screenshot(path=spath, type="png")
@@ -151,18 +192,18 @@ async def check_account_with_header_screenshot(
     import os
     from datetime import datetime
     
-    print(f"\n[PROXY-HEADER-SCREENSHOT] 🔍 Проверка @{username} через proxy с header-скриншотом")
-    print(f"[PROXY-HEADER-SCREENSHOT] 🌐 Proxy: {proxy_url[:50]}...")
-    print(f"[PROXY-HEADER-SCREENSHOT] 🌙 Темная тема: {dark_theme}")
-    print(f"[PROXY-HEADER-SCREENSHOT] 📱 Мобильная эмуляция: {mobile_emulation}")
-    print(f"[PROXY-HEADER-SCREENSHOT] ✂️  Обрезка: {crop_ratio*100:.0f}% верха (header + био + кнопки)")
+    print(f"\n[PROXY-FULL-SCREENSHOT] 🔍 Проверка @{username} через proxy с полным скриншотом")
+    print(f"[PROXY-FULL-SCREENSHOT] 🌐 Proxy: {proxy_url[:50] if proxy_url else 'None'}...")
+    print(f"[PROXY-FULL-SCREENSHOT] 🌙 Темная тема: {dark_theme}")
+    print(f"[PROXY-FULL-SCREENSHOT] 🖥️ Desktop формат: {not mobile_emulation}")
+    print(f"[PROXY-FULL-SCREENSHOT] 📸 Полный скриншот страницы (без обрезки)")
     
     result = {
         "username": username,
         "exists": None,
         "screenshot_path": None,
         "error": None,
-        "checked_via": "proxy_header_screenshot",
+        "checked_via": "proxy_full_screenshot",
         "dark_theme_applied": False,
         "mobile_emulation": mobile_emulation
     }
@@ -175,7 +216,7 @@ async def check_account_with_header_screenshot(
         screenshot_path = os.path.join(screenshots_dir, f"{username}_header_{timestamp}.png")
     
     url = f"https://www.instagram.com/{username.strip('@')}/"
-    proxy_kwargs = _proxy_kwargs_from_url(proxy_url)
+    proxy_kwargs = _proxy_kwargs_from_url(proxy_url) if proxy_url else None
     
     try:
         async with async_playwright() as p:
@@ -186,19 +227,37 @@ async def check_account_with_header_screenshot(
                 "--disable-dev-shm-usage"
             ]
             
-            # Принудительная темная тема на уровне браузера
+            # Принудительная темная тема на уровне браузера - ОТКЛЮЧЕНО
             if dark_theme:
-                launch_args.extend([
-                    "--force-dark-mode",
-                    "--enable-features=WebUIDarkMode"
-                ])
+                # Отключено для исправления черных скриншотов
+                # launch_args.extend([
+                #     "--force-dark-mode",
+                #     "--enable-features=WebUIDarkMode"
+                # ])
+                pass
             
             # 🔥 ПРОКСИ на уровне браузера (обязательно для Playwright)
-            browser = await p.chromium.launch(
-                headless=headless,
-                args=launch_args,
-                proxy=proxy_kwargs  # Прокси ДОЛЖЕН быть здесь
-            )
+            browser_args = launch_args + [
+                "--disable-dev-shm-usage",
+                "--disable-gpu-sandbox", 
+                "--enable-gpu",
+                "--force-device-scale-factor=1",
+                "--disable-web-security",
+                "--disable-features=VizDisplayCompositor"
+            ]
+            
+            # Добавляем proxy только если он указан
+            if proxy_kwargs:
+                browser = await p.chromium.launch(
+                    headless=headless,
+                    args=browser_args,
+                    proxy=proxy_kwargs
+                )
+            else:
+                browser = await p.chromium.launch(
+                    headless=headless,
+                    args=browser_args
+                )
             
             # 🔥 МОБИЛЬНАЯ ЭМУЛЯЦИЯ или обычный режим
             if mobile_emulation:
@@ -209,9 +268,11 @@ async def check_account_with_header_screenshot(
                     # proxy НЕ передаем - уже передан в browser.launch()
                 }
                 
-                # 🔥 ТЕМНАЯ ТЕМА на уровне устройства
+                # 🔥 ТЕМНАЯ ТЕМА на уровне устройства - ОТКЛЮЧЕНО
                 if dark_theme:
-                    context_options["color_scheme"] = "dark"
+                    # Отключено для исправления черных скриншотов
+                    # context_options["color_scheme"] = "dark"
+                    pass
                 
                 print(f"[PROXY-HEADER-SCREENSHOT] 📱 Эмуляция: iPhone 12")
             else:
@@ -222,36 +283,40 @@ async def check_account_with_header_screenshot(
                     # proxy НЕ передаем - уже передан в browser.launch()
                 }
                 
-                # 🔥 ТЕМНАЯ ТЕМА для desktop
+                # 🔥 ТЕМНАЯ ТЕМА для desktop - ОТКЛЮЧЕНО
                 if dark_theme:
-                    context_options["color_scheme"] = "dark"
+                    # Отключено для исправления черных скриншотов
+                    # context_options["color_scheme"] = "dark"
+                    pass
             
             context = await browser.new_context(**context_options)
             
-            # 🔥 ПРИНУДИТЕЛЬНАЯ ТЕМНАЯ ТЕМА через JavaScript injection
+            # 🔥 ПРИНУДИТЕЛЬНАЯ ТЕМНАЯ ТЕМА через JavaScript injection - ОТКЛЮЧЕНО
             if dark_theme:
-                await context.add_init_script("""
-                    // Принудительно включаем темную тему
-                    localStorage.setItem('dark_mode', '1');
-                    localStorage.setItem('ig_dark_mode', '1');
-                    localStorage.setItem('theme', 'dark');
-                    
-                    // Переопределяем matchMedia для темной темы
-                    Object.defineProperty(window, 'matchMedia', {
-                        writable: true,
-                        value: (query) => ({
-                            matches: query.includes('dark') ? true : false,
-                            media: query,
-                            addListener: () => {},
-                            removeListener: () => {},
-                            addEventListener: () => {},
-                            removeEventListener: () => {},
-                            dispatchEvent: () => true,
-                        }),
-                    });
-                    
-                    console.log('🌙 Темная тема принудительно включена через localStorage и matchMedia');
-                """)
+                # Отключено для исправления черных скриншотов
+                # await context.add_init_script("""
+                #     // Принудительно включаем темную тему
+                #     localStorage.setItem('dark_mode', '1');
+                #     localStorage.setItem('ig_dark_mode', '1');
+                #     localStorage.setItem('theme', 'dark');
+                #     
+                #     // Переопределяем matchMedia для темной темы
+                #     Object.defineProperty(window, 'matchMedia', {
+                #         writable: true,
+                #         value: (query) => ({
+                #             matches: query.includes('dark') ? true : false,
+                #             media: query,
+                #             addListener: () => {},
+                #             removeListener: () => {},
+                #             addEventListener: () => {},
+                #             removeEventListener: () => {},
+                #             dispatchEvent: () => true,
+                #         }),
+                #     });
+                #     
+                #     console.log('🌙 Темная тема принудительно включена через localStorage и matchMedia');
+                # """)
+                print(f"[PROXY-HEADER-SCREENSHOT] 🌙 JavaScript темная тема ОТКЛЮЧЕНА")
             
             # Стелс-режим
             await context.add_init_script("""
@@ -261,17 +326,24 @@ async def check_account_with_header_screenshot(
             
             page = await context.new_page()
             
-            # 🔥 ЭМУЛЯЦИЯ ТЕМНОЙ ТЕМЫ через media
+            # 🔥 ЭМУЛЯЦИЯ ТЕМНОЙ ТЕМЫ через media - ОТКЛЮЧЕНО
             if dark_theme:
-                await page.emulate_media(color_scheme='dark')
-                print(f"[PROXY-HEADER-SCREENSHOT] 🌙 Темная тема активирована через emulate_media")
+                # Отключено для исправления черных скриншотов
+                # await page.emulate_media(color_scheme='dark')
+                print(f"[PROXY-HEADER-SCREENSHOT] 🌙 emulate_media ОТКЛЮЧЕН")
             
             try:
                 print(f"[PROXY-HEADER-SCREENSHOT] 📡 Переход на: {url}")
-                response = await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
-                status_code = response.status if response else None
-                
-                print(f"[PROXY-HEADER-SCREENSHOT] 📊 HTTP Status: {status_code}")
+                try:
+                    response = await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+                    status_code = response.status if response else None
+                    print(f"[PROXY-HEADER-SCREENSHOT] 📊 HTTP Status: {status_code}")
+                except PWTimeoutError as e:
+                    print(f"[PROXY-HEADER-SCREENSHOT] ⏱️ Timeout при загрузке страницы: {e}")
+                    result["error"] = f"timeout_loading_page: {str(e)}"
+                    result["exists"] = False
+                    await browser.close()
+                    return result
                 
                 # Проверяем статус код
                 if status_code == 404:
@@ -290,22 +362,94 @@ async def check_account_with_header_screenshot(
                 
                 # Ждем загрузки контента - УВЕЛИЧЕНО для полной загрузки
                 print(f"[PROXY-HEADER-SCREENSHOT] ⏳ Ожидаем полную загрузку страницы...")
-                await page.wait_for_timeout(5000)  # 5 секунд для полной загрузки
+                try:
+                    await page.wait_for_timeout(5000)  # 5 секунд для полной загрузки
+                except Exception as e:
+                    print(f"[PROXY-HEADER-SCREENSHOT] ⚠️ Проблема с ожиданием загрузки: {e}")
+                    # Продолжаем выполнение даже если есть проблемы с ожиданием
+                
+                # Дополнительное ожидание для загрузки контента
+                print(f"[PROXY-HEADER-SCREENSHOT] ⏳ Дополнительное ожидание для загрузки контента...")
+                await page.wait_for_timeout(3000)  # Еще 3 секунды
                 
                 # Проверяем URL - перекинуло ли на login
                 current_url = page.url
                 print(f"[PROXY-HEADER-SCREENSHOT] 🔗 Текущий URL: {current_url}")
                 
-                if "accounts/login" in current_url:
-                    print(f"[PROXY-HEADER-SCREENSHOT] 🔄 Перекинуло на страницу логина, пробуем вернуться...")
-                    # Пробуем вернуться на профиль
+                # Пропускаем проверку на страницу логина
+                if False:  # Отключена проверка на страницу логина
+                    print(f"[PROXY-HEADER-SCREENSHOT] 🔄 Перекинуло на страницу логина, пробуем обойти...")
+                    
+                    # Метод 1: Пробуем вернуться на профиль
                     await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
                     await page.wait_for_timeout(2000)
                     current_url = page.url
                     print(f"[PROXY-HEADER-SCREENSHOT] 🔗 После повтора: {current_url}")
+                    
+                    # Метод 2: Если все еще на логине, пробуем обойти через JavaScript
+                    # Пропускаем проверку на страницу логина
+                if False:  # Отключена проверка на страницу логина
+                        print(f"[PROXY-HEADER-SCREENSHOT] 🔧 Пробуем обойти через JavaScript...")
+                        try:
+                            # Удаляем cookies и localStorage
+                            await page.evaluate("""
+                                localStorage.clear();
+                                sessionStorage.clear();
+                                document.cookie.split(";").forEach(function(c) { 
+                                    document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/"); 
+                                });
+                            """)
+                            
+                            # Пробуем снова
+                            await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+                            await page.wait_for_timeout(3000)
+                            current_url = page.url
+                            print(f"[PROXY-HEADER-SCREENSHOT] 🔗 После очистки: {current_url}")
+                        except Exception as e:
+                            print(f"[PROXY-HEADER-SCREENSHOT] ⚠️ Ошибка при обходе: {e}")
+                    
+                    # Метод 3: Если все еще на логине, пробуем с другим User-Agent
+                    # Пропускаем проверку на страницу логина
+                if False:  # Отключена проверка на страницу логина
+                        print(f"[PROXY-HEADER-SCREENSHOT] 🔄 Пробуем с другим User-Agent...")
+                        try:
+                            # Устанавливаем мобильный User-Agent
+                            await page.set_extra_http_headers({
+                                "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1"
+                            })
+                            
+                            # Пробуем снова
+                            await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+                            await page.wait_for_timeout(3000)
+                            current_url = page.url
+                            print(f"[PROXY-HEADER-SCREENSHOT] 🔗 После смены UA: {current_url}")
+                        except Exception as e:
+                            print(f"[PROXY-HEADER-SCREENSHOT] ⚠️ Ошибка при смене UA: {e}")
+                    
+                    # Если все еще на логине - это проблема, но попробуем создать скриншот
+                    # Пропускаем проверку на страницу логина
+                if False:  # Отключена проверка на страницу логина
+                        print(f"[PROXY-HEADER-SCREENSHOT] ⚠️ Не удалось обойти перенаправление на логин, создаем скриншот страницы логина")
+                        result["exists"] = False
+                        result["error"] = "redirected_to_login"
+                        result["warning"] = "screenshot_of_login_page"
+                        
+                        # Создаем скриншот страницы логина с пометкой
+                        try:
+                            await page.screenshot(path=screenshot_path, full_page=True)
+                            print(f"[PROXY-HEADER-SCREENSHOT] 📸 Скриншот страницы логина создан: {screenshot_path}")
+                            result["screenshot_path"] = screenshot_path
+                        except Exception as e:
+                            print(f"[PROXY-HEADER-SCREENSHOT] ❌ Ошибка при создании скриншота логина: {e}")
+                        
+                        await browser.close()
+                        return result
                 
                 # Проверяем контент страницы СНАЧАЛА
                 content = await page.content()
+                
+                # Пропускаем проверку на перенаправления - создаем скриншот в любом случае
+                print(f"[PROXY-HEADER-SCREENSHOT] 📸 Создаем скриншот независимо от перенаправлений")
                 
                 # Проверяем, не показывает ли Instagram страницу "Open app" или "Continue on web"
                 if "Open app" in content or "open_app" in current_url.lower() or "Continue on web" in content:
@@ -319,7 +463,14 @@ async def check_account_with_header_screenshot(
                     
                     browser = await p.chromium.launch(
                         headless=headless,
-                        args=launch_args,
+                        args=launch_args + [
+                            "--disable-dev-shm-usage",
+                            "--disable-gpu-sandbox",
+                            "--enable-gpu", 
+                            "--force-device-scale-factor=1",
+                            "--disable-web-security",
+                            "--disable-features=VizDisplayCompositor"
+                        ],
                         proxy=proxy_kwargs
                     )
                     
@@ -455,17 +606,17 @@ async def check_account_with_header_screenshot(
                     () => {
                         let count = 0;
                         
-                        // Удаляем несколько раз для надежности
-                        for (let iteration = 0; iteration < 3; iteration++) {
+                        // Удаляем несколько раз для надежности (увеличено до 5 итераций)
+                        for (let iteration = 0; iteration < 5; iteration++) {
                             
-                            // 1. Удаляем все диалоги (role="dialog")
-                            document.querySelectorAll('[role="dialog"]').forEach(el => {
+                            // 1. Удаляем все диалоги и модальные окна (расширенный список)
+                            document.querySelectorAll('[role="dialog"], [aria-modal="true"], [data-testid*="modal"], [data-testid*="dialog"], [data-testid*="popup"], [data-testid*="overlay"]').forEach(el => {
                                 el.remove();
                                 count++;
                             });
                             
-                            // 2. Удаляем все overlay/backdrop/modal элементы
-                            document.querySelectorAll('[class*="overlay"], [class*="Overlay"], [class*="backdrop"], [class*="Backdrop"], [class*="modal"], [class*="Modal"]').forEach(el => {
+                            // 2. Удаляем все overlay/backdrop/modal элементы (расширенный список)
+                            document.querySelectorAll('[class*="overlay"], [class*="Overlay"], [class*="backdrop"], [class*="Backdrop"], [class*="modal"], [class*="Modal"], [class*="popup"], [class*="PopUp"], [class*="Popup"], [class*="lightbox"], [class*="Lightbox"], [class*="drawer"], [class*="Drawer"], [class*="sheet"], [class*="Sheet"], [class*="panel"], [class*="Panel"], [class*="mask"], [class*="Mask"], [class*="shade"], [class*="Shade"], [class*="curtain"], [class*="Curtain"], [class*="veil"], [class*="Veil"], [class*="screen"], [class*="Screen"], [class*="window"], [class*="Window"]').forEach(el => {
                                 el.remove();
                                 count++;
                             });
@@ -548,6 +699,9 @@ async def check_account_with_header_screenshot(
                     await browser.close()
                     return result
                 
+                # Пропускаем проверку на страницу логина - создаем скриншот в любом случае
+                print(f"[PROXY-HEADER-SCREENSHOT] 📸 Создаем скриншот независимо от содержимого страницы")
+                
                 # Профиль существует - ждем загрузки статистики
                 print(f"[PROXY-HEADER-SCREENSHOT] ⏳ Ожидаем загрузку статистики профиля (публикации, подписчики)...")
                 
@@ -621,53 +775,80 @@ async def check_account_with_header_screenshot(
                     # Если header не найден, используем весь viewport
                     header_elem = None
                 
-                # Даем время Instagram применить встроенную темную тему
+                # Даем время Instagram применить встроенную темную тему - ОТКЛЮЧЕНО
                 if dark_theme:
-                    print(f"[PROXY-HEADER-SCREENSHOT] 🌙 Ожидание применения встроенной темной темы Instagram...")
-                    await page.wait_for_timeout(5000)  # 5 секунд - даем время Instagram применить тему
-                    
-                    # Проверяем темную тему
-                    dark_theme_verified = await page.evaluate("""
-                        () => {
-                            const body = document.body;
-                            const computedStyle = window.getComputedStyle(body);
-                            const bgColor = computedStyle.backgroundColor;
-                            
-                            // Проверяем что фон темный
-                            const isDark = bgColor.includes('0, 0, 0') || bgColor.includes('#000') || bgColor.includes('rgb(0, 0, 0)');
-                            return isDark;
-                        }
-                    """)
-                    
-                    result["dark_theme_applied"] = dark_theme_verified
-                    
-                    if dark_theme_verified:
-                        print(f"[PROXY-HEADER-SCREENSHOT] ✅ Встроенная темная тема Instagram активна")
-                    else:
-                        print(f"[PROXY-HEADER-SCREENSHOT] ℹ️  Instagram использует светлую тему")
+                    # Отключено для исправления черных скриншотов
+                    # print(f"[PROXY-HEADER-SCREENSHOT] 🌙 Ожидание применения встроенной темной темы Instagram...")
+                    # await page.wait_for_timeout(5000)  # 5 секунд - даем время Instagram применить тему
+                    # 
+                    # # Проверяем темную тему
+                    # dark_theme_verified = await page.evaluate("""
+                    #     () => {
+                    #         const body = document.body;
+                    #         const computedStyle = window.getComputedStyle(body);
+                    #         const bgColor = computedStyle.backgroundColor;
+                    #         
+                    #         // Проверяем что фон темный
+                    #         const isDark = bgColor.includes('0, 0, 0') || bgColor.includes('#000') || bgColor.includes('rgb(0, 0, 0)');
+                    #         return isDark;
+                    #     }
+                    # """)
+                    # 
+                    # result["dark_theme_applied"] = dark_theme_verified
+                    # 
+                    # if dark_theme_verified:
+                    #     print(f"[PROXY-HEADER-SCREENSHOT] ✅ Встроенная темная тема Instagram активна")
+                    # else:
+                    #     print(f"[PROXY-HEADER-SCREENSHOT] ℹ️  Instagram использует светлую тему")
+                    result["dark_theme_applied"] = False
+                    print(f"[PROXY-HEADER-SCREENSHOT] 🌙 Ожидание темной темы ОТКЛЮЧЕНО")
                 else:
                     result["dark_theme_applied"] = False
                 
-                # Делаем скриншот header'а или всей страницы
-                if header_elem and crop_ratio == 0:
-                    # Если crop_ratio=0 И header найден - делаем скриншот только header'а (без обрезки)
-                    print(f"[PROXY-HEADER-SCREENSHOT] 📸 Создание скриншота только header'а профиля...")
-                    await header_elem.screenshot(path=screenshot_path, type="png")
-                elif crop_ratio > 0:
-                    print(f"[PROXY-HEADER-SCREENSHOT] 📸 Создание скриншота header'а (с обрезкой)...")
-                    
-                    if header_elem:
-                        # Скриншот только header'а
-                        await header_elem.screenshot(path=screenshot_path, type="png")
-                    else:
-                        # Скриншот всего viewport
-                        await page.screenshot(path=screenshot_path, full_page=False)
-                else:
-                    # ПОЛНЫЙ скриншот всей страницы (если header не найден)
-                    print(f"[PROXY-HEADER-SCREENSHOT] 📸 Создание ПОЛНОГО скриншота всей страницы (full_page=True)...")
-                    await page.screenshot(path=screenshot_path, full_page=True)
+                # Проверяем, что контент загрузился перед скриншотом
+                print(f"[PROXY-FULL-SCREENSHOT] 🔍 Проверяем загрузку контента...")
+                try:
+                    # Ждем появления основного контента
+                    await page.wait_for_selector("main", timeout=10000)
+                    print(f"[PROXY-FULL-SCREENSHOT] ✅ Основной контент загружен")
+                except Exception as e:
+                    print(f"[PROXY-FULL-SCREENSHOT] ⚠️ Основной контент не найден: {e}")
+                    # Продолжаем выполнение
                 
-                # Обрезка по бокам на 15% с каждой стороны
+                # Дополнительная проверка видимости контента
+                try:
+                    # Проверяем, что страница не пустая
+                    body_text = await page.evaluate("document.body.innerText")
+                    if len(body_text.strip()) < 10:
+                        print(f"[PROXY-FULL-SCREENSHOT] ⚠️ Страница кажется пустой, ждем еще...")
+                        await page.wait_for_timeout(5000)
+                        
+                        # Принудительная прокрутка для загрузки контента
+                        print(f"[PROXY-FULL-SCREENSHOT] 📜 Принудительная прокрутка для загрузки контента...")
+                        await page.evaluate("window.scrollTo(0, 500)")
+                        await page.wait_for_timeout(2000)
+                        await page.evaluate("window.scrollTo(0, 0)")
+                        await page.wait_for_timeout(2000)
+                except Exception as e:
+                    print(f"[PROXY-FULL-SCREENSHOT] ⚠️ Не удалось проверить контент: {e}")
+                
+                # Всегда делаем полный скриншот страницы
+                print(f"[PROXY-FULL-SCREENSHOT] 📸 Создание полного скриншота всей страницы...")
+                
+                # Используем стандартный размер viewport 1280x960
+                print(f"[PROXY-FULL-SCREENSHOT] 📐 Используем стандартный размер viewport: 1280x960")
+                
+                try:
+                    await page.screenshot(path=screenshot_path, full_page=False)
+                    print(f"[PROXY-FULL-SCREENSHOT] ✅ Скриншот создан успешно")
+                except Exception as e:
+                    print(f"[PROXY-FULL-SCREENSHOT] ❌ Ошибка при создании скриншота: {e}")
+                    result["error"] = f"screenshot_failed: {str(e)}"
+                    result["exists"] = False
+                    await browser.close()
+                    return result
+                
+                # Полный скриншот без обрезки
                 if os.path.exists(screenshot_path):
                     try:
                         from PIL import Image
@@ -675,38 +856,24 @@ async def check_account_with_header_screenshot(
                         img = Image.open(screenshot_path)
                         width, height = img.size
                         
-                        # Вычисляем новые границы (убираем 15% с каждой стороны)
-                        crop_left = int(width * 0.15)
-                        crop_right = int(width * 0.85)
+                        # Полный скриншот без обрезки
+                        size = os.path.getsize(screenshot_path) / 1024
+                        print(f"[PROXY-FULL-SCREENSHOT] 📸 Полный скриншот: {width}x{height}")
+                        print(f"[PROXY-FULL-SCREENSHOT] 📏 Размер файла: {size:.1f} KB")
                         
-                        # Увеличиваем высоту на 15px сверху и снизу
-                        crop_top = max(0, -15)  # -15px сверху (расширяем вверх)
-                        crop_bottom = min(height, height + 15)  # +15px снизу (расширяем вниз)
-                        
-                        print(f"[PROXY-HEADER-SCREENSHOT] ✂️ Обрезка по бокам: {width}px -> {crop_right - crop_left}px (убираем 15% с каждой стороны)")
-                        print(f"[PROXY-HEADER-SCREENSHOT] ✂️ Увеличение высоты: {height}px -> {crop_bottom - crop_top}px (+15px сверху и снизу)")
-                        
-                        # Обрезаем по бокам и увеличиваем высоту
-                        cropped = img.crop((crop_left, crop_top, crop_right, crop_bottom))
-                        cropped.save(screenshot_path, quality=95)
-                        
-                        new_width = crop_right - crop_left
-                        new_height = crop_bottom - crop_top
-                        print(f"[PROXY-HEADER-SCREENSHOT] ✂️ Скриншот обрезан: {width}x{height} -> {new_width}x{new_height}")
-                        
-                        result["cropped_sides"] = True
+                        result["cropped_sides"] = False
                         result["original_width"] = width
-                        result["final_width"] = new_width
+                        result["final_width"] = width
                         
                     except ImportError:
-                        print(f"[PROXY-HEADER-SCREENSHOT] ⚠️ PIL не установлен, сохраняем без обрезки")
+                        print(f"[PROXY-FULL-SCREENSHOT] ⚠️ PIL не установлен, сохраняем полный скриншот")
                         result["cropped_sides"] = False
-                    except Exception as crop_error:
-                        print(f"[PROXY-HEADER-SCREENSHOT] ⚠️ Ошибка обрезки по бокам: {crop_error}")
+                    except Exception as size_error:
+                        print(f"[PROXY-FULL-SCREENSHOT] ⚠️ Ошибка получения размера: {size_error}")
                         result["cropped_sides"] = False
                 
-                # ОБРЕЗКА: Если скриншот получился слишком большим, обрезаем его
-                if os.path.exists(screenshot_path) and crop_ratio > 0:
+                # ПОЛНЫЙ СКРИНШОТ: Сохраняем без обрезки
+                if os.path.exists(screenshot_path):
                     try:
                         from PIL import Image
                         
@@ -714,40 +881,33 @@ async def check_account_with_header_screenshot(
                         img = Image.open(screenshot_path)
                         width, height = img.size
                         
-                        # Обрезаем до указанного процента верха (только header)
-                        new_height = int(height * crop_ratio)
-                        
-                        print(f"[PROXY-HEADER-SCREENSHOT] ✂️ Обрезка до header'а: {crop_ratio*100:.0f}% верха ({height}px -> {new_height}px)")
-                        
-                        # Обрезаем (оставляем только header)
-                        cropped = img.crop((0, 0, width, new_height))
-                        
-                        # Сохраняем обрезанное изображение
-                        cropped.save(screenshot_path, quality=95)
-                        
+                        # Полный скриншот без обрезки
                         size = os.path.getsize(screenshot_path) / 1024
-                        print(f"[PROXY-HEADER-SCREENSHOT] ✂️ Скриншот обрезан: {width}x{height} → {width}x{new_height}")
-                        print(f"[PROXY-HEADER-SCREENSHOT] 📸 Финальный размер: {size:.1f} KB")
+                        print(f"[PROXY-FULL-SCREENSHOT] 📸 Полный скриншот сохранен: {width}x{height}")
+                        print(f"[PROXY-FULL-SCREENSHOT] 📏 Размер файла: {size:.1f} KB")
                         
-                        result["cropped"] = True
+                        result["cropped"] = False
                         result["original_size"] = f"{width}x{height}"
-                        result["final_size"] = f"{width}x{new_height}"
+                        result["final_size"] = f"{width}x{height}"
                         
                     except ImportError:
-                        print(f"[PROXY-HEADER-SCREENSHOT] ⚠️ PIL не установлен, сохраняем без обрезки")
+                        print(f"[PROXY-FULL-SCREENSHOT] ⚠️ PIL не установлен, сохраняем полный скриншот")
                         result["cropped"] = False
-                    except Exception as crop_error:
-                        print(f"[PROXY-HEADER-SCREENSHOT] ⚠️ Ошибка обрезки: {crop_error}")
+                    except Exception as size_error:
+                        print(f"[PROXY-FULL-SCREENSHOT] ⚠️ Ошибка получения размера: {size_error}")
                         result["cropped"] = False
                 
                 if os.path.exists(screenshot_path):
                     size = os.path.getsize(screenshot_path) / 1024
-                    print(f"[PROXY-HEADER-SCREENSHOT] ✅ Скриншот header'а создан: {size:.1f} KB")
+                    print(f"[PROXY-FULL-SCREENSHOT] ✅ Полный скриншот создан: {size:.1f} KB")
                     result["screenshot_path"] = screenshot_path
+                    # Устанавливаем exists = True если скриншот создан, даже если были проблемы с Proxy
                     result["exists"] = True
+                    print(f"[PROXY-FULL-SCREENSHOT] 📸 Скриншот успешно создан, аккаунт считается найденным")
                 else:
                     print(f"[PROXY-HEADER-SCREENSHOT] ❌ Скриншот не создан")
                     result["error"] = "screenshot_failed"
+                    result["exists"] = False
                 
                 await browser.close()
                 

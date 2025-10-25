@@ -77,7 +77,7 @@ class TelegramBot:
             print(f"Error getting updates: {e}")
             return {"ok": False, "result": []}
     
-    def send_message(self, chat_id: int, text: str, reply_markup: Dict = None) -> bool:
+    def send_message(self, chat_id: int, text: str, reply_markup: Dict = None) -> Dict:
         """Send message to chat."""
         url = f"{self.api_url}/sendMessage"
         data = {
@@ -92,7 +92,11 @@ class TelegramBot:
         try:
             response = requests.post(url, json=data, timeout=10)
             response.raise_for_status()
-            return response.json().get("ok", False)
+            result = response.json()
+            if result.get("ok", False):
+                return result.get("result", {})
+            else:
+                return {"message_id": None}
         except requests.RequestException as e:
             print(f"Error sending message: {e}")
             # Try to send without HTML parsing if that's the issue
@@ -100,10 +104,14 @@ class TelegramBot:
                 data.pop("parse_mode", None)
                 response = requests.post(url, json=data, timeout=10)
                 response.raise_for_status()
-                return response.json().get("ok", False)
+                result = response.json()
+                if result.get("ok", False):
+                    return result.get("result", {})
+                else:
+                    return {"message_id": None}
             except requests.RequestException as e2:
                 print(f"Error sending message (retry): {e2}")
-            return False
+            return {"message_id": None}
     
     async def send_photo(self, chat_id: int, photo_path: str, caption: str = None) -> bool:
         """Send photo to chat."""
@@ -306,6 +314,8 @@ class TelegramBot:
         callback_data = callback_query["data"]
         message_id = callback_query["message"]["message_id"]
         
+        print(f"[DEBUG] Processing callback: {callback_data} for user {user_id}")
+        
         
         # Import access helpers
         try:
@@ -402,25 +412,61 @@ class TelegramBot:
             elif callback_data.startswith("addd:"):
                 # Start add days FSM
                 acc_id = int(callback_data.split(":")[1])
+                
+                # Delete the account info message
+                try:
+                    self.delete_message(chat_id, callback_query["message"]["message_id"])
+                except:
+                    pass  # Ignore if message can't be deleted
+                
+                # Create keyboard with Cancel button
+                cancel_keyboard = {
+                    "keyboard": [
+                        [{"text": "❌ Отмена"}]
+                    ],
+                    "resize_keyboard": True,
+                    "one_time_keyboard": True
+                }
+                message = self.send_message(chat_id, "Введите количество дней для добавления (целое > 0):", cancel_keyboard)
+                
+                # Store the message ID for later deletion
                 self.fsm_states[user_id] = {
                     "state": "waiting_for_add_days",
                     "acc_id": acc_id,
                     "back_prefix": "apg",
-                    "page": 1
+                    "page": 1,
+                    "message_id": message.get("message_id")  # Store message ID for deletion
                 }
-                self.send_message(chat_id, "Введите количество дней для добавления (целое > 0):")
                 self.answer_callback_query(callback_query["id"])
                 
             elif callback_data.startswith("subd:"):
                 # Start subtract days FSM
                 acc_id = int(callback_data.split(":")[1])
+                
+                # Delete the account info message
+                try:
+                    self.delete_message(chat_id, callback_query["message"]["message_id"])
+                except:
+                    pass  # Ignore if message can't be deleted
+                
+                # Create keyboard with Cancel button
+                cancel_keyboard = {
+                    "keyboard": [
+                        [{"text": "❌ Отмена"}]
+                    ],
+                    "resize_keyboard": True,
+                    "one_time_keyboard": True
+                }
+                message = self.send_message(chat_id, "Введите количество дней для уменьшения (целое > 0):", cancel_keyboard)
+                
+                # Store the message ID for later deletion
                 self.fsm_states[user_id] = {
                     "state": "waiting_for_remove_days",
                     "acc_id": acc_id,
                     "back_prefix": "apg",
-                    "page": 1
+                    "page": 1,
+                    "message_id": message.get("message_id")  # Store message ID for deletion
                 }
-                self.send_message(chat_id, "Введите количество дней для уменьшения (целое > 0):")
                 self.answer_callback_query(callback_query["id"])
                 
             elif callback_data.startswith("delc:"):
@@ -785,7 +831,15 @@ class TelegramBot:
                     f"Бот проверит доступность аккаунта через прокси и сделает скриншот."
                 )
                 
-                self.edit_message_text(chat_id, message_id, message, cancel_kb())
+                # Create keyboard with Cancel button
+                cancel_keyboard = {
+                    "keyboard": [
+                        [{"text": "❌ Отмена"}]
+                    ],
+                    "resize_keyboard": True,
+                    "one_time_keyboard": True
+                }
+                self.edit_message_text(chat_id, message_id, message, cancel_keyboard)
                 self.answer_callback_query(callback_query["id"])
             
             # Test mode selection - all proxies
@@ -811,8 +865,9 @@ class TelegramBot:
                 
                 message = (
                     f"🧪 <b>Тестирование всех прокси</b>\n\n"
-                    f"📊 Будет протестировано: {active_count} прокси\n\n"
-                    f"Введите Instagram username для проверки:\n\n"
+                    f"📊 Будет протестировано: {active_count} прокси\n"
+                    f"🖥️ Режим: Desktop (стандартное тестирование)\n\n"
+                    f"<b>Введите Instagram username для проверки:</b>\n\n"
                     f"💡 Примеры:\n"
                     f"  • instagram (рекомендуется)\n"
                     f"  • cristiano\n"
@@ -820,15 +875,26 @@ class TelegramBot:
                     f"Бот проверит каждый прокси на этом аккаунте и покажет результаты."
                 )
                 
-                self.edit_message_text(chat_id, message_id, message, cancel_kb())
+                # Create keyboard with Cancel button
+                cancel_keyboard = {
+                    "keyboard": [
+                        [{"text": "❌ Отмена"}]
+                    ],
+                    "resize_keyboard": True,
+                    "one_time_keyboard": True
+                }
+                self.edit_message_text(chat_id, message_id, message, cancel_keyboard)
                 self.answer_callback_query(callback_query["id"])
             
             # Test mode selection - select specific proxy
             elif callback_data == "ptest_select":
+                print(f"[DEBUG] Processing ptest_select callback for user {user_id}")
                 try:
                     from .models import Proxy
                     from .keyboards import proxy_selection_for_test_kb, proxies_menu_kb
-                except ImportError:
+                    print(f"[DEBUG] Imports successful")
+                except ImportError as e:
+                    print(f"[DEBUG] Import error: {e}")
                     from models import Proxy
                     from keyboards import proxy_selection_for_test_kb, proxies_menu_kb
                 
@@ -837,8 +903,10 @@ class TelegramBot:
                         Proxy.user_id == user.id,
                         Proxy.is_active == True
                     ).order_by(Proxy.priority.asc()).all()
+                    print(f"[DEBUG] Found {len(active_proxies)} active proxies")
                     
                     if not active_proxies:
+                        print(f"[DEBUG] No active proxies found")
                         self.answer_callback_query(callback_query["id"], "Нет активных прокси", show_alert=True)
                         return
                 
@@ -846,14 +914,24 @@ class TelegramBot:
                     f"🎯 <b>Выбор прокси для тестирования</b>\n\n"
                     f"Выберите прокси из списка:"
                 )
+                print(f"[DEBUG] Message created: {message}")
                 
-                self.edit_message_text(chat_id, message_id, message, proxy_selection_for_test_kb(active_proxies))
+                keyboard = proxy_selection_for_test_kb(active_proxies)
+                print(f"[DEBUG] Keyboard created with {len(active_proxies)} proxies")
+                
+                print(f"[DEBUG] Attempting to send new message to chat {chat_id}")
+                result = self.send_message(chat_id, message, keyboard)
+                print(f"[DEBUG] Send message result: {result}")
+                
                 self.answer_callback_query(callback_query["id"])
+                print(f"[DEBUG] Callback query answered")
             
             # Test specific proxy (after selection)
             elif callback_data.startswith("ptest_one:"):
+                print(f"[DEBUG] Processing ptest_one callback: {callback_data} for user {user_id}")
                 _, pid_s = callback_data.split(":")
                 pid = int(pid_s)
+                print(f"[DEBUG] Selected proxy ID: {pid}")
                 
                 # Start FSM for username input
                 self.fsm_states[user_id] = {
@@ -861,10 +939,13 @@ class TelegramBot:
                     "proxy_id": pid,
                     "test_all": False
                 }
+                print(f"[DEBUG] FSM state set: {self.fsm_states[user_id]}")
                 
                 try:
                     from .keyboards import cancel_kb
-                except ImportError:
+                    print(f"[DEBUG] Imports successful")
+                except ImportError as e:
+                    print(f"[DEBUG] Import error: {e}")
                     from keyboards import cancel_kb
                 
                 message = (
@@ -876,9 +957,125 @@ class TelegramBot:
                     f"  • nasa\n\n"
                     f"Бот проверит аккаунт через прокси и сделает скриншот."
                 )
+                print(f"[DEBUG] Message created: {message[:100]}...")
                 
-                self.edit_message_text(chat_id, message_id, message, cancel_kb())
+                # Create keyboard with Cancel button
+                cancel_keyboard = {
+                    "keyboard": [
+                        [{"text": "❌ Отмена"}]
+                    ],
+                    "resize_keyboard": True,
+                    "one_time_keyboard": True
+                }
+                print(f"[DEBUG] Keyboard created: {cancel_keyboard}")
+                
+                print(f"[DEBUG] Attempting to send new message to chat {chat_id}")
+                result = self.send_message(chat_id, message, cancel_keyboard)
+                print(f"[DEBUG] Send message result: {result}")
+                
                 self.answer_callback_query(callback_query["id"])
+                print(f"[DEBUG] Callback query answered")
+            
+            # Enhanced proxy test modes
+            elif callback_data == "ptest_quick":
+                # Quick test mode
+                self.fsm_states[user_id] = {
+                    "state": "waiting_proxy_test_username",
+                    "test_all": True,
+                    "test_mode": "quick"
+                }
+                
+                try:
+                    from .keyboards import cancel_kb
+                    from .models import Proxy
+                except ImportError:
+                    from keyboards import cancel_kb
+                    from models import Proxy
+                
+                with session_factory() as session:
+                    active_count = session.query(Proxy).filter(
+                        Proxy.user_id == user.id,
+                        Proxy.is_active == True
+                    ).count()
+                
+                message = (
+                    f"🧪 <b>Быстрая проверка прокси</b>\n\n"
+                    f"📊 Будет протестировано: {active_count} прокси\n"
+                    f"⚡ Режим: Базовая связность (Desktop)\n\n"
+                    f"<b>Введите Instagram username для проверки:</b>\n\n"
+                    f"💡 Примеры:\n"
+                    f"  • instagram (рекомендуется)\n"
+                    f"  • cristiano\n"
+                    f"  • nasa\n\n"
+                    f"Бот проверит каждый прокси на этом аккаунте и покажет результаты."
+                )
+                
+                # Create keyboard with Cancel button
+                cancel_keyboard = {
+                    "keyboard": [
+                        [{"text": "❌ Отмена"}]
+                    ],
+                    "resize_keyboard": True,
+                    "one_time_keyboard": True
+                }
+                self.edit_message_text(chat_id, message_id, message, cancel_keyboard)
+                self.answer_callback_query(callback_query["id"])
+            
+            elif callback_data == "ptest_screenshot":
+                print(f"[DEBUG] Processing ptest_screenshot callback for user {user_id}")
+                # Screenshot test mode
+                self.fsm_states[user_id] = {
+                    "state": "waiting_proxy_test_username",
+                    "test_all": True,
+                    "test_mode": "screenshot"
+                }
+                print(f"[DEBUG] FSM state set: {self.fsm_states[user_id]}")
+                
+                try:
+                    from .keyboards import cancel_kb
+                    from .models import Proxy
+                    print(f"[DEBUG] Imports successful")
+                except ImportError as e:
+                    print(f"[DEBUG] Import error: {e}")
+                    from keyboards import cancel_kb
+                    from models import Proxy
+                
+                with session_factory() as session:
+                    active_count = session.query(Proxy).filter(
+                        Proxy.user_id == user.id,
+                        Proxy.is_active == True
+                    ).count()
+                print(f"[DEBUG] Active proxies count: {active_count}")
+                
+                message = (
+                    f"📸 <b>Тест скриншота прокси</b>\n\n"
+                    f"📊 Будет протестировано: {active_count} прокси\n"
+                    f"📸 Режим: Создание скриншота профиля (Desktop)\n\n"
+                    f"<b>Введите Instagram username для проверки:</b>\n\n"
+                    f"💡 Примеры:\n"
+                    f"  • instagram (рекомендуется)\n"
+                    f"  • cristiano\n"
+                    f"  • nasa\n\n"
+                    f"Бот проверит каждый прокси на этом аккаунте и покажет результаты."
+                )
+                print(f"[DEBUG] Message created: {message[:100]}...")
+                
+                # Create keyboard with Cancel button
+                cancel_keyboard = {
+                    "keyboard": [
+                        [{"text": "❌ Отмена"}]
+                    ],
+                    "resize_keyboard": True,
+                    "one_time_keyboard": True
+                }
+                print(f"[DEBUG] Keyboard created: {cancel_keyboard}")
+                
+                print(f"[DEBUG] Attempting to send new message to chat {chat_id}")
+                result = self.send_message(chat_id, message, cancel_keyboard)
+                print(f"[DEBUG] Send message result: {result}")
+                
+                self.answer_callback_query(callback_query["id"])
+                print(f"[DEBUG] Callback query answered")
             
             # Cancel proxy test
             elif callback_data == "ptest_cancel":
@@ -933,7 +1130,14 @@ class TelegramBot:
                 
                 # Test outside of session context
                 import asyncio
-                ok, err = asyncio.run(test_api_key(key_value, test_username="instagram"))
+                import concurrent.futures
+                # Run async function in thread pool to avoid event loop conflict
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(asyncio.run, test_api_key(key_value, test_username="instagram"))
+                    try:
+                        ok, err = future.result(timeout=30)  # 30 second timeout
+                    except Exception as e:
+                        ok, err = False, str(e)
                 
                 with session_factory() as s:
                     k2 = s.query(APIKey).get(sid)
@@ -1305,18 +1509,87 @@ class TelegramBot:
                     }
                     self.send_message(chat_id, list_text, combined_keyboard)
             
-            elif text == "Отмена":
+            elif text == "Отмена" or text == "❌ Отмена":
                 # Cancel any FSM operation
                 if user_id in self.fsm_states:
+                    state_data = self.fsm_states[user_id]
+                    state = state_data.get("state", "")
+                    
+                    # Check if canceling from proxy test - return to proxies menu
+                    if state == "waiting_proxy_test_username":
+                        del self.fsm_states[user_id]
+                        try:
+                            from .keyboards import proxies_menu_kb
+                        except ImportError:
+                            from keyboards import proxies_menu_kb
+                        self.send_message(chat_id, "❌ Тестирование отменено.", proxies_menu_kb())
+                        return
+                    
+                    # Check if canceling from days operations - return to account info
+                    elif state in ["waiting_for_add_days", "waiting_for_remove_days"]:
+                        acc_id = state_data.get("acc_id")
+                        back_prefix = state_data.get("back_prefix", "apg")
+                        page = state_data.get("page", 1)
+                        message_id = state_data.get("message_id")
+                        
+                        # Delete the "Enter days" message if it exists
+                        if message_id:
+                            try:
+                                self.delete_message(chat_id, message_id)
+                            except:
+                                pass  # Ignore if message can't be deleted
+                        
+                        # Clear FSM state
+                        del self.fsm_states[user_id]
+                        
+                        # Return to account info
+                        try:
+                            from .services.accounts import get_account_by_id
+                            from .services.formatting import format_account_card
+                            from .keyboards import account_card_kb
+                        except ImportError:
+                            from services.accounts import get_account_by_id
+                            from services.formatting import format_account_card
+                            from keyboards import account_card_kb
+                        
+                        with session_factory() as session:
+                            # Get user object
+                            user = get_or_create_user(session, type('User', (), {
+                                'id': user_id,
+                                'username': username
+                            })())
+                            acc = get_account_by_id(session, user.id, acc_id)
+                            if acc:
+                                # Use original format_account_card function
+                                txt = format_account_card(acc)
+                                
+                                # Send account info without cancellation message
+                                self.send_message(chat_id, txt, account_card_kb(acc.id, back_prefix, page))
+                            else:
+                                # Account not found, just send cancellation message
+                                self.send_message(chat_id, "❌ Операция отменена. Аккаунт не найден.")
+                    else:
+                        # Default cancel behavior for other states - return to main menu
+                        try:
+                            from .services.system_settings import get_global_verify_mode
+                        except ImportError:
+                            from services.system_settings import get_global_verify_mode
+                        with session_factory() as session:
+                            verify_mode = get_global_verify_mode(session)
+                        keyboard = main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode)
+                        self.send_message(chat_id, "❌ Отменено.", keyboard)
+                    
                     del self.fsm_states[user_id]
-                try:
-                    from .services.system_settings import get_global_verify_mode
-                except ImportError:
-                    from services.system_settings import get_global_verify_mode
-                with session_factory() as session:
-                    verify_mode = get_global_verify_mode(session)
-                keyboard = main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode)
-                self.send_message(chat_id, "❌ Отменено.", keyboard)
+                else:
+                    # No FSM state, show main menu
+                    try:
+                        from .services.system_settings import get_global_verify_mode
+                    except ImportError:
+                        from services.system_settings import get_global_verify_mode
+                    with session_factory() as session:
+                        verify_mode = get_global_verify_mode(session)
+                    keyboard = main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode)
+                    self.send_message(chat_id, "❌ Отменено.", keyboard)
             
             elif user_id in self.fsm_states:
                 # Handle FSM states
@@ -1517,11 +1790,14 @@ class TelegramBot:
                             return
                         
                         acc = increase_days(session, acc, amount)
-                        txt = format_account_card(acc)
-                    
-                    del self.fsm_states[user_id]
-                    self.send_message(chat_id, "Обновлено:")
-                    self.send_message(chat_id, txt, account_card_kb(acc.id, state_data.get("back_prefix", "apg"), state_data.get("page", 1)))
+                        if acc:
+                            txt = format_account_card(acc)
+                            
+                            del self.fsm_states[user_id]
+                            self.send_message(chat_id, f"✅ Обновлено:\n\n{txt}", account_card_kb(acc.id, state_data.get("back_prefix", "apg"), state_data.get("page", 1)))
+                        else:
+                            del self.fsm_states[user_id]
+                            self.send_message(chat_id, "❌ Ошибка при обновлении аккаунта.")
                 
                 elif state == "waiting_for_remove_days":
                     # Process remove days input
@@ -1552,11 +1828,14 @@ class TelegramBot:
                             return
                         
                         acc = decrease_days(session, acc, amount)
-                        txt = format_account_card(acc)
-                    
-                    del self.fsm_states[user_id]
-                    self.send_message(chat_id, "Обновлено:")
-                    self.send_message(chat_id, txt, account_card_kb(acc.id, state_data.get("back_prefix", "apg"), state_data.get("page", 1)))
+                        if acc:
+                            txt = format_account_card(acc)
+                            
+                            del self.fsm_states[user_id]
+                            self.send_message(chat_id, f"✅ Обновлено:\n\n{txt}", account_card_kb(acc.id, state_data.get("back_prefix", "apg"), state_data.get("page", 1)))
+                        else:
+                            del self.fsm_states[user_id]
+                            self.send_message(chat_id, "❌ Ошибка при обновлении аккаунта.")
                 
                 elif state == "waiting_for_proxy_url":
                     # Check for cancel
@@ -1797,16 +2076,31 @@ class TelegramBot:
                         self.send_message(chat_id, "❌ Выберите период из предложенных вариантов.")
                 
                 elif state == "waiting_for_account_list":
+                    # Handle cancellation
+                    if text == "❌ Отмена":
+                        del self.fsm_states[user_id]
+                        try:
+                            from .keyboards import main_menu
+                            from .services.system_settings import get_global_verify_mode
+                        except ImportError:
+                            from keyboards import main_menu
+                            from services.system_settings import get_global_verify_mode
+                        
+                        with session_factory() as session:
+                            verify_mode = get_global_verify_mode(session)
+                        self.send_message(chat_id, "❌ Отменено.", main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode))
+                        return
+                    
                     # Batch account import
                     try:
                         from .models import Account
-                        from .keyboards import main_menu
+                        from .keyboards import main_menu, cancel_kb
                         from .utils.encryptor import OptionalFernet
                         from .config import get_settings
                         from .services.system_settings import get_global_verify_mode
                     except ImportError:
                         from models import Account
-                        from keyboards import main_menu
+                        from keyboards import main_menu, cancel_kb
                         from utils.encryptor import OptionalFernet
                         from config import get_settings
                         from services.system_settings import get_global_verify_mode
@@ -1819,11 +2113,30 @@ class TelegramBot:
                     usernames = [username.strip() for username in text.split(';') if username.strip()]
                     accounts = []
                     errors = []
+                    auto_fixed_usernames = []  # Track auto-fixed usernames
                     
                     for username_input in usernames:
                         # Clean username
                         username = username_input.replace('@', '').strip().lower()
                         if not username:
+                            continue
+                        
+                        # Auto-fix username: remove trailing underscores and dots
+                        original_username = username
+                        while username.endswith('_') or username.endswith('.'):
+                            username = username.rstrip('_.')
+                        
+                        # Also remove leading underscores and dots
+                        while username.startswith('_') or username.startswith('.'):
+                            username = username.lstrip('_.')
+                        
+                        # If username was modified, add info message
+                        if username != original_username:
+                            print(f"[MASS-ADD] 🔧 Auto-fixed username: {original_username} → {username}")
+                            auto_fixed_usernames.append(f"{original_username} → {username}")
+                        
+                        if not username:
+                            errors.append(f"Username стал пустым после очистки: {username_input}")
                             continue
                         
                         # Validate username (Instagram rules)
@@ -1857,9 +2170,80 @@ class TelegramBot:
                             'original': username_input
                         })
                     
+                    # Check if there are any valid accounts
                     if not accounts:
-                        self.send_message(chat_id, "❌ Не найдено валидных аккаунтов.", main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode))
-                        del self.fsm_states[user_id]
+                        # Increment retry counter
+                        if 'retry_count' not in self.fsm_states[user_id]:
+                            self.fsm_states[user_id]['retry_count'] = 0
+                        self.fsm_states[user_id]['retry_count'] += 1
+                        
+                        # Get selected period
+                        period = self.fsm_states[user_id].get("period", 30)
+                        
+                        # Show error message with retry option
+                        error_message = (
+                            f"❌ <b>Не найдено валидных аккаунтов</b>\n\n"
+                            f"<b>Ошибки валидации:</b>\n"
+                        )
+                        
+                        if len(errors) <= 5:
+                            for err in errors:
+                                error_message += f"• {err}\n"
+                        else:
+                            for err in errors[:3]:
+                                error_message += f"• {err}\n"
+                            error_message += f"• ... и еще {len(errors) - 3} ошибок\n"
+                        
+                        error_message += (
+                            f"\n<b>Попытка {self.fsm_states[user_id]['retry_count']}</b>\n\n"
+                            f"📝 <b>Правильный формат:</b>\n"
+                            f"<code>username1; username2; username3</code>\n\n"
+                            f"💡 <b>Примеры:</b>\n"
+                            f"<code>user1; user2; user3</code>\n"
+                            f"<code>@user1; @user2; @user3</code>\n\n"
+                            f"Попробуйте еще раз или нажмите «Отмена» для выхода."
+                        )
+                        
+                        self.send_message(chat_id, error_message, cancel_kb())
+                        return
+                    
+                    # Check if there are validation errors but some valid accounts
+                    if errors and accounts:
+                        # Increment retry counter
+                        if 'retry_count' not in self.fsm_states[user_id]:
+                            self.fsm_states[user_id]['retry_count'] = 0
+                        self.fsm_states[user_id]['retry_count'] += 1
+                        
+                        # Get selected period
+                        period = self.fsm_states[user_id].get("period", 30)
+                        
+                        # Show error message with retry option
+                        error_message = (
+                            f"⚠️ <b>Найдены ошибки валидации</b>\n\n"
+                            f"✅ <b>Валидных аккаунтов:</b> {len(accounts)}\n"
+                            f"❌ <b>Ошибок:</b> {len(errors)}\n\n"
+                            f"<b>Ошибки валидации:</b>\n"
+                        )
+                        
+                        if len(errors) <= 5:
+                            for err in errors:
+                                error_message += f"• {err}\n"
+                        else:
+                            for err in errors[:3]:
+                                error_message += f"• {err}\n"
+                            error_message += f"• ... и еще {len(errors) - 3} ошибок\n"
+                        
+                        error_message += (
+                            f"\n<b>Попытка {self.fsm_states[user_id]['retry_count']}</b>\n\n"
+                            f"📝 <b>Правильный формат:</b>\n"
+                            f"<code>username1; username2; username3</code>\n\n"
+                            f"💡 <b>Примеры:</b>\n"
+                            f"<code>user1; user2; user3</code>\n"
+                            f"<code>@user1; @user2; @user3</code>\n\n"
+                            f"Попробуйте еще раз или нажмите «Отмена» для выхода."
+                        )
+                        
+                        self.send_message(chat_id, error_message, cancel_kb())
                         return
                     
                     # Get selected period
@@ -1926,6 +2310,12 @@ class TelegramBot:
                             result_parts.append(f"  ... и еще {len(errors) - 3}")
                     
                     result_message = "\n".join(result_parts)
+                    
+                    # Add info about auto-fixed usernames
+                    if auto_fixed_usernames:
+                        result_message += f"\n\n🔧 <b>Автоматически исправлены username:</b>\n"
+                        for fix in auto_fixed_usernames:
+                            result_message += f"  • {fix}\n"
                     
                     if added_count > 0:
                         result_message += f"\n\n💡 Аккаунты добавлены на {period} дней. Измените при необходимости."
@@ -2014,12 +2404,140 @@ class TelegramBot:
                     else:
                         self.send_message(chat_id, result_message, main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode))
                 
+                elif state == "waiting_for_delete_list":
+                    # Handle cancellation
+                    if text == "❌ Отмена":
+                        del self.fsm_states[user_id]
+                        try:
+                            from .keyboards import main_menu
+                            from .services.system_settings import get_global_verify_mode
+                        except ImportError:
+                            from keyboards import main_menu
+                            from services.system_settings import get_global_verify_mode
+                        
+                        with session_factory() as session:
+                            verify_mode = get_global_verify_mode(session)
+                        self.send_message(chat_id, "❌ Отменено.", main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode))
+                        return
+                    
+                    # Parse account list (semicolon-separated)
+                    usernames = [username.strip() for username in text.split(';') if username.strip()]
+                    
+                    if not usernames:
+                        self.send_message(chat_id, "❌ Список аккаунтов пуст. Попробуйте еще раз.")
+                        return
+                    
+                    # Get deletion type from FSM state
+                    delete_type = self.fsm_states[user_id].get("delete_type", "all")
+                    
+                    # Store usernames and move to confirmation state
+                    self.fsm_states[user_id]["usernames"] = usernames
+                    self.fsm_states[user_id]["state"] = "waiting_for_delete_confirm"
+                    
+                    try:
+                        from .keyboards import mass_delete_confirm_kb
+                    except ImportError:
+                        from keyboards import mass_delete_confirm_kb
+                    
+                    # Show confirmation message
+                    type_names = {
+                        "active": "активные",
+                        "inactive": "неактивные", 
+                        "all": "все"
+                    }
+                    
+                    self.send_message(chat_id, 
+                        f"⚠️ <b>Подтверждение удаления</b>\n\n"
+                        f"Вы собираетесь удалить {len(usernames)} {type_names.get(delete_type, 'аккаунтов')}:\n\n"
+                        f"<code>{'; '.join(usernames[:10])}</code>\n"
+                        f"{'... и еще ' + str(len(usernames) - 10) if len(usernames) > 10 else ''}\n\n"
+                        f"<b>Это действие нельзя отменить!</b>\n\n"
+                        f"Подтвердите удаление:",
+                        mass_delete_confirm_kb()
+                    )
+                
+                elif state == "waiting_for_delete_confirm":
+                    # Handle confirmation
+                    if text == "✅ Да, удалить":
+                        # Perform mass deletion
+                        try:
+                            from .services.accounts import mass_delete_accounts_by_usernames
+                            from .keyboards import main_menu
+                            from .services.system_settings import get_global_verify_mode
+                        except ImportError:
+                            from services.accounts import mass_delete_accounts_by_usernames
+                            from keyboards import main_menu
+                            from services.system_settings import get_global_verify_mode
+                        
+                        # Get verify_mode
+                        with session_factory() as session:
+                            verify_mode = get_global_verify_mode(session)
+                        
+                        # Get stored data
+                        usernames = self.fsm_states[user_id].get("usernames", [])
+                        delete_type = self.fsm_states[user_id].get("delete_type", "all")
+                        
+                        # Perform mass deletion
+                        with session_factory() as session:
+                            deleted_count, not_found_usernames = mass_delete_accounts_by_usernames(
+                                session, user.id, usernames, delete_type
+                            )
+                        
+                        # Clear FSM
+                        del self.fsm_states[user_id]
+                        
+                        # Format result message
+                        result_parts = [
+                            f"🗑️ <b>Результаты массового удаления аккаунтов:</b>\n"
+                        ]
+                        
+                        if deleted_count > 0:
+                            result_parts.append(f"✅ Удалено: {deleted_count}")
+                        
+                        if not_found_usernames:
+                            result_parts.append(f"⚠️ Не найдено: {len(not_found_usernames)}")
+                            if len(not_found_usernames) <= 5:
+                                for username in not_found_usernames:
+                                    result_parts.append(f"  • {username}")
+                            else:
+                                for username in not_found_usernames[:3]:
+                                    result_parts.append(f"  • {username}")
+                                result_parts.append(f"  ... и еще {len(not_found_usernames) - 3}")
+                        
+                        result_message = "\n".join(result_parts)
+                        
+                        if deleted_count > 0:
+                            result_message += f"\n\n💡 Удалены аккаунты типа: {delete_type}"
+                        
+                        self.send_message(chat_id, result_message, main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode))
+                    
+                    elif text == "❌ Отмена":
+                        del self.fsm_states[user_id]
+                        try:
+                            from .keyboards import main_menu
+                            from .services.system_settings import get_global_verify_mode
+                        except ImportError:
+                            from keyboards import main_menu
+                            from services.system_settings import get_global_verify_mode
+                        
+                        with session_factory() as session:
+                            verify_mode = get_global_verify_mode(session)
+                        self.send_message(chat_id, "❌ Отменено.", main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode))
+                
                 elif state == "waiting_proxy_test_username":
                     # Handle username input for proxy testing
                     username = (text or "").strip().lower().replace("@", "")
                     
                     if not username:
-                        self.send_message(chat_id, "⚠️ Введите корректный username или нажмите «Отмена».")
+                        # Create keyboard with Cancel button
+                        cancel_keyboard = {
+                            "keyboard": [
+                                [{"text": "❌ Отмена"}]
+                            ],
+                            "resize_keyboard": True,
+                            "one_time_keyboard": True
+                        }
+                        self.send_message(chat_id, "⚠️ Введите корректный username или нажмите «Отмена».", cancel_keyboard)
                         return
                     
                     # Import services
@@ -2043,22 +2561,39 @@ class TelegramBot:
                     # Validate username
                     username = normalize_username(username)
                     if not is_valid_instagram_username(username):
-                        self.send_message(chat_id, "⚠️ Неверный формат username. Попробуйте снова или нажмите «Отмена».")
+                        # Create keyboard with Cancel button
+                        cancel_keyboard = {
+                            "keyboard": [
+                                [{"text": "❌ Отмена"}]
+                            ],
+                            "resize_keyboard": True,
+                            "one_time_keyboard": True
+                        }
+                        self.send_message(chat_id, "⚠️ Неверный формат username. Попробуйте снова или нажмите «Отмена».", cancel_keyboard)
                         return
                     
                     # Get state data
                     test_all = state_data.get("test_all", False)
                     proxy_id = state_data.get("proxy_id")
                     page = state_data.get("page", 1)
+                    test_mode = state_data.get("test_mode", "default")
                     
                     # Clear FSM
                     del self.fsm_states[user_id]
                     
                     if test_all:
                         # Test all active proxies
+                        mode_messages = {
+                            "quick": "🧪 Быстрая проверка прокси (Desktop)",
+                            "screenshot": "📸 Тест скриншота прокси (Desktop)",
+                            "default": "🧪 Тестирование прокси (Desktop)"
+                        }
+                        
+                        mode_message = mode_messages.get(test_mode, "🧪 Тестирование прокси")
+                        
                         self.send_message(
                             chat_id,
-                            f"⏳ Запускаю тестирование всех активных прокси на аккаунте @{username}...\n\n"
+                            f"⏳ Запускаю {mode_message.lower()} на аккаунте @{username}...\n\n"
                             f"Это может занять некоторое время."
                         )
                         
@@ -2077,9 +2612,89 @@ class TelegramBot:
                                 loop = asyncio.new_event_loop()
                                 asyncio.set_event_loop(loop)
                                 
-                                results = loop.run_until_complete(
-                                    test_multiple_proxies(active_proxies, username, with_screenshot=True)
-                                )
+                                # Choose testing method based on mode
+                                if test_mode == "quick":
+                                    # Use basic connectivity test
+                                    try:
+                                        from .services.enhanced_proxy_tester import test_proxy_connectivity
+                                    except ImportError:
+                                        from services.enhanced_proxy_tester import test_proxy_connectivity
+                                    
+                                    results = {}
+                                    for proxy in active_proxies:
+                                        success, message, response_time = loop.run_until_complete(
+                                            test_proxy_connectivity(proxy)
+                                        )
+                                        results[proxy.id] = {
+                                            'success': success,
+                                            'message': message,
+                                            'response_time': response_time
+                                        }
+                                    
+                                    # Format quick results
+                                    summary = f"🧪 <b>Быстрая проверка прокси</b>\n\n"
+                                    summary += f"📊 Всего прокси: {len(active_proxies)}\n"
+                                    working_count = sum(1 for r in results.values() if r['success'])
+                                    summary += f"✅ Работающих: {working_count}\n\n"
+                                    
+                                    for proxy in active_proxies:
+                                        result = results.get(proxy.id, {})
+                                        status = "✅" if result.get('success') else "❌"
+                                        summary += f"{status} {proxy.host}: {result.get('message', 'Ошибка')}\n"
+                                    
+                                    self.send_message(chat_id, summary, proxies_menu_kb())
+                                    
+                                elif test_mode == "screenshot":
+                                    # Use screenshot test
+                                    try:
+                                        from .services.enhanced_proxy_tester import test_proxy_screenshot
+                                    except ImportError:
+                                        from services.enhanced_proxy_tester import test_proxy_screenshot
+                                    
+                                    results = {}
+                                    for proxy in active_proxies:
+                                        success, message, screenshot_path = loop.run_until_complete(
+                                            test_proxy_screenshot(proxy, username)
+                                        )
+                                        results[proxy.id] = {
+                                            'success': success,
+                                            'message': message,
+                                            'screenshot_path': screenshot_path
+                                        }
+                                    
+                                    # Format screenshot results
+                                    summary = f"📸 <b>Тест скриншота прокси</b>\n\n"
+                                    summary += f"📊 Всего прокси: {len(active_proxies)}\n"
+                                    working_count = sum(1 for r in results.values() if r['success'])
+                                    summary += f"✅ Работающих: {working_count}\n\n"
+                                    
+                                    for proxy in active_proxies:
+                                        result = results.get(proxy.id, {})
+                                        status = "✅" if result.get('success') else "❌"
+                                        summary += f"{status} {proxy.host}: {result.get('message', 'Ошибка')}\n"
+                                    
+                                    self.send_message(chat_id, summary, proxies_menu_kb())
+                                    
+                                    # Send screenshots
+                                    for proxy in active_proxies:
+                                        result = results.get(proxy.id, {})
+                                        if result.get('screenshot_path') and os.path.exists(result['screenshot_path']):
+                                            loop.run_until_complete(self.send_photo(
+                                                chat_id,
+                                                result['screenshot_path'],
+                                                caption=f"📸 {proxy.scheme}://{proxy.host}\n\n{result['message']}"
+                                            ))
+                                            # Clean up screenshot
+                                            try:
+                                                os.remove(result['screenshot_path'])
+                                            except:
+                                                pass
+                                
+                                else:
+                                    # Default testing (original logic)
+                                    results = loop.run_until_complete(
+                                        test_multiple_proxies(active_proxies, username, with_screenshot=True)
+                                    )
                                 
                                 # Send results
                                 summary = format_batch_test_results(results, active_proxies)
@@ -2234,9 +2849,23 @@ class TelegramBot:
                         from keyboards import api_menu_kb
                     
                     import asyncio
-                    ok, err = asyncio.run(test_api_key(key_value, test_username="instagram"))
+                    import concurrent.futures
+                    # Run async function in thread pool to avoid event loop conflict
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        future = executor.submit(asyncio.run, test_api_key(key_value, test_username="instagram"))
+                        try:
+                            ok, err = future.result(timeout=30)  # 30 second timeout
+                        except Exception as e:
+                            ok, err = False, str(e)
                     
                     with session_factory() as s:
+                        # Check if key already exists
+                        existing_key = s.query(APIKey).filter(APIKey.key == key_value).first()
+                        if existing_key:
+                            self.send_message(chat_id, f"⚠️ Ключ уже существует (id={existing_key.id}).", api_menu_kb())
+                            del self.fsm_states[user_id]
+                            return
+                        
                         obj = APIKey(
                             user_id=user.id,
                             key=key_value,
@@ -2906,6 +3535,30 @@ class TelegramBot:
                             verify_mode = get_global_verify_mode(session)
                         self.send_message(chat_id, "❌ Ошибка загрузки меню.", main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode))
             
+            elif text == "Массовое удаление":
+                if not ensure_active(user):
+                    self.send_message(chat_id, "⛔ Доступ пока не выдан.")
+                    return
+                
+                # Show mass deletion menu
+                try:
+                    from .keyboards import mass_delete_menu_kb
+                    self.send_message(chat_id, "🗑️ Выберите тип массового удаления:", mass_delete_menu_kb())
+                except ImportError:
+                    try:
+                        from keyboards import mass_delete_menu_kb
+                        self.send_message(chat_id, "🗑️ Выберите тип массового удаления:", mass_delete_menu_kb())
+                    except Exception as e:
+                        print(f"Error importing mass_delete_menu_kb: {e}")
+                        # Get verify_mode for fallback
+                        try:
+                            from .services.system_settings import get_global_verify_mode
+                        except ImportError:
+                            from services.system_settings import get_global_verify_mode
+                        with session_factory() as session:
+                            verify_mode = get_global_verify_mode(session)
+                        self.send_message(chat_id, "❌ Ошибка загрузки меню.", main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode))
+            
             elif text == "📝 Массовое добавление аккаунтов":
                 if not ensure_active(user):
                     self.send_message(chat_id, "⛔ Доступ пока не выдан.")
@@ -2961,6 +3614,78 @@ class TelegramBot:
                 )
                 
                 self.send_message(chat_id, message, cancel_kb())
+
+            elif text == "🗑️ Удалить активные аккаунты":
+                if not ensure_active(user):
+                    self.send_message(chat_id, "⛔ Доступ пока не выдан.")
+                    return
+                
+                # Start FSM for mass deletion of active accounts
+                self.fsm_states[user_id] = {"state": "waiting_for_delete_list", "delete_type": "active"}
+                
+                try:
+                    from .keyboards import cancel_kb
+                except ImportError:
+                    from keyboards import cancel_kb
+                
+                self.send_message(chat_id, 
+                    "🗑️ **Массовое удаление активных аккаунтов**\n\n"
+                    "Отправьте список аккаунтов в формате:\n"
+                    "```\n"
+                    "username1; username2; username3\n"
+                    "```\n\n"
+                    "Аккаунты через точку с запятой, можно с @ или без.\n"
+                    "Будут удалены только активные аккаунты.",
+                    cancel_kb()
+                )
+
+            elif text == "🗑️ Удалить неактивные аккаунты":
+                if not ensure_active(user):
+                    self.send_message(chat_id, "⛔ Доступ пока не выдан.")
+                    return
+                
+                # Start FSM for mass deletion of inactive accounts
+                self.fsm_states[user_id] = {"state": "waiting_for_delete_list", "delete_type": "inactive"}
+                
+                try:
+                    from .keyboards import cancel_kb
+                except ImportError:
+                    from keyboards import cancel_kb
+                
+                self.send_message(chat_id, 
+                    "🗑️ **Массовое удаление неактивных аккаунтов**\n\n"
+                    "Отправьте список аккаунтов в формате:\n"
+                    "```\n"
+                    "username1; username2; username3\n"
+                    "```\n\n"
+                    "Аккаунты через точку с запятой, можно с @ или без.\n"
+                    "Будут удалены только неактивные аккаунты.",
+                    cancel_kb()
+                )
+
+            elif text == "🗑️ Удалить все аккаунты":
+                if not ensure_active(user):
+                    self.send_message(chat_id, "⛔ Доступ пока не выдан.")
+                    return
+                
+                # Start FSM for mass deletion of all accounts
+                self.fsm_states[user_id] = {"state": "waiting_for_delete_list", "delete_type": "all"}
+                
+                try:
+                    from .keyboards import cancel_kb
+                except ImportError:
+                    from keyboards import cancel_kb
+                
+                self.send_message(chat_id, 
+                    "🗑️ **Массовое удаление всех аккаунтов**\n\n"
+                    "Отправьте список аккаунтов в формате:\n"
+                    "```\n"
+                    "username1; username2; username3\n"
+                    "```\n\n"
+                    "Аккаунты через точку с запятой, можно с @ или без.\n"
+                    "Будут удалены все указанные аккаунты (активные и неактивные).",
+                    cancel_kb()
+                )
 
             elif text == "Тестировать прокси":
                 if not ensure_active(user):

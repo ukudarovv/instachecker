@@ -17,13 +17,21 @@ import undetected_chromedriver as uc
 
 
 class InstagramMobileBypass:
-    """Продвинутый класс для обхода блокировок Instagram с мобильной эмуляцией."""
+    """Продвинутый класс для обхода блокировок Instagram с фиксированным desktop устройством."""
     
     def __init__(self):
         self.driver = None
         self.wait = None
         
-        # Конфигурации различных мобильных устройств
+        # Фиксированное desktop устройство для стабильности
+        self.desktop_device = {
+            "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "width": 1920,
+            "height": 1080,
+            "pixelRatio": 1.0
+        }
+        
+        # Конфигурации различных мобильных устройств (оставляем для совместимости)
         self.mobile_devices = {
             "iphone_12": {
                 "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1",
@@ -50,6 +58,21 @@ class InstagramMobileBypass:
                 "pixelRatio": 2.75
             }
         }
+    
+    def get_desktop_device(self) -> dict:
+        """Получить фиксированное desktop устройство с обработкой ошибок."""
+        try:
+            print(f"[DEVICE] 🖥️ Используем фиксированное desktop устройство")
+            return self.desktop_device
+        except Exception as e:
+            print(f"[DEVICE] ❌ Ошибка получения desktop устройства: {e}")
+            # Fallback на базовое устройство
+            return {
+                "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "width": 1920,
+                "height": 1080,
+                "pixelRatio": 1.0
+            }
     
     def validate_proxy_format(self, proxy: str) -> dict:
         """Валидация и парсинг прокси для исправления ERR_UNSUPPORTED_PROXIES"""
@@ -89,29 +112,21 @@ class InstagramMobileBypass:
             return {"valid": False, "error": str(e)}
 
     def create_mobile_driver_fixed(self, headless: bool = True, proxy: Optional[str] = None) -> bool:
-        """Исправленная версия создания драйвера с правильной настройкой прокси"""
+        """Исправленная версия создания драйвера с фиксированным desktop устройством"""
         
-        device_name = random.choice(list(self.mobile_devices.keys()))
-        device = self.mobile_devices[device_name]
+        # Получаем фиксированное desktop устройство
+        device = self.get_desktop_device()
+        device_name = "desktop_windows"
         
-        print(f"[DRIVER] 📱 Создание драйвера с эмуляцией {device_name}")
+        print(f"[DRIVER] 🖥️ Создание драйвера с фиксированным desktop устройством: {device_name}")
         
         try:
-            # Настройки мобильной эмуляции
-            mobile_emulation = {
-                "deviceMetrics": {
-                    "width": device["width"],
-                    "height": device["height"], 
-                    "pixelRatio": device["pixelRatio"]
-                },
-                "userAgent": device["userAgent"]
-            }
-            
             # Используем undetected_chromedriver для исправления ERR_UNSUPPORTED_PROXIES
             options = uc.ChromeOptions()
             
-            # Мобильная эмуляция
-            options.add_experimental_option("mobileEmulation", mobile_emulation)
+            # Desktop настройки (без мобильной эмуляции)
+            options.add_argument(f"--user-agent={device['userAgent']}")
+            options.add_argument(f"--window-size={device['width']},{device['height']}")
             
             # Базовые настройки для обхода блокировок
             options.add_argument('--no-sandbox')
@@ -199,12 +214,16 @@ class InstagramMobileBypass:
             return False
 
     def create_firefox_driver(self, headless: bool = True, proxy: Optional[str] = None) -> bool:
-        """Создание Firefox драйвера с мобильной эмуляцией и прокси."""
+        """Создание Firefox драйвера с фиксированным desktop устройством."""
         
-        device_name = random.choice(list(self.mobile_devices.keys()))
-        device = self.mobile_devices[device_name]
+        # Получаем фиксированное desktop устройство
+        device = self.get_desktop_device()
+        device_name = "desktop_windows"
         
-        print(f"[FIREFOX] 🦊 Создание Firefox драйвера с эмуляцией {device_name}")
+        # Firefox использует свой User-Agent
+        device["userAgent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0"
+        
+        print(f"[FIREFOX] 🖥️ Создание Firefox драйвера с фиксированным desktop устройством: {device_name}")
         
         try:
             # Настройки Firefox
@@ -275,9 +294,13 @@ class InstagramMobileBypass:
             else:
                 print("[FIREFOX] ℹ️ Работаем без прокси")
             
-            # Headless режим
+            # Headless режим с GPU поддержкой для скриншотов
             if headless:
-                options.add_argument('--headless')
+                options.add_argument('--headless=new')  # Новый headless режим
+                options.add_argument('--disable-gpu-sandbox')  # GPU поддержка
+                options.add_argument('--enable-gpu')  # Включаем GPU
+                options.add_argument('--no-sandbox')  # Отключаем sandbox для GPU
+                options.add_argument('--disable-dev-shm-usage')  # Память для GPU
             
             # Размер окна для мобильной эмуляции
             options.add_argument(f'--width={device["width"]}')
@@ -320,12 +343,16 @@ class InstagramMobileBypass:
             return False
     
     def create_firefox_driver_no_fallback(self, headless: bool = True, proxy: Optional[str] = None) -> bool:
-        """Создание Firefox драйвера БЕЗ fallback на прямое подключение."""
+        """Создание Firefox драйвера БЕЗ fallback с фиксированным desktop устройством."""
         
-        device_name = random.choice(list(self.mobile_devices.keys()))
-        device = self.mobile_devices[device_name]
+        # Получаем фиксированное desktop устройство
+        device = self.get_desktop_device()
+        device_name = "desktop_windows"
         
-        print(f"[FIREFOX-PROXY] 🦊 Создание Firefox драйвера с эмуляцией {device_name}")
+        # Firefox использует свой User-Agent
+        device["userAgent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0"
+        
+        print(f"[FIREFOX-PROXY] 🖥️ Создание Firefox драйвера с фиксированным desktop устройством: {device_name}")
         
         try:
             # Настройки Firefox
@@ -390,9 +417,13 @@ class InstagramMobileBypass:
             options.set_preference("network.proxy.socks_version", 5)
             options.set_preference("network.proxy.socks_remote_dns", True)
             
-            # Headless режим
+            # Headless режим с GPU поддержкой для скриншотов
             if headless:
-                options.add_argument('--headless')
+                options.add_argument('--headless=new')  # Новый headless режим
+                options.add_argument('--disable-gpu-sandbox')  # GPU поддержка
+                options.add_argument('--enable-gpu')  # Включаем GPU
+                options.add_argument('--no-sandbox')  # Отключаем sandbox для GPU
+                options.add_argument('--disable-dev-shm-usage')  # Память для GPU
             
             # Размер окна для мобильной эмуляции
             options.add_argument(f'--width={device["width"]}')
@@ -432,30 +463,21 @@ class InstagramMobileBypass:
             return False
 
     def create_mobile_driver(self, headless: bool = True, proxy: Optional[str] = None) -> bool:
-        """Создание Chrome драйвера с полной эмуляцией мобильного устройства."""
+        """Создание Chrome драйвера с фиксированным desktop устройством."""
         
-        # Выбираем случайное устройство
-        device_name = random.choice(list(self.mobile_devices.keys()))
-        device = self.mobile_devices[device_name]
+        # Получаем фиксированное desktop устройство
+        device = self.get_desktop_device()
+        device_name = "desktop_windows"
         
-        print(f"[MOBILE-BYPASS] 📱 Эмулируем устройство: {device_name}")
+        print(f"[MOBILE-BYPASS] 🖥️ Используем фиксированное desktop устройство: {device_name}")
         
         try:
-            # Настройки мобильной эмуляции
-            mobile_emulation = {
-                "deviceMetrics": {
-                    "width": device["width"],
-                    "height": device["height"], 
-                    "pixelRatio": device["pixelRatio"]
-                },
-                "userAgent": device["userAgent"]
-            }
-            
-            # Опции Chrome
+            # Опции Chrome для desktop
             options = Options()
             
-            # Мобильная эмуляция
-            options.add_experimental_option("mobileEmulation", mobile_emulation)
+            # Desktop настройки (без мобильной эмуляции)
+            options.add_argument(f"--user-agent={device['userAgent']}")
+            options.add_argument(f"--window-size={device['width']},{device['height']}")
             
             # Базовые настройки
             options.add_argument('--no-sandbox')
@@ -475,9 +497,13 @@ class InstagramMobileBypass:
             options.add_argument('--disable-notifications')
             options.add_argument('--disable-popup-blocking')
             
-            # Headless режим
+            # Headless режим с GPU поддержкой для скриншотов
             if headless:
-                options.add_argument('--headless')
+                options.add_argument('--headless=new')  # Новый headless режим
+                options.add_argument('--disable-gpu-sandbox')  # GPU поддержка
+                options.add_argument('--enable-gpu')  # Включаем GPU
+                options.add_argument('--no-sandbox')  # Отключаем sandbox для GPU
+                options.add_argument('--disable-dev-shm-usage')  # Память для GPU
                 options.add_argument('--disable-gpu')
             
             # Настройка прокси если указан

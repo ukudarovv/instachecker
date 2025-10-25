@@ -169,10 +169,11 @@ async def check_instagram_account_universal(
     proxy_url: Optional[str] = None,
     screenshot_path: Optional[str] = None,
     headless: bool = True,
-    timeout: int = 90
+    timeout: int = 90,
+    mobile_emulation: bool = True
 ) -> Tuple[bool, str, Optional[str], Optional[Dict]]:
     """
-    Проверка Instagram аккаунта через Playwright с мобильной эмуляцией.
+    Проверка Instagram аккаунта через Playwright с настраиваемой эмуляцией.
     Проверенный метод - работает стабильно.
     
     Args:
@@ -181,6 +182,7 @@ async def check_instagram_account_universal(
         screenshot_path: Path for screenshot
         headless: Headless mode
         timeout: Timeout in seconds
+        mobile_emulation: If True, use mobile emulation; if False, use desktop
         
     Returns:
         Tuple of (success, message, screenshot_path, profile_data)
@@ -219,21 +221,37 @@ async def check_instagram_account_universal(
                 proxy_config = None  # Отключаем прокси
                 print(f"[PLAYWRIGHT] ✅ Firefox запущен без прокси")
             
-            # Мобильная эмуляция (ключевое отличие!)
-            device_name = random.choice(list(MOBILE_DEVICES.keys()))
-            device = MOBILE_DEVICES[device_name]
-            user_agent = random.choice(MOBILE_USER_AGENTS)
-            
-            print(f"[PLAYWRIGHT] 📱 Эмуляция: {device_name}")
-            print(f"[PLAYWRIGHT] 🌐 User-Agent: {user_agent[:60]}...")
-            
-            # Создаем контекст с мобильными настройками
-            context = await browser.new_context(
-                viewport={"width": device["width"], "height": device["height"]},
-                user_agent=user_agent,
-                locale='en-US',
-                timezone_id='America/New_York'
-            )
+            # Настройка эмуляции (мобильная или desktop)
+            if mobile_emulation:
+                # Мобильная эмуляция
+                device_name = random.choice(list(MOBILE_DEVICES.keys()))
+                device = MOBILE_DEVICES[device_name]
+                user_agent = random.choice(MOBILE_USER_AGENTS)
+                
+                print(f"[PLAYWRIGHT] 📱 Эмуляция: {device_name}")
+                print(f"[PLAYWRIGHT] 🌐 User-Agent: {user_agent[:60]}...")
+                
+                # Создаем контекст с мобильными настройками
+                context = await browser.new_context(
+                    viewport={"width": device["width"], "height": device["height"]},
+                    user_agent=user_agent,
+                    locale='en-US',
+                    timezone_id='America/New_York'
+                )
+            else:
+                # Desktop режим
+                desktop_user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                
+                print(f"[PLAYWRIGHT] 🖥️ Режим: Desktop")
+                print(f"[PLAYWRIGHT] 🌐 User-Agent: {desktop_user_agent[:60]}...")
+                
+                # Создаем контекст с desktop настройками
+                context = await browser.new_context(
+                    viewport={"width": 1920, "height": 1080},
+                    user_agent=desktop_user_agent,
+                    locale='en-US',
+                    timezone_id='America/New_York'
+                )
             
             page = await context.new_page()
             

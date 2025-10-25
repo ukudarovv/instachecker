@@ -484,17 +484,15 @@ async def check_account_with_screenshot(
                 # Apply dark theme before screenshot
                 await _apply_dark_theme_simple(page)
                 
-                # Take screenshot of the main content area
+                # Take full page screenshot
                 await page.screenshot(
                     path=screenshot_path,
-                    full_page=False,
-                    clip={"x": 0, "y": 0, "width": 1280, "height": 900}
+                    full_page=True
                 )
                 print(f"📸 Screenshot saved: {screenshot_path}")
                 
-                # Crop to upper half
-                cropped_path = crop_to_upper_half(screenshot_path)
-                result["screenshot_path"] = cropped_path
+                # Full screenshot without cropping
+                result["screenshot_path"] = screenshot_path
             except Exception as e:
                 print(f"⚠️ Failed to take screenshot: {e}")
                 result["screenshot_path"] = None

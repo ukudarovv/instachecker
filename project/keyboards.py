@@ -30,7 +30,7 @@ def main_menu(is_admin: bool = False, verify_mode: str = None) -> dict:
         "keyboard": [
             [{"text": "Добавить аккаунт"}, {"text": "Активные аккаунты"}],
             [{"text": "Аккаунты на проверке"}, {"text": "Проверить аккаунты"}],
-            [{"text": "Массовое добавление"}],
+            [{"text": "Массовое добавление"}, {"text": "Массовое удаление"}],
             third_row
         ],
         "resize_keyboard": True,
@@ -313,7 +313,7 @@ def proxy_card_kb(proxy_id: int, page: int = 1) -> dict:
 
 def proxy_test_mode_kb() -> dict:
     """
-    Create proxy test mode selection keyboard.
+    Create simplified proxy test mode selection keyboard.
     
     Returns:
         dict with test mode keyboard
@@ -321,13 +321,8 @@ def proxy_test_mode_kb() -> dict:
     return {
         "inline_keyboard": [
             [
-                {"text": "🧪 Проверить все активные", "callback_data": "ptest_all"}
-            ],
-            [
-                {"text": "🎯 Выбрать конкретный прокси", "callback_data": "ptest_select"}
-            ],
-            [
-                {"text": "❌ Отмена", "callback_data": "ptest_cancel"}
+                {"text": "📸 Тест скриншота", "callback_data": "ptest_screenshot"},
+                {"text": "🎯 Выбрать прокси", "callback_data": "ptest_select"}
             ]
         ]
     }
@@ -351,9 +346,8 @@ def proxy_selection_for_test_kb(proxies: list) -> dict:
             {"text": label, "callback_data": f"ptest_one:{proxy.id}"}
         ])
     
-    keyboard.append([
-        {"text": "❌ Отмена", "callback_data": "ptest_cancel"}
-    ])
+    # Убираем кнопку "Отмена" из inline клавиатуры
+    # Кнопка "Отмена" будет в обычной клавиатуре при вводе username
     
     return {"inline_keyboard": keyboard}
 
@@ -727,6 +721,46 @@ def mass_add_menu_kb() -> dict:
             [{"text": "📝 Массовое добавление аккаунтов"}],
             [{"text": "🌐 Массовое добавление прокси"}],
             [{"text": "🏠 Главное меню"}]
+        ],
+        "resize_keyboard": True,
+        "one_time_keyboard": False
+    }
+    
+    return keyboard
+
+
+def mass_delete_menu_kb() -> dict:
+    """
+    Create keyboard for mass deletion menu.
+    
+    Returns:
+        dict with keyboard configuration
+    """
+    keyboard = {
+        "keyboard": [
+            [{"text": "🗑️ Удалить активные аккаунты"}],
+            [{"text": "🗑️ Удалить неактивные аккаунты"}],
+            [{"text": "🗑️ Удалить все аккаунты"}],
+            [{"text": "🏠 Главное меню"}]
+        ],
+        "resize_keyboard": True,
+        "one_time_keyboard": False
+    }
+    
+    return keyboard
+
+
+def mass_delete_confirm_kb() -> dict:
+    """
+    Create keyboard for mass deletion confirmation.
+    
+    Returns:
+        dict with keyboard configuration
+    """
+    keyboard = {
+        "keyboard": [
+            [{"text": "✅ Да, удалить"}],
+            [{"text": "❌ Отмена"}]
         ],
         "resize_keyboard": True,
         "one_time_keyboard": False

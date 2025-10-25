@@ -136,6 +136,14 @@ def register_api_menu_handlers(dp: Dispatcher, SessionLocal: sessionmaker) -> No
         
         with SessionLocal() as s:
             user = get_or_create_user(s, message.from_user)
+            
+            # Check if key already exists
+            existing_key = s.query(APIKey).filter(APIKey.key == key_value).first()
+            if existing_key:
+                await state.finish()
+                await message.answer(f"⚠️ Ключ уже существует (id={existing_key.id}).", reply_markup=api_menu_kb())
+                return
+            
             obj = APIKey(
                 user_id=user.id,
                 key=key_value,
