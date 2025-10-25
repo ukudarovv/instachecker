@@ -248,7 +248,7 @@ async def check_account_with_header_screenshot(
                 "--disable-web-security",
                 "--disable-features=VizDisplayCompositor",
                 "--window-size=1280,960",  # Фиксированный размер окна
-                "--start-maximized",  # Запуск в максимизированном режиме
+                # "--start-maximized",  # ОТКЛЮЧЕНО: конфликт с headless режимом
             ]
             
             # Добавляем proxy только если он указан
