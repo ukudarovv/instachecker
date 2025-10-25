@@ -21,12 +21,12 @@ except ImportError:
 async def check_account_exists_via_api(session: Session, user_id: int, username: str) -> Dict[str, Any]:
     """
     Check if Instagram account exists via RapidAPI with automatic key rotation.
-    
+
     Args:
         session: Database session
         user_id: User ID
         username: Instagram username to check
-        
+
     Returns:
         Dict with check results: {
             "username": str,
@@ -35,7 +35,7 @@ async def check_account_exists_via_api(session: Session, user_id: int, username:
         }
     """
     settings = get_settings()
-    
+
     # Get all available keys for user
     all_keys = (
         session.query(APIKey)
@@ -43,7 +43,7 @@ async def check_account_exists_via_api(session: Session, user_id: int, username:
         .order_by(APIKey.id.asc())
         .all()
     )
-    
+
     if not all_keys:
         print(f"❌ No API keys available for user {user_id}")
         return {
@@ -51,16 +51,16 @@ async def check_account_exists_via_api(session: Session, user_id: int, username:
             "exists": None,
             "error": "no_api_keys_available"
         }
-    
+
     # Try each key until we find one that works
     for key in all_keys:
         _reset_if_new_day(key)
-        
+
         # Skip if key has reached daily limit
         if (key.qty_req or 0) >= settings.api_daily_limit:
             print(f"⚠️ API key {key.id} has reached daily limit ({key.qty_req}/{settings.api_daily_limit})")
             continue
-            
+
         print(f"🔑 Trying API key {key.id} for @{username} (current usage: {key.qty_req or 0}/{settings.api_daily_limit})")
 
         timeout = ClientTimeout(total=settings.rapidapi_timeout_seconds)
@@ -76,10 +76,10 @@ async def check_account_exists_via_api(session: Session, user_id: int, username:
                 async with sess.post(settings.rapidapi_url, json=payload) as resp:
                     # Parse response
                     data = await resp.json(content_type=None)
-                    
+
                     # Debug logging
                     print(f"[API-DEBUG] Response for @{username}: {data}")
-                    
+
                     # Check for quota exceeded error
                     if isinstance(data, dict) and "message" in data:
                         if "exceeded the DAILY quota" in data["message"]:
@@ -92,10 +92,10 @@ async def check_account_exists_via_api(session: Session, user_id: int, username:
                             key.qty_req = 950  # Set to max limit
                             session.commit()
                             continue  # Try next key
-                    
+
                     # Count usage for successful request
                     incr_usage(session, key)
-                    
+
                     # Check if account exists according to new API schema
                     exists = False
                     if isinstance(data, dict):
@@ -123,7 +123,7 @@ async def check_account_exists_via_api(session: Session, user_id: int, username:
                             acc.done = True
                             acc.date_of_finish = date.today()
                             session.commit()
-                        
+
                         return {
                             "username": username,
                             "exists": True,
@@ -140,7 +140,7 @@ async def check_account_exists_via_api(session: Session, user_id: int, username:
             # Mark key as potentially problematic but don't give up yet
             set_work_status(session, key, ok=False)
             continue  # Try next key
-    
+
     # If we get here, all keys failed
     print(f"❌ All API keys exhausted for user {user_id}")
     return {
@@ -148,4 +148,3 @@ async def check_account_exists_via_api(session: Session, user_id: int, username:
         "exists": None,
         "error": "all_api_keys_exhausted"
     }
-

@@ -809,6 +809,7 @@ def register_user_management_handlers(bot, session_factory):
             keyboard = [
                 [{"text": "🔑 API + 📸 Instagram (с логином)", "callback_data": f"usr_set_verify:{user_id}:api+instagram:{page}:{filter_type}"}],
                 [{"text": "🔑 API + 🌐 Proxy (без логина)", "callback_data": f"usr_set_verify:{user_id}:api+proxy:{page}:{filter_type}"}],
+                [{"text": "🔑 API v2 + 🌐 Proxy (новый)", "callback_data": f"usr_set_verify:{user_id}:api-v2:{page}:{filter_type}"}],
                 [{"text": "⬅ Назад", "callback_data": f"usr_view:{user_id}:{page}:{filter_type}"}]
             ]
             

@@ -139,7 +139,38 @@ async def check_account_hybrid(
     # Step 3: Account exists via API - VERIFY with Instagram or Proxy
     if api_result["exists"] is True and not skip_instagram_verification:
         # Choose verification method based on verify_mode
-        if verify_mode == "api+instagram" and ig_session and fernet:
+        if verify_mode == "api-v2":
+            # API v2 with proxy verification
+            result["checked_via"] = "api-v2"
+            print(f"🔑 Using API v2 verification with proxy for @{username}")
+            try:
+                from .api_v2_proxy_checker import check_account_via_api_v2_proxy
+                api_v2_result = await check_account_via_api_v2_proxy(
+                    session=session,
+                    user_id=user_id,
+                    username=username
+                )
+                
+                # Use API v2 result
+                result.update({
+                    "exists": api_v2_result.get("exists"),
+                    "full_name": api_v2_result.get("full_name"),
+                    "followers": api_v2_result.get("followers"),
+                    "following": api_v2_result.get("following"),
+                    "posts": api_v2_result.get("posts"),
+                    "screenshot_path": api_v2_result.get("screenshot_path"),
+                    "error": api_v2_result.get("error"),
+                    "checked_via": "api-v2"
+                })
+                
+                return result
+                
+            except Exception as e:
+                print(f"❌ API v2 error for @{username}: {e}")
+                result["error"] = f"api_v2_error: {str(e)}"
+                return result
+                
+        elif verify_mode == "api+instagram" and ig_session and fernet:
             # INSTAGRAM VERIFICATION (with login)
             result["checked_via"] = "api+instagram"
             print(f"📸 Using INSTAGRAM verification (with cookies and login) for @{username}")

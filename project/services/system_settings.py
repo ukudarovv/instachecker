@@ -112,7 +112,8 @@ def set_global_verify_mode(session: Session, mode: str) -> SystemSettings:
     """
     valid_modes = [
         "api+instagram", "api+proxy", "api+proxy+instagram",
-        "instagram+proxy", "instagram", "proxy", "simple_monitor", "full_bypass"
+        "instagram+proxy", "instagram", "proxy", "simple_monitor", "full_bypass",
+        "api-v2"
     ]
     
     if mode not in valid_modes:

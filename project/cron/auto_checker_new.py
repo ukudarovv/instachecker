@@ -52,6 +52,8 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
             if not ig_session:
                 print(f"[AUTO-CHECK] ❌ No valid IG session for user {user_id}")
                 return {"checked": 0, "found": 0, "not_found": 0, "errors": len(user_accounts)}
+        elif verify_mode == "api-v2":
+            ig_session = None  # API v2 doesn't need IG session
         else:  # api+proxy
             ig_session = None  # Proxy doesn't need IG session
         
@@ -79,7 +81,12 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
                 # If API says account is active, add to verification list
                 if result.get("exists") is True:
                     accounts_to_verify.append((acc, result))
-                    verification_method = "Instagram" if verify_mode == "api+instagram" else "Proxy"
+                    if verify_mode == "api+instagram":
+                        verification_method = "Instagram"
+                    elif verify_mode == "api-v2":
+                        verification_method = "API v2"
+                    else:
+                        verification_method = "Proxy"
                     print(f"[AUTO-CHECK] ✓ @{acc.account} - API says ACTIVE (will verify with {verification_method})")
                 elif result.get("exists") is False:
                     not_found += 1
@@ -104,7 +111,12 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
             
             for idx, (acc, api_result) in enumerate(accounts_to_verify):
                 try:
-                    verification_method = "Instagram" if verify_mode == "api+instagram" else "Proxy"
+                    if verify_mode == "api+instagram":
+                        verification_method = "Instagram"
+                    elif verify_mode == "api-v2":
+                        verification_method = "API v2"
+                    else:
+                        verification_method = "Proxy"
                     print(f"[AUTO-CHECK] [{idx+1}/{len(accounts_to_verify)}] {verification_method} verify @{acc.account}...")
                     
                     # Now do full verification

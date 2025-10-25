@@ -650,8 +650,28 @@ async def check_account_with_bypass(
     if result is True and screenshot_path:
         # Проверяем, создался ли скриншот
         if not os.path.exists(screenshot_path):
-            print(f"[BYPASS] 📸 Screenshot not created by bypass methods - will be created by hybrid_checker")
-            final_screenshot_path = None
+            print(f"[BYPASS] 📸 Screenshot not created by bypass methods - creating now...")
+            try:
+                # Создаем скриншот через undetected chrome без прокси
+                from .undetected_checker import check_account_undetected_chrome
+                
+                screenshot_result = await check_account_undetected_chrome(
+                    username=username,
+                    proxy=None,  # Без прокси для обхода 403
+                    screenshot_path=screenshot_path,
+                    headless=headless
+                )
+                
+                if screenshot_result.get("screenshot_path"):
+                    final_screenshot_path = screenshot_result["screenshot_path"]
+                    print(f"[BYPASS] 📸 Screenshot created via undetected chrome: {screenshot_result['screenshot_path']}")
+                else:
+                    print(f"[BYPASS] ⚠️ Failed to create screenshot via undetected chrome")
+                    final_screenshot_path = None
+                    
+            except Exception as screenshot_error:
+                print(f"[BYPASS] ⚠️ Failed to create screenshot: {screenshot_error}")
+                final_screenshot_path = None
     
     response = {
         "username": username,

@@ -79,7 +79,8 @@ def admin_verify_mode_selection_kb(current_mode: str) -> dict:
         ("instagram", "📸 Только Instagram (🚀 Undetected)"),
         ("proxy", "🌐 Только Proxy (🚀 Undetected)"),
         ("simple_monitor", "⚡ Простой мониторинг (app.py стиль)"),
-        ("full_bypass", "🛡️ Полный обход защиты (все методы)")
+        ("full_bypass", "🛡️ Полный обход защиты (все методы)"),
+        ("api-v2", "🔑 API v2 + 🌐 Proxy (новый)")
     ]
     
     keyboard = []
@@ -116,7 +117,8 @@ def verify_mode_selection_kb(current_mode: str) -> dict:
         ("instagram", "📸 Только Instagram"),
         ("proxy", "🌐 Только Proxy"),
         ("simple_monitor", "⚡ Простой мониторинг (как app.py)"),
-        ("full_bypass", "🛡️ Полный обход защиты (все методы)")
+        ("full_bypass", "🛡️ Полный обход защиты (все методы)"),
+        ("api-v2", "🔑 API v2 + 🌐 Proxy (новый)")
     ]
     
     keyboard = []

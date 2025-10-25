@@ -116,6 +116,37 @@ async def check_account_main(
     """
     print(f"\n[MAIN-CHECKER] 🔍 Проверка @{username}")
     
+    # Получаем режим проверки
+    try:
+        from .system_settings import get_global_verify_mode
+        verify_mode = get_global_verify_mode(session)
+        print(f"[MAIN-CHECKER] 🔧 Режим проверки: {verify_mode}")
+    except ImportError:
+        from services.system_settings import get_global_verify_mode
+        verify_mode = get_global_verify_mode(session)
+        print(f"[MAIN-CHECKER] 🔧 Режим проверки: {verify_mode}")
+    
+    # Если режим api-v2, используем новый метод
+    if verify_mode == "api-v2":
+        print(f"[MAIN-CHECKER] 🔑 Используем API v2 с прокси")
+        try:
+            from .api_v2_proxy_checker import check_account_via_api_v2_proxy
+        except ImportError:
+            from services.api_v2_proxy_checker import check_account_via_api_v2_proxy
+        
+        result = await check_account_via_api_v2_proxy(
+            session=session,
+            user_id=user_id,
+            username=username
+        )
+        
+        if result.get("exists") is True:
+            return True, f"API v2: найден", result.get("screenshot_path")
+        elif result.get("exists") is False:
+            return False, f"API v2: не найден", None
+        else:
+            return False, f"API v2: ошибка - {result.get('error', 'unknown')}", None
+    
     # ШАГ 1: API проверка (быстрая)
     print(f"[MAIN-CHECKER] 📡 Шаг 1: API проверка...")
     api_result = await check_account_exists_via_api(session, user_id, username)
