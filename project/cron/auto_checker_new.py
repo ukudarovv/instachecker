@@ -299,7 +299,7 @@ async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accou
                 print(f"[AUTO-CHECK] ❌ Error in user {list(accounts_by_user.keys())[i]}: {result}")
                 total_errors += 1
             else:
-                total_checked += result.get("checked", 0")
+                total_checked += result.get("checked", 0)
                 total_found += result.get("found", 0)
                 total_not_found += result.get("not_found", 0)
                 total_errors += result.get("errors", 0)
