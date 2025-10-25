@@ -224,7 +224,10 @@ async def check_account_with_header_screenshot(
             launch_args = [
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
-                "--disable-dev-shm-usage"
+                "--disable-dev-shm-usage",
+                "--virtual-time-budget=10000",  # Даем время для отрисовки
+                "--run-all-compositor-stages-before-draw",  # Принудительная отрисовка всех слоев
+                "--disable-gpu-compositing",  # Отключаем GPU композитинг (может вызывать белые скриншоты)
             ]
             
             # Принудительная темная тема на уровне браузера - ОТКЛЮЧЕНО
@@ -243,7 +246,9 @@ async def check_account_with_header_screenshot(
                 "--enable-gpu",
                 "--force-device-scale-factor=1",
                 "--disable-web-security",
-                "--disable-features=VizDisplayCompositor"
+                "--disable-features=VizDisplayCompositor",
+                "--window-size=1280,960",  # Фиксированный размер окна
+                "--start-maximized",  # Запуск в максимизированном режиме
             ]
             
             # Добавляем proxy только если он указан
@@ -837,6 +842,37 @@ async def check_account_with_header_screenshot(
                 
                 # Используем стандартный размер viewport 1280x960
                 print(f"[PROXY-FULL-SCREENSHOT] 📐 Используем стандартный размер viewport: 1280x960")
+                
+                # Принудительная установка размеров viewport через JavaScript для исправления белых скриншотов на Linux
+                print(f"[PROXY-FULL-SCREENSHOT] 🔧 Принудительная установка viewport для исправления белых скриншотов...")
+                try:
+                    await page.evaluate("""
+                        () => {
+                            // Принудительно устанавливаем размеры окна и viewport
+                            window.innerWidth = 1280;
+                            window.innerHeight = 960;
+                            window.outerWidth = 1280;
+                            window.outerHeight = 960;
+                            
+                            // Принудительно устанавливаем размеры document
+                            document.documentElement.style.width = '1280px';
+                            document.documentElement.style.height = '960px';
+                            document.body.style.width = '1280px';
+                            document.body.style.height = '960px';
+                            
+                            console.log('✅ Viewport установлен принудительно: 1280x960');
+                        }
+                    """)
+                    
+                    # Дополнительное ожидание для завершения отрисовки
+                    await page.wait_for_timeout(1000)
+                    print(f"[PROXY-FULL-SCREENSHOT] ✅ Viewport установлен принудительно")
+                except Exception as e:
+                    print(f"[PROXY-FULL-SCREENSHOT] ⚠️ Не удалось установить viewport принудительно: {e}")
+                
+                # Ждем завершения отрисовки страницы
+                print(f"[PROXY-FULL-SCREENSHOT] ⏳ Ожидание завершения отрисовки страницы...")
+                await page.wait_for_timeout(2000)
                 
                 try:
                     await page.screenshot(path=screenshot_path, full_page=False)
