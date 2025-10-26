@@ -682,7 +682,7 @@ async def check_account_via_api_v2_proxy(
                         proxy_url=proxy_url_for_screenshot,
                         screenshot_path=screenshot_path,
                         headless=True,
-                        timeout_ms=60000,
+                        timeout_ms=90000,  # Увеличено до 90 секунд
                         dark_theme=False,  # Обычный режим
                         mobile_emulation=False,  # Desktop mode
                         crop_ratio=0  # Полный экран
