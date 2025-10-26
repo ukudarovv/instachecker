@@ -13,12 +13,12 @@ try:
     from ..models import Account, Proxy
     from ..config import get_settings
     from .ig_screenshot import check_account_with_header_screenshot
-    from .proxy_utils import select_best_proxy
+    from .proxy_utils import select_best_proxy, is_available
 except ImportError:
     from models import Account, Proxy
     from config import get_settings
     from services.ig_screenshot import check_account_with_header_screenshot
-    from services.proxy_utils import select_best_proxy
+    from services.proxy_utils import select_best_proxy, is_available
 
 
 class InstagramCheckerWithProxy:
@@ -548,23 +548,37 @@ async def check_account_via_api_v2_proxy(
     screenshot_path = os.path.join(screenshot_dir, f"{username}_header_{timestamp}.png")
     
     try:
-        # Получаем список прокси для пользователя
+        # Получаем список прокси для пользователя через select_best_proxy
+        # Используем весь список доступных прокси (не только is_active, но и без cooldown)
+        from datetime import datetime
         proxy_list = []
-        proxies = session.query(Proxy).filter(
+        
+        # Получаем все прокси с учетом cooldown
+        all_proxies = session.query(Proxy).filter(
             Proxy.user_id == user_id,
             Proxy.is_active == True
         ).all()
         
-        for proxy in proxies:
-            if proxy.username and proxy.password:
-                # Извлекаем порт из host (формат host:port)
-                if ':' in proxy.host:
-                    host, port = proxy.host.split(':', 1)
-                    proxy_str = f"{host}:{port}:{proxy.username}:{proxy.password}"
+        print(f"[API-V2-PROXY] 🔍 Найдено прокси в БД для user_id {user_id}: {len(all_proxies)} шт.")
+        
+        for proxy in all_proxies:
+            # Проверяем доступность через is_available (с учетом cooldown)
+            if is_available(proxy):
+                print(f"[API-V2-PROXY] 🔍 Проверяем прокси: id={proxy.id}, host={proxy.host}, username={proxy.username}, is_active={proxy.is_active}")
+                if proxy.username and proxy.password:
+                    # Извлекаем порт из host (формат host:port)
+                    if ':' in proxy.host:
+                        host, port = proxy.host.split(':', 1)
+                        proxy_str = f"{host}:{port}:{proxy.username}:{proxy.password}"
+                    else:
+                        # Если порт не указан, используем стандартный
+                        proxy_str = f"{proxy.host}:8080:{proxy.username}:{proxy.password}"
+                    proxy_list.append(proxy_str)
+                    print(f"[API-V2-PROXY] ✅ Добавлен прокси: {proxy_str}")
                 else:
-                    # Если порт не указан, используем стандартный
-                    proxy_str = f"{proxy.host}:8080:{proxy.username}:{proxy.password}"
-                proxy_list.append(proxy_str)
+                    print(f"[API-V2-PROXY] ⚠️ Пропущен прокси: нет username или password")
+            else:
+                print(f"[API-V2-PROXY] ⚠️ Прокси {proxy.id} недоступен (в cooldown или не активен)")
         
         if not proxy_list:
             print(f"[API-V2-PROXY] ⚠️ Нет доступных прокси для пользователя {user_id}")
