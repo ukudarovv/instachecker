@@ -96,17 +96,16 @@ class InstagramCheckerWithProxy:
             var allElements = document.querySelectorAll('*');
             for (var i = 0; i < allElements.length; i++) {
                 var element = allElements[i];
-                var className = element.className || '';
+                var className = String(element.className || '');
                 var style = element.style || {};
                 
                 // Проверяем на модальные окна и overlay
-                var classStr = String(className || '');
-                if (classStr.indexOf('x7r02ix') !== -1 || 
-                    classStr.indexOf('x1vjfegm') !== -1 || 
-                    classStr.indexOf('_abcm') !== -1 ||
-                    classStr.indexOf('modal') !== -1 ||
-                    classStr.indexOf('overlay') !== -1 ||
-                    classStr.indexOf('backdrop') !== -1 ||
+                if (className.indexOf('x7r02ix') !== -1 || 
+                    className.indexOf('x1vjfegm') !== -1 || 
+                    className.indexOf('_abcm') !== -1 ||
+                    className.indexOf('modal') !== -1 ||
+                    className.indexOf('overlay') !== -1 ||
+                    className.indexOf('backdrop') !== -1 ||
                     element.getAttribute('role') === 'dialog' ||
                     style.position === 'fixed' ||
                     style.zIndex > 1000) {
@@ -205,7 +204,7 @@ class InstagramCheckerWithProxy:
                 var allElements = document.querySelectorAll('*');
                 for (var i = 0; i < allElements.length; i++) {
                     var element = allElements[i];
-                    var className = element.className || '';
+                    var className = String(element.className || '');
                     var style = element.style || {};
                     
                     // Проверяем на модальные окна и overlay
