@@ -247,7 +247,7 @@ async def check_account_with_header_screenshot(
                 "--force-device-scale-factor=1",
                 "--disable-web-security",
                 "--disable-features=VizDisplayCompositor",
-                "--window-size=1280,960",  # Фиксированный размер окна
+                "--window-size=1920,1080",  # Фиксированный размер окна 1920x1080
                 # "--start-maximized",  # ОТКЛЮЧЕНО: конфликт с headless режимом
             ]
             
@@ -281,9 +281,9 @@ async def check_account_with_header_screenshot(
                 
                 print(f"[PROXY-HEADER-SCREENSHOT] 📱 Эмуляция: iPhone 12")
             else:
-                # Обычный desktop режим
+                # Обычный desktop режим с разрешением 1920x1080
                 context_options = {
-                    "viewport": {"width": 1280, "height": 900},
+                    "viewport": {"width": 1920, "height": 1080},
                     "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
                     # proxy НЕ передаем - уже передан в browser.launch()
                 }
@@ -837,30 +837,30 @@ async def check_account_with_header_screenshot(
                 except Exception as e:
                     print(f"[PROXY-FULL-SCREENSHOT] ⚠️ Не удалось проверить контент: {e}")
                 
-                # Всегда делаем полный скриншот страницы
-                print(f"[PROXY-FULL-SCREENSHOT] 📸 Создание полного скриншота всей страницы...")
+                # Делаем скриншот видимой области (viewport)
+                print(f"[PROXY-FULL-SCREENSHOT] 📸 Создание скриншота видимой области...")
                 
-                # Используем стандартный размер viewport 1280x960
-                print(f"[PROXY-FULL-SCREENSHOT] 📐 Используем стандартный размер viewport: 1280x960")
+                # Используем размер viewport 1920x1080
+                print(f"[PROXY-FULL-SCREENSHOT] 📐 Используем размер viewport: 1920x1080")
                 
                 # Принудительная установка размеров viewport через JavaScript для исправления белых скриншотов на Linux
-                print(f"[PROXY-FULL-SCREENSHOT] 🔧 Принудительная установка viewport для исправления белых скриншотов...")
+                print(f"[PROXY-FULL-SCREENSHOT] 🔧 Принудительная установка viewport 1920x1080...")
                 try:
                     await page.evaluate("""
                         () => {
                             // Принудительно устанавливаем размеры окна и viewport
-                            window.innerWidth = 1280;
-                            window.innerHeight = 960;
-                            window.outerWidth = 1280;
-                            window.outerHeight = 960;
+                            window.innerWidth = 1920;
+                            window.innerHeight = 1080;
+                            window.outerWidth = 1920;
+                            window.outerHeight = 1080;
                             
                             // Принудительно устанавливаем размеры document
-                            document.documentElement.style.width = '1280px';
-                            document.documentElement.style.height = '960px';
-                            document.body.style.width = '1280px';
-                            document.body.style.height = '960px';
+                            document.documentElement.style.width = '1920px';
+                            document.documentElement.style.height = '1080px';
+                            document.body.style.width = '1920px';
+                            document.body.style.height = '1080px';
                             
-                            console.log('✅ Viewport установлен принудительно: 1280x960');
+                            console.log('✅ Viewport установлен принудительно: 1920x1080');
                         }
                     """)
                     
@@ -886,8 +886,9 @@ async def check_account_with_header_screenshot(
                 await page.wait_for_timeout(2000)
                 
                 try:
-                    await page.screenshot(path=screenshot_path, full_page=True)
-                    print(f"[PROXY-FULL-SCREENSHOT] ✅ Скриншот создан успешно")
+                    # Скриншот только видимой области (viewport 1920x1080)
+                    await page.screenshot(path=screenshot_path, full_page=False)
+                    print(f"[PROXY-FULL-SCREENSHOT] ✅ Скриншот создан успешно (viewport: 1920x1080)")
                 except Exception as e:
                     print(f"[PROXY-FULL-SCREENSHOT] ❌ Ошибка при создании скриншота: {e}")
                     result["error"] = f"screenshot_failed: {str(e)}"
