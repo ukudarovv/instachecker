@@ -667,8 +667,18 @@ async def check_account_via_api_v2_proxy(
                     screenshot_result["proxy_used"] = "none"
                     screenshot_result["error"] = "no_proxy_for_screenshot"
                 else:
+                    # Расшифровываем пароль прокси (как в enhanced_proxy_tester)
+                    try:
+                        settings = get_settings()
+                        from ..utils.encryptor import OptionalFernet
+                        encryptor = OptionalFernet(settings.encryption_key)
+                        decrypted_password = encryptor.decrypt(best_proxy.password)
+                    except:
+                        # Fallback: если не удалось расшифровать, используем как есть
+                        decrypted_password = best_proxy.password
+                    
                     # Формируем URL прокси для скриншота
-                    proxy_url_for_screenshot = f"{best_proxy.scheme}://{best_proxy.username}:{best_proxy.password}@{best_proxy.host}"
+                    proxy_url_for_screenshot = f"{best_proxy.scheme}://{best_proxy.username}:{decrypted_password}@{best_proxy.host}"
                     print(f"[API-V2-PROXY] 🔗 Используем прокси для скриншота: {best_proxy.scheme}://{best_proxy.host}")
                     screenshot_result["proxy_used"] = best_proxy.host
                     
