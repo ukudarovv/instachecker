@@ -186,8 +186,17 @@ class InstagramCheckerWithProxy:
             document.documentElement.style.background = 'white';
             """
             
+            # Выполняем первый раз
             driver.execute_script(js_code)
-            print("[API-V2-FIREFOX] ✅ Модальные окна закрыты")
+            print("[API-V2-FIREFOX] ✅ Модальные окна закрыты (первый раз)")
+            
+            # Небольшая задержка
+            import time
+            time.sleep(1)
+            
+            # Выполняем второй раз для надежности
+            driver.execute_script(js_code)
+            print("[API-V2-FIREFOX] ✅ Модальные окна закрыты (второй раз)")
             
             # Убираем затемнение после модального окна
             try:
@@ -259,9 +268,15 @@ class InstagramCheckerWithProxy:
                 document.documentElement.style.background = 'white';
                 """
                 driver.execute_script(js_remove_overlay)
-                print("[API-V2-FIREFOX] ✅ Затемнение убрано")
+                print("[API-V2-FIREFOX] ✅ Затемнение убрано (первый раз)")
                 
-            except:
+                # Выполняем еще раз для надежности
+                time.sleep(0.5)
+                driver.execute_script(js_remove_overlay)
+                print("[API-V2-FIREFOX] ✅ Затемнение убрано (второй раз)")
+                
+            except Exception as e:
+                print(f"[API-V2-FIREFOX] ⚠️ Ошибка удаления затемнения: {e}")
                 pass
             
         except Exception as e:
@@ -687,11 +702,11 @@ async def check_account_via_api_v2_proxy(
                     driver.get(url)
                     
                     # Ждем загрузки страницы
-                    time.sleep(5)
+                    time.sleep(7)
                     
                     # Закрываем модальные окна (как в тесте прокси)
                     InstagramCheckerWithProxy.close_instagram_modals_firefox(driver)
-                    time.sleep(3)
+                    time.sleep(5)
                     
                     # Делаем скриншот
                     print(f"[API-V2-FIREFOX] 📸 Сохранение скриншота: {screenshot_path}")
