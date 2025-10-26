@@ -872,10 +872,21 @@ async def check_account_with_header_screenshot(
                 
                 # Ждем завершения отрисовки страницы
                 print(f"[PROXY-FULL-SCREENSHOT] ⏳ Ожидание завершения отрисовки страницы...")
+                await page.wait_for_timeout(3000)
+                
+                # Ждем загрузки всех изображений
+                print(f"[PROXY-FULL-SCREENSHOT] 🖼️ Ожидание загрузки изображений...")
+                try:
+                    await page.wait_for_load_state('networkidle', timeout=10000)
+                    print(f"[PROXY-FULL-SCREENSHOT] ✅ Все изображения загружены")
+                except Exception as e:
+                    print(f"[PROXY-FULL-SCREENSHOT] ⚠️ Не все изображения загрузились: {e}")
+                
+                # Дополнительная пауза для финальной отрисовки
                 await page.wait_for_timeout(2000)
                 
                 try:
-                    await page.screenshot(path=screenshot_path, full_page=False)
+                    await page.screenshot(path=screenshot_path, full_page=True)
                     print(f"[PROXY-FULL-SCREENSHOT] ✅ Скриншот создан успешно")
                 except Exception as e:
                     print(f"[PROXY-FULL-SCREENSHOT] ❌ Ошибка при создании скриншота: {e}")
