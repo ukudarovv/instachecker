@@ -643,9 +643,9 @@ async def check_account_via_api_v2_proxy(
         
                  # Если аккаунт существует - делаем скриншот
         if api_result.get("exists") is True:
-            print(f"[API-V2-PROXY] ✅ Аккаунт @{username} существует - создаем скриншот через Firefox с прокси (как при тесте прокси)")
+            print(f"[API-V2-PROXY] ✅ Аккаунт @{username} существует - создаем скриншот через Playwright с прокси (как при тесте прокси)")
             
-            # Создаем скриншот через Firefox С ПРОКСИ через Selenium Wire (как при тесте прокси)
+            # Создаем скриншот через Playwright С ПРОКСИ (как при тесте прокси)
             screenshot_result = {
                 "exists": None,
                 "screenshot_path": None,
@@ -654,140 +654,52 @@ async def check_account_via_api_v2_proxy(
             }
             
             try:
-                from selenium import webdriver
-                from selenium.webdriver.firefox.options import Options as FirefoxOptions
-                from selenium.webdriver.common.by import By
-                import time
-                import random
+                import os
                 
                 # Создаем директорию если не существует
-                import os
                 os.makedirs(os.path.dirname(screenshot_path), exist_ok=True)
                 
                 # Получаем лучший прокси для скриншота
                 best_proxy = select_best_proxy(session, user_id)
-                driver = None
                 
                 if not best_proxy:
-                    print(f"[API-V2-PROXY] ⚠️ Нет доступного прокси для скриншота, создаем Firefox без прокси")
+                    print(f"[API-V2-PROXY] ⚠️ Нет доступного прокси для скриншота")
                     screenshot_result["proxy_used"] = "none"
+                    screenshot_result["error"] = "no_proxy_for_screenshot"
                 else:
                     # Формируем URL прокси для скриншота
                     proxy_url_for_screenshot = f"{best_proxy.scheme}://{best_proxy.username}:{best_proxy.password}@{best_proxy.host}"
                     print(f"[API-V2-PROXY] 🔗 Используем прокси для скриншота: {best_proxy.scheme}://{best_proxy.host}")
                     screenshot_result["proxy_used"] = best_proxy.host
                     
-                    # Настройки Firefox
-                    options = FirefoxOptions()
+                    # Используем Playwright (как в тесте прокси)
+                    from .ig_screenshot import check_account_with_header_screenshot
                     
-                    # Desktop User-Agents
-                    desktop_user_agents = [
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-                        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                    ]
+                    print(f"[API-V2-PLAYWRIGHT] 🎭 Создание скриншота через Playwright с прокси")
                     
-                    desktop_user_agent = random.choice(desktop_user_agents)
-                    options.set_preference("general.useragent.override", desktop_user_agent)
+                    result = await check_account_with_header_screenshot(
+                        username=username,
+                        proxy_url=proxy_url_for_screenshot,
+                        screenshot_path=screenshot_path,
+                        headless=True,
+                        timeout_ms=60000,
+                        dark_theme=False,  # Обычный режим
+                        mobile_emulation=False,  # Desktop mode
+                        crop_ratio=0  # Полный экран
+                    )
                     
-                    # Настройки для обхода блокировок
-                    options.set_preference("dom.webdriver.enabled", False)
-                    options.set_preference("useAutomationExtension", False)
-                    
-                    # Desktop размер окна
-                    options.add_argument("--width=1920")
-                    options.add_argument("--height=1080")
-                    
-                    if True:  # Всегда headless для сервера
-                        options.add_argument("--headless")
-                    
-                    # Создаем Firefox драйвер С ПРОКСИ через Selenium Wire (как в тесте прокси)
-                    try:
-                        from seleniumwire import webdriver as seleniumwire_webdriver
-                        print(f"[API-V2-PROXY] 🔧 Используем Selenium Wire для прокси аутентификации")
-                        
-                        # Настройка прокси для Selenium Wire
-                        seleniumwire_options = {
-                            'proxy': {
-                                'http': proxy_url_for_screenshot,
-                                'https': proxy_url_for_screenshot,
-                                'no_proxy': 'localhost,127.0.0.1'
-                            }
-                        }
-                        
-                        driver = seleniumwire_webdriver.Firefox(
-                            options=options,
-                            seleniumwire_options=seleniumwire_options
-                        )
-                        print(f"[API-V2-PROXY] ✅ Firefox с прокси через Selenium Wire создан")
-                        
-                    except ImportError:
-                        print(f"[API-V2-PROXY] ⚠️ Selenium Wire не установлен, используем Firefox без прокси")
-                        print(f"[API-V2-PROXY] 💡 Для прокси аутентификации установите: pip install selenium-wire")
-                        # Fallback: используем обычный Firefox без прокси
-                        driver = webdriver.Firefox(options=options)
-                        screenshot_result["proxy_used"] = "none (selenium_wire_not_installed)"
-                    except Exception as e:
-                        print(f"[API-V2-PROXY] ⚠️ Ошибка Selenium Wire: {e}, используем Firefox без прокси")
-                        import traceback
-                        traceback.print_exc()
-                        # Fallback: используем обычный Firefox без прокси
-                        driver = webdriver.Firefox(options=options)
-                        screenshot_result["proxy_used"] = "none (selenium_wire_error)"
-                
-                # Если не создали driver с прокси, создаем без прокси
-                if driver is None:
-                    print(f"[API-V2-PROXY] 🔧 Создаем Firefox без прокси")
-                    driver = webdriver.Firefox(options=options)
-                    screenshot_result["proxy_used"] = "none"
-                
-                # Теперь driver всегда существует (либо с прокси, либо без)
-                driver.set_window_size(1920, 1080)
-                
-                try:
-                    # Переходим на Instagram
-                    url = f"https://www.instagram.com/{username}/"
-                    print(f"[API-V2-FIREFOX] 🌐 Переход на: {url}")
-                    driver.get(url)
-                    
-                    # Ждем загрузки страницы
-                    time.sleep(7)
-                    
-                    # Закрываем модальные окна через ESC и JavaScript (как в тесте прокси)
-                    try:
-                        from selenium.webdriver.common.keys import Keys
-                        # Нажимаем ESC для закрытия модальных окон
-                        driver.find_element("tag name", "body").send_keys(Keys.ESCAPE)
-                        time.sleep(0.5)
-                        driver.find_element("tag name", "body").send_keys(Keys.ESCAPE)
-                        time.sleep(0.5)
-                        print(f"[API-V2-FIREFOX] ✅ ESC нажата для закрытия модальных окон")
-                    except Exception as e:
-                        print(f"[API-V2-FIREFOX] ⚠️ Ошибка нажатия ESC: {e}")
-                    
-                    InstagramCheckerWithProxy.close_instagram_modals_firefox(driver)
-                    time.sleep(5)
-                    
-                    # Делаем скриншот
-                    print(f"[API-V2-FIREFOX] 📸 Сохранение скриншота: {screenshot_path}")
-                    driver.save_screenshot(screenshot_path)
-                    
-                    if os.path.exists(screenshot_path):
-                        size = os.path.getsize(screenshot_path)
-                        screenshot_result["screenshot_path"] = screenshot_path
+                    if result.get('exists') and result.get('screenshot_path') and os.path.exists(result['screenshot_path']):
+                        file_size = os.path.getsize(result['screenshot_path']) / 1024
+                        screenshot_result["screenshot_path"] = result['screenshot_path']
                         screenshot_result["exists"] = True
-                        print(f"[API-V2-PROXY] ✅ Firefox скриншот создан: {screenshot_path} ({size} байт)")
+                        print(f"[API-V2-PROXY] ✅ Playwright скриншот создан: {result['screenshot_path']} ({file_size:.1f} KB)")
                     else:
-                        print(f"[API-V2-PROXY] ⚠️ Скриншот не найден: {screenshot_path}")
-                        screenshot_result["error"] = "screenshot_not_found"
-                    
-                finally:
-                    driver.quit()
-                    print(f"[API-V2-FIREFOX] 🔒 Firefox драйвер закрыт")
+                        error_msg = result.get('error', 'Неизвестная ошибка')
+                        print(f"[API-V2-PROXY] ⚠️ Не удалось создать скриншот: {error_msg}")
+                        screenshot_result["error"] = error_msg
                     
             except Exception as e:
-                print(f"[API-V2-PROXY] ❌ Ошибка создания Firefox скриншота: {e}")
+                print(f"[API-V2-PROXY] ❌ Ошибка создания Playwright скриншота: {e}")
                 screenshot_result["error"] = f"screenshot_error: {str(e)}"
                 import traceback
                 traceback.print_exc()
