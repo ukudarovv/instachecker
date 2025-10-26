@@ -580,10 +580,47 @@ async def check_account_via_api_v2_proxy(
             else:
                 print(f"[API-V2-PROXY] ⚠️ Прокси {proxy.id} недоступен (в cooldown или не активен)")
         
+        # Если у пользователя нет прокси, пробуем взять прокси администратора
         if not proxy_list:
-            print(f"[API-V2-PROXY] ⚠️ Нет доступных прокси для пользователя {user_id}")
-            result["error"] = "no_proxies_available"
-            return result
+            print(f"[API-V2-PROXY] ⚠️ Нет доступных прокси для пользователя {user_id}, ищем прокси администратора")
+            try:
+                # Получаем прокси администратора
+                from ..models import User
+                admin_users = session.query(User).filter(
+                    User.role.in_(['admin', 'superuser']),
+                    User.is_active == True
+                ).all()
+                
+                for admin in admin_users:
+                    admin_proxies = session.query(Proxy).filter(
+                        Proxy.user_id == admin.id,
+                        Proxy.is_active == True
+                    ).all()
+                    
+                    for proxy in admin_proxies:
+                        if is_available(proxy):
+                            if proxy.username and proxy.password:
+                                if ':' in proxy.host:
+                                    host, port = proxy.host.split(':', 1)
+                                    proxy_str = f"{host}:{port}:{proxy.username}:{proxy.password}"
+                                else:
+                                    proxy_str = f"{proxy.host}:8080:{proxy.username}:{proxy.password}"
+                                proxy_list.append(proxy_str)
+                                print(f"[API-V2-PROXY] ✅ Добавлен прокси администратора: {proxy_str}")
+                                break
+                    
+                    if proxy_list:
+                        print(f"[API-V2-PROXY] 🎯 Используем прокси администратора для проверки @{username}")
+                        break
+                
+                if not proxy_list:
+                    print(f"[API-V2-PROXY] ❌ Нет доступных прокси (ни у пользователя, ни у администратора)")
+                    result["error"] = "no_proxies_available"
+                    return result
+            except Exception as e:
+                print(f"[API-V2-PROXY] ⚠️ Ошибка при поиске прокси администратора: {e}")
+                result["error"] = "no_proxies_available"
+                return result
         
         print(f"[API-V2-PROXY] 📡 Доступно прокси: {len(proxy_list)}")
         
