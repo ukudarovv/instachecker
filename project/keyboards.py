@@ -29,7 +29,7 @@ def main_menu(is_admin: bool = False, verify_mode: str = None) -> dict:
     keyboard = {
         "keyboard": [
             [{"text": "Добавить аккаунт"}, {"text": "Активные аккаунты"}],
-            [{"text": "Аккаунты на проверке"}, {"text": "Проверить аккаунты"}],
+            [{"text": "Аккаунты на проверке"}],
             [{"text": "Массовое добавление"}, {"text": "Массовое удаление"}],
             third_row
         ],
@@ -72,14 +72,14 @@ def admin_verify_mode_selection_kb(current_mode: str) -> dict:
         dict with inline keyboard for admin mode selection
     """
     modes = [
-        ("api+instagram", "🔑 API + 📸 Instagram (🚀 Undetected)"),
+        # ("api+instagram", "🔑 API + 📸 Instagram (🚀 Undetected)"),
         ("api+proxy", "🔑 API + 🌐 Proxy (🚀 Undetected)"),
-        ("api+proxy+instagram", "🔑 API + 🌐 Proxy + 📸 Instagram (тройная)"),
-        ("instagram+proxy", "📸 Instagram + 🌐 Proxy (без API)"),
-        ("instagram", "📸 Только Instagram (🚀 Undetected)"),
-        ("proxy", "🌐 Только Proxy (🚀 Undetected)"),
-        ("simple_monitor", "⚡ Простой мониторинг (app.py стиль)"),
-        ("full_bypass", "🛡️ Полный обход защиты (все методы)"),
+        # ("api+proxy+instagram", "🔑 API + 🌐 Proxy + 📸 Instagram (тройная)"),
+        # ("instagram+proxy", "📸 Instagram + 🌐 Proxy (без API)"),
+        # ("instagram", "📸 Только Instagram (🚀 Undetected)"),
+        # ("proxy", "🌐 Только Proxy (🚀 Undetected)"),
+        # ("simple_monitor", "⚡ Простой мониторинг (app.py стиль)"),
+        # ("full_bypass", "🛡️ Полный обход защиты (все методы)"),
         ("api-v2", "🔑 API v2 + 🌐 Proxy (новый)")
     ]
     
@@ -110,14 +110,14 @@ def verify_mode_selection_kb(current_mode: str) -> dict:
         dict with inline keyboard for mode selection
     """
     modes = [
-        ("api+instagram", "🔑 API + 📸 Instagram"),
+        # ("api+instagram", "🔑 API + 📸 Instagram"),
         ("api+proxy", "🔑 API + 🌐 Proxy"),
-        ("api+proxy+instagram", "🔑 API + 🌐 Proxy + 📸 Instagram (тройная)"),
-        ("instagram+proxy", "📸 Instagram + 🌐 Proxy (без API)"),
-        ("instagram", "📸 Только Instagram"),
-        ("proxy", "🌐 Только Proxy"),
-        ("simple_monitor", "⚡ Простой мониторинг (как app.py)"),
-        ("full_bypass", "🛡️ Полный обход защиты (все методы)"),
+        # ("api+proxy+instagram", "🔑 API + 🌐 Proxy + 📸 Instagram (тройная)"),
+        # ("instagram+proxy", "📸 Instagram + 🌐 Proxy (без API)"),
+        # ("instagram", "📸 Только Instagram"),
+        # ("proxy", "🌐 Только Proxy"),
+        # ("simple_monitor", "⚡ Простой мониторинг (как app.py)"),
+        # ("full_bypass", "🛡️ Полный обход защиты (все методы)"),
         ("api-v2", "🔑 API v2 + 🌐 Proxy (новый)")
     ]
     

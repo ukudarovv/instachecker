@@ -3516,48 +3516,53 @@ class TelegramBot:
                     self.send_message(chat_id, "⛔ Доступ пока не выдан.")
                     return
                 
-                # Show mass addition menu
+                # Start FSM for batch proxy import
+                self.fsm_states[user_id] = {"state": "waiting_for_proxy_list"}
+                
                 try:
-                    from .keyboards import mass_add_menu_kb
-                    self.send_message(chat_id, "📝 Выберите тип массового добавления:", mass_add_menu_kb())
+                    from .services.proxy_parser import format_proxy_examples
+                    from .keyboards import cancel_kb
                 except ImportError:
-                    try:
-                        from keyboards import mass_add_menu_kb
-                        self.send_message(chat_id, "📝 Выберите тип массового добавления:", mass_add_menu_kb())
-                    except Exception as e:
-                        print(f"Error importing mass_add_menu_kb: {e}")
-                        # Get verify_mode for fallback
-                        try:
-                            from .services.system_settings import get_global_verify_mode
-                        except ImportError:
-                            from services.system_settings import get_global_verify_mode
-                        with session_factory() as session:
-                            verify_mode = get_global_verify_mode(session)
-                        self.send_message(chat_id, "❌ Ошибка загрузки меню.", main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode))
+                    from services.proxy_parser import format_proxy_examples
+                    from keyboards import cancel_kb
+                
+                examples = format_proxy_examples()
+                
+                message = (
+                    "📦 <b>Массовое добавление прокси</b>\n\n"
+                    "Отправьте список прокси (один на строку или через ;):\n\n"
+                    f"{examples}\n\n"
+                    "💡 <b>Форматы ввода:</b>\n"
+                    "• По строкам: каждый прокси с новой строки\n"
+                    "• Через точку с запятой: proxy1;proxy2;proxy3\n\n"
+                    "Или нажмите «Отмена» для выхода."
+                )
+                
+                self.send_message(chat_id, message, cancel_kb())
             
             elif text == "Массовое удаление":
                 if not ensure_active(user):
                     self.send_message(chat_id, "⛔ Доступ пока не выдан.")
                     return
                 
-                # Show mass deletion menu
+                # Start FSM for mass deletion of all accounts
+                self.fsm_states[user_id] = {"state": "waiting_for_delete_list", "delete_type": "all"}
+                
                 try:
-                    from .keyboards import mass_delete_menu_kb
-                    self.send_message(chat_id, "🗑️ Выберите тип массового удаления:", mass_delete_menu_kb())
+                    from .keyboards import cancel_kb
                 except ImportError:
-                    try:
-                        from keyboards import mass_delete_menu_kb
-                        self.send_message(chat_id, "🗑️ Выберите тип массового удаления:", mass_delete_menu_kb())
-                    except Exception as e:
-                        print(f"Error importing mass_delete_menu_kb: {e}")
-                        # Get verify_mode for fallback
-                        try:
-                            from .services.system_settings import get_global_verify_mode
-                        except ImportError:
-                            from services.system_settings import get_global_verify_mode
-                        with session_factory() as session:
-                            verify_mode = get_global_verify_mode(session)
-                        self.send_message(chat_id, "❌ Ошибка загрузки меню.", main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode))
+                    from keyboards import cancel_kb
+                
+                self.send_message(chat_id, 
+                    "🗑️ **Массовое удаление всех аккаунтов**\n\n"
+                    "Отправьте список аккаунтов в формате:\n"
+                    "```\n"
+                    "username1; username2; username3\n"
+                    "```\n\n"
+                    "Аккаунты через точку с запятой, можно с @ или без.\n"
+                    "Будут удалены все указанные аккаунты (активные и неактивные).",
+                    cancel_kb()
+                )
             
             elif text == "📝 Массовое добавление аккаунтов":
                 if not ensure_active(user):
