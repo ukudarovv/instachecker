@@ -576,54 +576,46 @@ async def check_account_via_api_v2_proxy(
             "error": api_result.get("error")
         })
         
-        # Если аккаунт существует - делаем скриншот
+                 # Если аккаунт существует - делаем скриншот
         if api_result.get("exists") is True:
-            print(f"[API-V2-PROXY] ✅ Аккаунт @{username} существует - создаем скриншот")
+            print(f"[API-V2-PROXY] ✅ Аккаунт @{username} существует - создаем скриншот через Firefox с прокси (как при тесте прокси)")
             
-            # Получаем лучший прокси для скриншота
-            best_proxy = select_best_proxy(session, user_id)
-            if not best_proxy:
-                print(f"[API-V2-PROXY] ⚠️ Нет доступного прокси для скриншота")
-                result["error"] = "no_proxy_for_screenshot"
-                return result
+            # Создаем скриншот через Firefox С ПРОКСИ через Selenium Wire (как при тесте прокси)
+            screenshot_result = {
+                "exists": None,
+                "screenshot_path": None,
+                "error": None,
+                "proxy_used": None
+            }
             
-            # Формируем URL прокси для скриншота
-            proxy_url = f"{best_proxy.scheme}://{best_proxy.username}:{best_proxy.password}@{best_proxy.host}"
-            
-            # Создаем скриншот используя логику api+proxy (только для существующих!)
             try:
-                from .proxy_checker import check_account_via_proxy_with_screenshot
-            except ImportError:
-                from services.proxy_checker import check_account_via_proxy_with_screenshot
-            
-            screenshot_result = await check_account_via_proxy_with_screenshot(
-                username=username,
-                proxy=best_proxy,
-                headless=True,
-                timeout_ms=30000,
-                screenshot_path=screenshot_path
-            )
-            
-            # Если получили 403 ошибку, пробуем Firefox (как в api+proxy)
-            if screenshot_result.get("error") == "403_forbidden":
-                print(f"[API-V2-PROXY] ⚠️ 403 Forbidden с прокси - пробуем Firefox")
-                try:
-                    from selenium import webdriver
-                    from selenium.webdriver.firefox.options import Options as FirefoxOptions
-                    from selenium.webdriver.common.by import By
-                    from selenium.webdriver.support.ui import WebDriverWait
-                    from selenium.webdriver.support import expected_conditions as EC
-                    import time
-                    import random
-                    
-                    # Создаем директорию если не существует
-                    import os
-                    os.makedirs(os.path.dirname(screenshot_path), exist_ok=True)
+                from selenium import webdriver
+                from selenium.webdriver.firefox.options import Options as FirefoxOptions
+                from selenium.webdriver.common.by import By
+                import time
+                import random
+                
+                # Создаем директорию если не существует
+                import os
+                os.makedirs(os.path.dirname(screenshot_path), exist_ok=True)
+                
+                # Получаем лучший прокси для скриншота
+                best_proxy = select_best_proxy(session, user_id)
+                driver = None
+                
+                if not best_proxy:
+                    print(f"[API-V2-PROXY] ⚠️ Нет доступного прокси для скриншота, создаем Firefox без прокси")
+                    screenshot_result["proxy_used"] = "none"
+                else:
+                    # Формируем URL прокси для скриншота
+                    proxy_url_for_screenshot = f"{best_proxy.scheme}://{best_proxy.username}:{best_proxy.password}@{best_proxy.host}"
+                    print(f"[API-V2-PROXY] 🔗 Используем прокси для скриншота: {best_proxy.scheme}://{best_proxy.host}")
+                    screenshot_result["proxy_used"] = best_proxy.host
                     
                     # Настройки Firefox
                     options = FirefoxOptions()
                     
-                    # Desktop режим
+                    # Desktop User-Agents
                     desktop_user_agents = [
                         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
@@ -631,196 +623,98 @@ async def check_account_via_api_v2_proxy(
                         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
                     ]
                     
-                    user_agent = random.choice(desktop_user_agents)
-                    options.set_preference("general.useragent.override", user_agent)
+                    desktop_user_agent = random.choice(desktop_user_agents)
+                    options.set_preference("general.useragent.override", desktop_user_agent)
                     
                     # Настройки для обхода блокировок
                     options.set_preference("dom.webdriver.enabled", False)
                     options.set_preference("useAutomationExtension", False)
-                    options.set_preference("media.navigator.enabled", False)
-                    options.set_preference("media.peerconnection.enabled", False)
                     
-                    # Размер окна для desktop
+                    # Desktop размер окна
                     options.add_argument("--width=1920")
                     options.add_argument("--height=1080")
                     
                     if True:  # Всегда headless для сервера
                         options.add_argument("--headless")
                     
-                    # Создаем Firefox драйвер
+                    # Создаем Firefox драйвер С ПРОКСИ через Selenium Wire (как в тесте прокси)
+                    try:
+                        from seleniumwire import webdriver as seleniumwire_webdriver
+                        print(f"[API-V2-PROXY] 🔧 Используем Selenium Wire для прокси аутентификации")
+                        
+                        # Настройка прокси для Selenium Wire
+                        seleniumwire_options = {
+                            'proxy': {
+                                'http': proxy_url_for_screenshot,
+                                'https': proxy_url_for_screenshot,
+                                'no_proxy': 'localhost,127.0.0.1'
+                            }
+                        }
+                        
+                        driver = seleniumwire_webdriver.Firefox(
+                            options=options,
+                            seleniumwire_options=seleniumwire_options
+                        )
+                        print(f"[API-V2-PROXY] ✅ Firefox с прокси через Selenium Wire создан")
+                        
+                    except ImportError:
+                        print(f"[API-V2-PROXY] ⚠️ Selenium Wire не установлен, используем Firefox без прокси")
+                        print(f"[API-V2-PROXY] 💡 Для прокси аутентификации установите: pip install selenium-wire")
+                        # Fallback: используем обычный Firefox без прокси
+                        driver = webdriver.Firefox(options=options)
+                        screenshot_result["proxy_used"] = "none (selenium_wire_not_installed)"
+                    except Exception as e:
+                        print(f"[API-V2-PROXY] ⚠️ Ошибка Selenium Wire: {e}, используем Firefox без прокси")
+                        import traceback
+                        traceback.print_exc()
+                        # Fallback: используем обычный Firefox без прокси
+                        driver = webdriver.Firefox(options=options)
+                        screenshot_result["proxy_used"] = "none (selenium_wire_error)"
+                
+                # Если не создали driver с прокси, создаем без прокси
+                if driver is None:
+                    print(f"[API-V2-PROXY] 🔧 Создаем Firefox без прокси")
                     driver = webdriver.Firefox(options=options)
-                    driver.set_window_size(1920, 1080)
+                    screenshot_result["proxy_used"] = "none"
+                
+                # Теперь driver всегда существует (либо с прокси, либо без)
+                driver.set_window_size(1920, 1080)
+                
+                try:
+                    # Переходим на Instagram
+                    url = f"https://www.instagram.com/{username}/"
+                    print(f"[API-V2-FIREFOX] 🌐 Переход на: {url}")
+                    driver.get(url)
                     
-                    try:
-                        # Переходим на Instagram
-                        url = f"https://www.instagram.com/{username}/"
-                        print(f"[API-V2-FIREFOX] 🌐 Переход на: {url}")
-                        driver.get(url)
-                        
-                        # Ждем загрузки страницы
-                        time.sleep(3)
-                        
-                        # Закрываем модальные окна (как в других режимах)
-                        InstagramCheckerWithProxy.close_instagram_modals_firefox(driver)
-                        
-                        # Дополнительная задержка для полного удаления элементов
-                        time.sleep(2)
-                        
-                        # Дополнительные методы удаления затемнения
-                        print("[API-V2-FIREFOX] 🔥 Начинаем дополнительные методы...")
-                        try:
-                            # Нажатие Escape
-                            from selenium.webdriver.common.keys import Keys
-                            driver.find_element("tag name", "body").send_keys(Keys.ESCAPE)
-                            driver.find_element("tag name", "body").send_keys(Keys.ESCAPE)
-                            print("[API-V2-FIREFOX] ⌨️ Escape нажат")
-                        except Exception as e:
-                            print(f"[API-V2-FIREFOX] ⚠️ Ошибка Escape: {e}")
-                        
-                        # Имитация нажатия кнопок закрытия
-                        try:
-                            # Ищем только безопасные кнопки закрытия
-                            close_selectors = [
-                                "button[aria-label='Close']",
-                                "svg[aria-label='Close']", 
-                                "button[aria-label='Закрыть']",
-                                "svg[aria-label='Закрыть']",
-                                "[data-testid='close-button']",
-                                "button[class*='close']",
-                                "button[class*='Close']"
-                            ]
-                            
-                            for selector in close_selectors:
-                                try:
-                                    elements = driver.find_elements("css selector", selector)
-                                    for element in elements:
-                                        if element.is_displayed():
-                                            # Проверяем, что это действительно кнопка закрытия
-                                            text = element.text.lower() if element.text else ""
-                                            aria_label = element.get_attribute("aria-label") or ""
-                                            if "close" in text or "закрыть" in text or "close" in aria_label.lower() or "закрыть" in aria_label.lower():
-                                                driver.execute_script("arguments[0].click();", element)
-                                                print(f"[API-V2-FIREFOX] 🖱️ Нажата кнопка: {selector}")
-                                                time.sleep(0.5)
-                                except:
-                                    continue
-                                    
-                            print("[API-V2-FIREFOX] 🖱️ Поиск кнопок закрытия завершен")
-                        except Exception as e:
-                            print(f"[API-V2-FIREFOX] ⚠️ Ошибка поиска кнопок: {e}")
-                        
-                        # JavaScript имитация кликов
-                        try:
-                            js_click_buttons = """
-                            // Имитируем клики только по безопасным кнопкам закрытия
-                            var closeButtons = document.querySelectorAll('button[aria-label="Close"], svg[aria-label="Close"], button[aria-label="Закрыть"], svg[aria-label="Закрыть"]');
-                            for (var i = 0; i < closeButtons.length; i++) {
-                                if (closeButtons[i].offsetParent !== null) { // Проверяем видимость
-                                    var text = closeButtons[i].textContent || '';
-                                    var ariaLabel = closeButtons[i].getAttribute('aria-label') || '';
-                                    if (text.toLowerCase().includes('close') || text.toLowerCase().includes('закрыть') || 
-                                        ariaLabel.toLowerCase().includes('close') || ariaLabel.toLowerCase().includes('закрыть')) {
-                                        closeButtons[i].click();
-                                    }
-                                }
-                            }
-                            """
-                            driver.execute_script(js_click_buttons)
-                            print("[API-V2-FIREFOX] 🖱️ JavaScript клики выполнены")
-                        except Exception as e:
-                            print(f"[API-V2-FIREFOX] ⚠️ Ошибка JavaScript кликов: {e}")
-                        
-                        # Дополнительное агрессивное удаление
-                        print("[API-V2-FIREFOX] 🔥 Начинаем финальную очистку...")
-                        try:
-                            js_final_cleanup = """
-                            // 🔥 ФИНАЛЬНАЯ ОЧИСТКА - УДАЛЯЕМ ВСЕ ОСТАВШИЕСЯ ЭЛЕМЕНТЫ
-                            var allElements = document.querySelectorAll('*');
-                            for (var i = 0; i < allElements.length; i++) {
-                                var element = allElements[i];
-                                var style = element.style || {};
-                                var className = element.className || '';
-                                
-                                // Удаляем все элементы с темным фоном
-                                if (style.background && (style.background.indexOf('rgba(0,0,0') !== -1 || 
-                                    style.background.indexOf('rgba(0, 0, 0') !== -1 || 
-                                    style.background.indexOf('black') !== -1 || 
-                                    style.background.indexOf('#000') !== -1)) {
-                                    element.style.display = 'none !important';
-                                    element.remove();
-                                }
-                                
-                                // Удаляем все элементы с высоким z-index
-                                var zIndex = parseInt(style.zIndex) || 0;
-                                if (zIndex > 50) {
-                                    element.style.display = 'none !important';
-                                    element.remove();
-                                }
-                                
-                                // Удаляем все fixed элементы
-                                if (style.position === 'fixed') {
-                                    element.style.display = 'none !important';
-                                    element.remove();
-                                }
-                            }
-                            
-                            // 🔥 ПРИНУДИТЕЛЬНО УСТАНАВЛИВАЕМ БЕЛЫЙ ФОН
-                            document.body.style.background = 'white !important';
-                            document.documentElement.style.background = 'white !important';
-                            document.body.style.backgroundImage = 'none !important';
-                            document.documentElement.style.backgroundImage = 'none !important';
-                            """
-                            driver.execute_script(js_final_cleanup)
-                            print("[API-V2-FIREFOX] 🔥 Финальная очистка выполнена")
-                        except Exception as e:
-                            print(f"[API-V2-FIREFOX] ⚠️ Ошибка финальной очистки: {e}")
-                        
-                        # Дополнительная задержка после финальной очистки
-                        time.sleep(1)
-                        
-                        # Проверяем, что страница загрузилась
-                        page_source = driver.page_source
-                        if "instagram.com" in driver.current_url and username.lower() in page_source.lower():
-                            # Создаем скриншот
-                            driver.save_screenshot(screenshot_path)
-                            
-                            screenshot_result["screenshot_path"] = screenshot_path
-                            screenshot_result["exists"] = True
-                            print(f"[API-V2-PROXY] 📸 Firefox скриншот создан: {screenshot_path}")
-                        else:
-                            print(f"[API-V2-PROXY] ⚠️ Страница не загрузилась корректно")
-                            screenshot_result["error"] = "page_load_failed"
-                            
-                    finally:
-                        driver.quit()
-                        
-                except Exception as e:
-                    print(f"[API-V2-PROXY] ❌ Ошибка создания Firefox скриншота: {e}")
-                    # Fallback на PIL скриншот
-                    try:
-                        from PIL import Image, ImageDraw, ImageFont
-                        from datetime import datetime
-                        
-                        # Создаем простой скриншот с информацией
-                        img = Image.new('RGB', (800, 600), color='white')
-                        draw = ImageDraw.Draw(img)
-                        
-                        try:
-                            font = ImageFont.truetype("arial.ttf", 24)
-                        except:
-                            font = ImageFont.load_default()
-                        
-                        text = f"Instagram Account: @{username}\nStatus: Active (API v2 confirmed)\nMethod: API v2 + Proxy\nTime: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-                        draw.text((50, 250), text, fill='black', font=font)
-                        img.save(screenshot_path)
-                        
+                    # Ждем загрузки страницы
+                    time.sleep(5)
+                    
+                    # Закрываем модальные окна (как в тесте прокси)
+                    InstagramCheckerWithProxy.close_instagram_modals_firefox(driver)
+                    time.sleep(3)
+                    
+                    # Делаем скриншот
+                    print(f"[API-V2-FIREFOX] 📸 Сохранение скриншота: {screenshot_path}")
+                    driver.save_screenshot(screenshot_path)
+                    
+                    if os.path.exists(screenshot_path):
+                        size = os.path.getsize(screenshot_path)
                         screenshot_result["screenshot_path"] = screenshot_path
                         screenshot_result["exists"] = True
-                        print(f"[API-V2-PROXY] 📸 Fallback PIL скриншот создан: {screenshot_path}")
-                        
-                    except Exception as fallback_error:
-                        print(f"[API-V2-PROXY] ❌ Ошибка создания fallback скриншота: {fallback_error}")
-                        screenshot_result["error"] = "screenshot_failed_fallback"
+                        print(f"[API-V2-PROXY] ✅ Firefox скриншот создан: {screenshot_path} ({size} байт)")
+                    else:
+                        print(f"[API-V2-PROXY] ⚠️ Скриншот не найден: {screenshot_path}")
+                        screenshot_result["error"] = "screenshot_not_found"
+                    
+                finally:
+                    driver.quit()
+                    print(f"[API-V2-FIREFOX] 🔒 Firefox драйвер закрыт")
+                    
+            except Exception as e:
+                print(f"[API-V2-PROXY] ❌ Ошибка создания Firefox скриншота: {e}")
+                screenshot_result["error"] = f"screenshot_error: {str(e)}"
+                import traceback
+                traceback.print_exc()
             
             # Обновляем результат с данными из скриншота
             print(f"[API-V2-DEBUG] screenshot_result: {screenshot_result}")
