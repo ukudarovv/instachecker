@@ -675,17 +675,18 @@ async def check_account_via_api_v2_proxy(
                     # Используем Playwright (как в тесте прокси)
                     from .ig_screenshot import check_account_with_header_screenshot
                     
-                    print(f"[API-V2-PLAYWRIGHT] 🎭 Создание скриншота через Playwright с прокси")
+                    print(f"[API-V2-PLAYWRIGHT] 🎭 Создание скриншота через Playwright с прокси (как в тесте)")
                     
+                    # Точно такие же параметры как в test_proxy_screenshot
                     result = await check_account_with_header_screenshot(
                         username=username,
                         proxy_url=proxy_url_for_screenshot,
                         screenshot_path=screenshot_path,
                         headless=True,
-                        timeout_ms=90000,  # Увеличено до 90 секунд
-                        dark_theme=False,  # Обычный режим
-                        mobile_emulation=False,  # Desktop mode
-                        crop_ratio=0  # Полный экран
+                        timeout_ms=60000,
+                        dark_theme=True,
+                        mobile_emulation=False,
+                        crop_ratio=0
                     )
                     
                     if result.get('exists') and result.get('screenshot_path') and os.path.exists(result['screenshot_path']):
