@@ -704,7 +704,18 @@ async def check_account_via_api_v2_proxy(
                     # Ждем загрузки страницы
                     time.sleep(7)
                     
-                    # Закрываем модальные окна (как в тесте прокси)
+                    # Закрываем модальные окна через ESC и JavaScript (как в тесте прокси)
+                    try:
+                        from selenium.webdriver.common.keys import Keys
+                        # Нажимаем ESC для закрытия модальных окон
+                        driver.find_element("tag name", "body").send_keys(Keys.ESCAPE)
+                        time.sleep(0.5)
+                        driver.find_element("tag name", "body").send_keys(Keys.ESCAPE)
+                        time.sleep(0.5)
+                        print(f"[API-V2-FIREFOX] ✅ ESC нажата для закрытия модальных окон")
+                    except Exception as e:
+                        print(f"[API-V2-FIREFOX] ⚠️ Ошибка нажатия ESC: {e}")
+                    
                     InstagramCheckerWithProxy.close_instagram_modals_firefox(driver)
                     time.sleep(5)
                     
