@@ -1663,7 +1663,7 @@ class TelegramBot:
                     keyboard = main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode_for_menu)
                     self.send_message(chat_id, 
                         f"✅ Аккаунт <a href='https://www.instagram.com/{username}/'>@{username}</a> добавлен!\n\n"
-                        f"📅 Период мониторинга: 30 дней\n"
+                        f"📅 Период разблокировки: 30 дней\n"
                         f"📅 С: {acc.from_date.strftime('%d.%m.%Y')}\n"
                         f"📅 До: {acc.to_date.strftime('%d.%m.%Y')}\n\n"
                         f"🔄 Разблокировка запущена...",
