@@ -51,13 +51,14 @@ def create_account(session: Session, user_id: int, username: str, days: int = 30
 def get_accounts_page(session: Session, user_id: int, done: bool, page: int) -> Tuple[List[Account], int]:
     """
     Возвращает (items, total_pages) для аккаунтов пользователя по статусу done.
+    Сортировка: от старых к новым (по ID).
     """
     q = session.query(Account).filter(and_(Account.user_id == user_id, Account.done == done))
     total = q.count()
     total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
     page = max(1, min(page, total_pages))
     items = (
-        q.order_by(Account.to_date.asc(), Account.account.asc())
+        q.order_by(Account.id.asc())
          .offset((page - 1) * PAGE_SIZE)
          .limit(PAGE_SIZE)
          .all()
