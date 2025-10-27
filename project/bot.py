@@ -3077,25 +3077,35 @@ class TelegramBot:
                                 success, message, screenshot_path = result
                                 
                                 if success:
-                                    # Calculate real days completed
-                                    completed_days = 1  # Default fallback
+                                    # Calculate real time completed (hours or days)
+                                    completed_text = "1 дней"  # Default fallback
                                     if acc.from_date:
                                         if isinstance(acc.from_date, datetime):
-                                            start_date = acc.from_date.date()
+                                            start_datetime = acc.from_date
                                         else:
-                                            start_date = acc.from_date
+                                            # If only date, assume start of day
+                                            start_datetime = datetime.combine(acc.from_date, datetime.min.time())
                                         
-                                        current_date = date.today()
-                                        completed_days = (current_date - start_date).days + 1  # +1 to include start day
+                                        current_datetime = datetime.now()
+                                        time_diff = current_datetime - start_datetime
                                         
-                                        # Ensure completed_days is at least 1
-                                        completed_days = max(1, completed_days)
+                                        # If less than 24 hours, show hours
+                                        if time_diff.total_seconds() < 86400:  # 24 hours = 86400 seconds
+                                            hours = int(time_diff.total_seconds() / 3600)
+                                            if hours < 1:
+                                                hours = 1
+                                            completed_text = f"{hours} часов" if hours > 1 else "1 час"
+                                        else:
+                                            # Show days
+                                            completed_days = time_diff.days + 1  # +1 to include start day
+                                            completed_days = max(1, completed_days)
+                                            completed_text = f"{completed_days} дней"
                                     
                                     # Format result in old bot format
                                     caption = f"""Имя пользователя: <a href="https://www.instagram.com/{acc.account}/">{acc.account}</a>
 Начало работ: {acc.from_date.strftime("%d.%m.%Y") if acc.from_date else "N/A"}
 Заявлено: {acc.period} дней
-Завершено за: {completed_days} дней
+Завершено за: {completed_text}
 Конец работ: {acc.to_date.strftime("%d.%m.%Y") if acc.to_date else "N/A"}
 Статус: Аккаунт разблокирован✅"""
                                     
@@ -3360,25 +3370,35 @@ class TelegramBot:
                                         else:
                                             nf_count += 1
                                         
-                                        # Calculate real days completed
-                                        completed_days = 1  # Default fallback
+                                        # Calculate real time completed (hours or days)
+                                        completed_text = "1 дней"  # Default fallback
                                         if a.from_date:
                                             if isinstance(a.from_date, datetime):
-                                                start_date = a.from_date.date()
+                                                start_datetime = a.from_date
                                             else:
-                                                start_date = a.from_date
+                                                # If only date, assume start of day
+                                                start_datetime = datetime.combine(a.from_date, datetime.min.time())
                                             
-                                            current_date = date.today()
-                                            completed_days = (current_date - start_date).days + 1  # +1 to include start day
+                                            current_datetime = datetime.now()
+                                            time_diff = current_datetime - start_datetime
                                             
-                                            # Ensure completed_days is at least 1
-                                            completed_days = max(1, completed_days)
+                                            # If less than 24 hours, show hours
+                                            if time_diff.total_seconds() < 86400:  # 24 hours = 86400 seconds
+                                                hours = int(time_diff.total_seconds() / 3600)
+                                                if hours < 1:
+                                                    hours = 1
+                                                completed_text = f"{hours} часов" if hours > 1 else "1 час"
+                                            else:
+                                                # Show days
+                                                completed_days = time_diff.days + 1  # +1 to include start day
+                                                completed_days = max(1, completed_days)
+                                                completed_text = f"{completed_days} дней"
                                         
                                         # Format result in old bot format
                                         caption = f"""Имя пользователя: <a href="https://www.instagram.com/{info['username']}/">{info['username']}</a>
 Начало работ: {a.from_date.strftime("%d.%m.%Y") if a.from_date else "N/A"}
 Заявлено: {a.period} дней
-Завершено за: {completed_days} дней
+Завершено за: {completed_text}
 Конец работ: {a.to_date.strftime("%d.%m.%Y") if a.to_date else "N/A"}"""
                                         
                                         if info["exists"] is True:
