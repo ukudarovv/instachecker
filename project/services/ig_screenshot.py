@@ -377,78 +377,93 @@ async def check_account_with_header_screenshot(
                 print(f"[PROXY-HEADER-SCREENSHOT] ⏳ Дополнительное ожидание для загрузки контента...")
                 await page.wait_for_timeout(3000)  # Еще 3 секунды
                 
-                # Проверяем URL - перекинуло ли на login
+                # УСИЛЕННАЯ ПРОВЕРКА на редирект и неправильные страницы
                 current_url = page.url
                 print(f"[PROXY-HEADER-SCREENSHOT] 🔗 Текущий URL: {current_url}")
                 
-                # Пропускаем проверку на страницу логина
-                if False:  # Отключена проверка на страницу логина
-                    print(f"[PROXY-HEADER-SCREENSHOT] 🔄 Перекинуло на страницу логина, пробуем обойти...")
+                # Проверяем, не редирект ли это на неправильную страницу
+                wrong_page_detected = False
+                
+                # Список неправильных URL паттернов
+                wrong_patterns = [
+                    '/accounts/login',
+                    '/accounts/signup',
+                    '/challenge/',
+                    '/suspended/',
+                    '/access_tool/',
+                    'instagram.com/accounts',
+                    'instagram.com/login',
+                ]
+                
+                # Проверяем, содержит ли URL неправильный паттерн
+                for pattern in wrong_patterns:
+                    if pattern in current_url.lower():
+                        wrong_page_detected = True
+                        print(f"[PROXY-HEADER-SCREENSHOT] ⚠️ Обнаружен редирект на неправильную страницу: {pattern}")
+                        break
+                
+                # Также проверяем, что URL содержит имя пользователя
+                if username.lower() not in current_url.lower() and not wrong_page_detected:
+                    wrong_page_detected = True
+                    print(f"[PROXY-HEADER-SCREENSHOT] ⚠️ URL не содержит username: {username}")
+                
+                # Если обнаружена неправильная страница - делаем повторные попытки
+                if wrong_page_detected:
+                    print(f"[PROXY-HEADER-SCREENSHOT] 🔄 ПЕРЕЗАПУСК: Закрываем сессию и создаем новую...")
                     
-                    # Метод 1: Пробуем вернуться на профиль
-                    await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
-                    await page.wait_for_timeout(2000)
-                    current_url = page.url
-                    print(f"[PROXY-HEADER-SCREENSHOT] 🔗 После повтора: {current_url}")
-                    
-                    # Метод 2: Если все еще на логине, пробуем обойти через JavaScript
-                    # Пропускаем проверку на страницу логина
-                if False:  # Отключена проверка на страницу логина
-                        print(f"[PROXY-HEADER-SCREENSHOT] 🔧 Пробуем обойти через JavaScript...")
-                        try:
-                            # Удаляем cookies и localStorage
-                            await page.evaluate("""
-                                localStorage.clear();
-                                sessionStorage.clear();
-                                document.cookie.split(";").forEach(function(c) { 
-                                    document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/"); 
-                                });
-                            """)
-                            
-                            # Пробуем снова
-                            await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
-                            await page.wait_for_timeout(3000)
-                            current_url = page.url
-                            print(f"[PROXY-HEADER-SCREENSHOT] 🔗 После очистки: {current_url}")
-                        except Exception as e:
-                            print(f"[PROXY-HEADER-SCREENSHOT] ⚠️ Ошибка при обходе: {e}")
-                    
-                    # Метод 3: Если все еще на логине, пробуем с другим User-Agent
-                    # Пропускаем проверку на страницу логина
-                if False:  # Отключена проверка на страницу логина
-                        print(f"[PROXY-HEADER-SCREENSHOT] 🔄 Пробуем с другим User-Agent...")
-                        try:
-                            # Устанавливаем мобильный User-Agent
-                            await page.set_extra_http_headers({
-                                "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1"
-                            })
-                            
-                            # Пробуем снова
-                            await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
-                            await page.wait_for_timeout(3000)
-                            current_url = page.url
-                            print(f"[PROXY-HEADER-SCREENSHOT] 🔗 После смены UA: {current_url}")
-                        except Exception as e:
-                            print(f"[PROXY-HEADER-SCREENSHOT] ⚠️ Ошибка при смене UA: {e}")
-                    
-                    # Если все еще на логине - это проблема, но попробуем создать скриншот
-                    # Пропускаем проверку на страницу логина
-                if False:  # Отключена проверка на страницу логина
-                        print(f"[PROXY-HEADER-SCREENSHOT] ⚠️ Не удалось обойти перенаправление на логин, создаем скриншот страницы логина")
-                        result["exists"] = False
-                        result["error"] = "redirected_to_login"
-                        result["warning"] = "screenshot_of_login_page"
+                    max_retries = 3
+                    for retry in range(max_retries):
+                        print(f"[PROXY-HEADER-SCREENSHOT] 🔄 Попытка {retry + 1}/{max_retries}")
                         
-                        # Создаем скриншот страницы логина с пометкой
                         try:
-                            await page.screenshot(path=screenshot_path, full_page=True)
-                            print(f"[PROXY-HEADER-SCREENSHOT] 📸 Скриншот страницы логина создан: {screenshot_path}")
-                            result["screenshot_path"] = screenshot_path
-                        except Exception as e:
-                            print(f"[PROXY-HEADER-SCREENSHOT] ❌ Ошибка при создании скриншота логина: {e}")
+                            # Закрываем текущую страницу и создаем новую
+                            await page.close()
+                            page = await context.new_page()
+                            
+                            # Ждем перед новым запросом
+                            await page.wait_for_timeout(2000)
+                            
+                            # Делаем новый запрос
+                            print(f"[PROXY-HEADER-SCREENSHOT] 📡 Новый запрос на: {url}")
+                            response = await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+                            status_code = response.status if response else None
+                            print(f"[PROXY-HEADER-SCREENSHOT] 📊 HTTP Status: {status_code}")
+                            
+                            # Ждем загрузки
+                            await page.wait_for_timeout(5000)
+                            
+                            # Проверяем новый URL
+                            current_url = page.url
+                            print(f"[PROXY-HEADER-SCREENSHOT] 🔗 Новый URL: {current_url}")
+                            
+                            # Проверяем, исправился ли URL
+                            is_correct = True
+                            for pattern in wrong_patterns:
+                                if pattern in current_url.lower():
+                                    is_correct = False
+                                    break
+                            
+                            if is_correct and username.lower() in current_url.lower():
+                                print(f"[PROXY-HEADER-SCREENSHOT] ✅ URL исправлен после попытки {retry + 1}")
+                                break
+                            else:
+                                print(f"[PROXY-HEADER-SCREENSHOT] ❌ URL все еще неправильный после попытки {retry + 1}")
+                                
+                                # Если это последняя попытка - возвращаем ошибку
+                                if retry == max_retries - 1:
+                                    print(f"[PROXY-HEADER-SCREENSHOT] ❌ Все попытки исчерпаны, возвращаем ошибку")
+                                    result["error"] = "wrong_page_redirect"
+                                    result["exists"] = False
+                                    await browser.close()
+                                    return result
                         
-                        await browser.close()
-                        return result
+                        except Exception as retry_error:
+                            print(f"[PROXY-HEADER-SCREENSHOT] ❌ Ошибка при повторной попытке {retry + 1}: {retry_error}")
+                            if retry == max_retries - 1:
+                                result["error"] = f"retry_failed: {retry_error}"
+                                result["exists"] = False
+                                await browser.close()
+                                return result
                 
                 # Проверяем контент страницы СНАЧАЛА
                 content = await page.content()
@@ -727,6 +742,41 @@ async def check_account_with_header_screenshot(
                 
                 # Ждем после удаления для перерисовки
                 await page.wait_for_timeout(1500)
+                
+                # ДОПОЛНИТЕЛЬНАЯ ЖЕСТКАЯ ПРОВЕРКА: Еще раз проверяем наличие модальных окон
+                print(f"[PROXY-HEADER-SCREENSHOT] 🔥 ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА: Поиск оставшихся модальных окон...")
+                
+                # Проверяем наличие видимых модальных окон
+                modal_check = await page.evaluate("""
+                    () => {
+                        const modals = document.querySelectorAll('[role="dialog"], [aria-modal="true"], [class*="modal"], [class*="Modal"]');
+                        let visibleModals = 0;
+                        modals.forEach(modal => {
+                            const style = window.getComputedStyle(modal);
+                            if (style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0') {
+                                visibleModals++;
+                                // Принудительно удаляем
+                                modal.remove();
+                            }
+                        });
+                        return visibleModals;
+                    }
+                """)
+                
+                if modal_check > 0:
+                    print(f"[PROXY-HEADER-SCREENSHOT] ⚠️ Найдено и удалено {modal_check} видимых модальных окон")
+                    await page.wait_for_timeout(1000)
+                else:
+                    print(f"[PROXY-HEADER-SCREENSHOT] ✅ Модальные окна не обнаружены")
+                
+                # Еще одна финальная попытка нажать ESC
+                try:
+                    for _ in range(5):
+                        await page.keyboard.press("Escape")
+                        await page.wait_for_timeout(200)
+                    print(f"[PROXY-HEADER-SCREENSHOT] ⌨️ Финальный ESC нажат 5 раз")
+                except:
+                    pass
                 
                 if "Sorry, this page isn't available" in content:
                     print(f"[PROXY-HEADER-SCREENSHOT] ❌ Страница недоступна")
