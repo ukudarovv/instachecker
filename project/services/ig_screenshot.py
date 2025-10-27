@@ -130,7 +130,7 @@ async def screenshot_profile_header(
         )
         page = await context.new_page()
         try:
-            await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+            await page.goto(url, wait_until="load", timeout=timeout_ms)
             
             # Пытаемся целиться в «шапку» профиля
             try:
@@ -340,7 +340,7 @@ async def check_account_with_header_screenshot(
             try:
                 print(f"[PROXY-HEADER-SCREENSHOT] 📡 Переход на: {url}")
                 try:
-                    response = await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+                    response = await page.goto(url, wait_until="load", timeout=timeout_ms)
                     status_code = response.status if response else None
                     print(f"[PROXY-HEADER-SCREENSHOT] 📊 HTTP Status: {status_code}")
                 except PWTimeoutError as e:
@@ -425,7 +425,7 @@ async def check_account_with_header_screenshot(
                             
                             # Делаем новый запрос
                             print(f"[PROXY-HEADER-SCREENSHOT] 📡 Новый запрос на: {url}")
-                            response = await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+                            response = await page.goto(url, wait_until="load", timeout=timeout_ms)
                             status_code = response.status if response else None
                             print(f"[PROXY-HEADER-SCREENSHOT] 📊 HTTP Status: {status_code}")
                             
@@ -559,7 +559,7 @@ async def check_account_with_header_screenshot(
                     ])
                     
                     print(f"[PROXY-HEADER-SCREENSHOT] 🔄 Повторный переход (desktop)...")
-                    response = await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+                    response = await page.goto(url, wait_until="load", timeout=timeout_ms)
                     print(f"[PROXY-HEADER-SCREENSHOT] ⏳ Ожидаем загрузку...")
                     await page.wait_for_timeout(5000)
                     current_url = page.url

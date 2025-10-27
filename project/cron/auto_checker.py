@@ -139,8 +139,8 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
                 session=batch_session,
                 user_id=user_id,
                 usernames=usernames,
-                delay_between_api=2.0,  # 2 секунды между API запросами
-                delay_between_screenshots=5.0  # 5 секунд между скриншотами
+                delay_between_api=1.0,  # 1 секунда между API запросами
+                delay_between_screenshots=3.0  # 3 секунды между скриншотами
             )
         
         print(f"[AUTO-CHECK] ✅ Батчевая проверка завершена: {len(batch_results)} результатов")

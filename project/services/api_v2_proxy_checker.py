@@ -657,7 +657,7 @@ async def check_account_via_api_v2_proxy(
                         proxy_url=proxy_url_for_screenshot,
                         screenshot_path=screenshot_path,
                         headless=True,
-                        timeout_ms=60000,
+                        timeout_ms=30000,  # Уменьшаем с 60s до 30s
                         dark_theme=True,
                         mobile_emulation=False,
                         crop_ratio=0
@@ -786,8 +786,8 @@ async def batch_check_with_optimized_screenshots(
     session: Session,
     user_id: int,
     usernames: List[str],
-    delay_between_api: float = 2.0,
-    delay_between_screenshots: float = 5.0
+    delay_between_api: float = 1.0,
+    delay_between_screenshots: float = 3.0
 ) -> List[Dict[str, Any]]:
     """
     Оптимизированная батчевая проверка: сначала API для всех, потом скриншоты только для активных.
@@ -1042,7 +1042,7 @@ async def create_screenshot_with_redirect_handling(
                 proxy_url=proxy_url_for_screenshot,
                 screenshot_path=screenshot_path,
                 headless=True,
-                timeout_ms=60000,
+                timeout_ms=30000,  # Уменьшаем с 60s до 30s
                 dark_theme=True,
                 mobile_emulation=False,
                 crop_ratio=0
@@ -1058,11 +1058,12 @@ async def create_screenshot_with_redirect_handling(
                 error_msg = screenshot_result.get('error', 'Неизвестная ошибка')
                 print(f"[SCREENSHOT-REDIRECT] ⚠️ Ошибка скриншота @{username}: {error_msg}")
                 
-                # Если это ошибка редиректа - пробуем еще раз
-                if "wrong_page_redirect" in error_msg or "redirect" in error_msg.lower():
-                    print(f"[SCREENSHOT-REDIRECT] 🔄 Обнаружен редирект, пробуем еще раз...")
+                # Если это ошибка редиректа или timeout - пробуем еще раз
+                if ("wrong_page_redirect" in error_msg or "redirect" in error_msg.lower() or 
+                    "timeout" in error_msg.lower() or "timeout_loading_page" in error_msg):
+                    print(f"[SCREENSHOT-REDIRECT] 🔄 Обнаружена ошибка (редирект/timeout), пробуем еще раз...")
                     if attempt < max_retries - 1:
-                        await asyncio.sleep(2)  # Небольшая пауза перед повтором
+                        await asyncio.sleep(1)  # Короткая пауза перед повтором
                         continue
                 else:
                     result["error"] = error_msg
@@ -1073,6 +1074,6 @@ async def create_screenshot_with_redirect_handling(
             if attempt == max_retries - 1:
                 result["error"] = f"max_retries_exceeded: {str(e)}"
             else:
-                await asyncio.sleep(2)  # Пауза перед повтором
+                await asyncio.sleep(1)  # Короткая пауза перед повтором
     
     return result
