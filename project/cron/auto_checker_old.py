@@ -140,24 +140,33 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
                         # Send notification to user if bot is provided
                         if bot:
                             try:
-                                # Calculate real days completed
-                                completed_days = 1  # Default fallback
+                                # Calculate time completed
+                                completed_text = "1 дней"  # Default fallback
                                 if acc.from_date:
                                     if isinstance(acc.from_date, datetime):
-                                        start_date = acc.from_date.date()
+                                        start_datetime = acc.from_date
                                     else:
-                                        start_date = acc.from_date
+                                        start_datetime = datetime.combine(acc.from_date, datetime.min.time())
                                     
-                                    current_date = date.today()
-                                    completed_days = (current_date - start_date).days + 1  # +1 to include start day
+                                    current_datetime = datetime.now()
+                                    time_diff = current_datetime - start_datetime
                                     
-                                    # Ensure completed_days is at least 1
-                                    completed_days = max(1, completed_days)
+                                    # If less than 24 hours, show hours
+                                    if time_diff.total_seconds() < 86400:  # 24 hours = 86400 seconds
+                                        hours = int(time_diff.total_seconds() / 3600)
+                                        if hours < 1:
+                                            hours = 1
+                                        completed_text = f"{hours} часов" if hours > 1 else "1 час"
+                                    else:
+                                        # Show days
+                                        completed_days = time_diff.days + 1  # +1 to include start day
+                                        completed_days = max(1, completed_days)
+                                        completed_text = f"{completed_days} дней"
                                 
                                 message = f"""Имя пользователя: <a href="https://www.instagram.com/{acc.account}/">{acc.account}</a>
 Начало работ: {acc.from_date.strftime("%d.%m.%Y") if acc.from_date else "N/A"}
 Заявлено: {acc.period} дней
-Завершено за: {completed_days} дней
+Завершено за: {completed_text}
 Конец работ: {acc.to_date.strftime("%d.%m.%Y") if acc.to_date else "N/A"}
 Статус: Аккаунт разблокирован✅"""
                                 # Send message
@@ -444,24 +453,33 @@ def start_auto_checker(SessionLocal: sessionmaker, bot=None, interval_minutes: i
                                 with SessionLocal() as s:
                                     user = s.query(User).get(acc.user_id)
                                     if user:
-                                        # Calculate real days completed
-                                        completed_days = 1  # Default fallback
+                                        # Calculate time completed
+                                        completed_text = "1 дней"  # Default fallback
                                         if acc.from_date:
                                             if isinstance(acc.from_date, datetime):
-                                                start_date = acc.from_date.date()
+                                                start_datetime = acc.from_date
                                             else:
-                                                start_date = acc.from_date
+                                                start_datetime = datetime.combine(acc.from_date, datetime.min.time())
                                             
-                                            current_date = date.today()
-                                            completed_days = (current_date - start_date).days + 1  # +1 to include start day
+                                            current_datetime = datetime.now()
+                                            time_diff = current_datetime - start_datetime
                                             
-                                            # Ensure completed_days is at least 1
-                                            completed_days = max(1, completed_days)
+                                            # If less than 24 hours, show hours
+                                            if time_diff.total_seconds() < 86400:  # 24 hours = 86400 seconds
+                                                hours = int(time_diff.total_seconds() / 3600)
+                                                if hours < 1:
+                                                    hours = 1
+                                                completed_text = f"{hours} часов" if hours > 1 else "1 час"
+                                            else:
+                                                # Show days
+                                                completed_days = time_diff.days + 1  # +1 to include start day
+                                                completed_days = max(1, completed_days)
+                                                completed_text = f"{completed_days} дней"
                                         
                                         message = f"""Имя пользователя: <a href="https://www.instagram.com/{acc.account}/">{acc.account}</a>
 Начало работ: {acc.from_date.strftime("%d.%m.%Y") if acc.from_date else "N/A"}
 Заявлено: {acc.period} дней
-Завершено за: {completed_days} дней
+Завершено за: {completed_text}
 Конец работ: {acc.to_date.strftime("%d.%m.%Y") if acc.to_date else "N/A"}
 Статус: Аккаунт разблокирован✅"""
                                         # Send message (AsyncBotWrapper methods are already async)

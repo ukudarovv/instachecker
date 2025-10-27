@@ -25,24 +25,33 @@ def _fmt_result(d, account=None) -> str:
     if account:
         from datetime import datetime, date
         
-        # Calculate real days completed
-        completed_days = 1  # Default fallback
+        # Calculate time completed
+        completed_text = "1 дней"  # Default fallback
         if account.from_date:
             if isinstance(account.from_date, datetime):
-                start_date = account.from_date.date()
+                start_datetime = account.from_date
             else:
-                start_date = account.from_date
+                start_datetime = datetime.combine(account.from_date, datetime.min.time())
             
-            current_date = date.today()
-            completed_days = (current_date - start_date).days + 1  # +1 to include start day
+            current_datetime = datetime.now()
+            time_diff = current_datetime - start_datetime
             
-            # Ensure completed_days is at least 1
-            completed_days = max(1, completed_days)
+            # If less than 24 hours, show hours
+            if time_diff.total_seconds() < 86400:  # 24 hours = 86400 seconds
+                hours = int(time_diff.total_seconds() / 3600)
+                if hours < 1:
+                    hours = 1
+                completed_text = f"{hours} часов" if hours > 1 else "1 час"
+            else:
+                # Show days
+                completed_days = time_diff.days + 1  # +1 to include start day
+                completed_days = max(1, completed_days)
+                completed_text = f"{completed_days} дней"
         
         result += f"""
 Начало работ: {account.from_date.strftime("%d.%m.%Y") if account.from_date else "N/A"}
 Заявлено: {account.period} дней
-Завершено за: {completed_days} дней
+Завершено за: {completed_text}
 Конец работ: {account.to_date.strftime("%d.%m.%Y") if account.to_date else "N/A"}"""
     
     # Status in old bot format
