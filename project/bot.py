@@ -3516,26 +3516,21 @@ class TelegramBot:
                     self.send_message(chat_id, "⛔ Доступ пока не выдан.")
                     return
                 
-                # Start FSM for batch proxy import
-                self.fsm_states[user_id] = {"state": "waiting_for_proxy_list"}
+                # Start FSM for batch account import
+                self.fsm_states[user_id] = {"state": "waiting_for_account_list"}
                 
                 try:
-                    from .services.proxy_parser import format_proxy_examples
                     from .keyboards import cancel_kb
                 except ImportError:
-                    from services.proxy_parser import format_proxy_examples
                     from keyboards import cancel_kb
                 
-                examples = format_proxy_examples()
-                
                 message = (
-                    "📦 <b>Массовое добавление прокси</b>\n\n"
-                    "Отправьте список прокси (один на строку или через ;):\n\n"
-                    f"{examples}\n\n"
-                    "💡 <b>Форматы ввода:</b>\n"
-                    "• По строкам: каждый прокси с новой строки\n"
-                    "• Через точку с запятой: proxy1;proxy2;proxy3\n\n"
-                    "Или нажмите «Отмена» для выхода."
+                    "📝 **Массовое добавление аккаунтов**\n\n"
+                    "Отправьте список аккаунтов в формате:\n"
+                    "```\n"
+                    "username1; username2; username3\n"
+                    "```\n\n"
+                    "Аккаунты через точку с запятой, можно с @ или без."
                 )
                 
                 self.send_message(chat_id, message, cancel_kb())
