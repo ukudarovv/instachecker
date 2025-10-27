@@ -1113,7 +1113,11 @@ async def send_immediate_notification(
         print(f"[IMMEDIATE-NOTIFICATION] 📤 Отправляем уведомление для @{username}")
         
         # Получаем информацию о пользователе
-        from ..models import User, Account
+        try:
+            from ..models import User, Account
+        except ImportError:
+            from models import User, Account
+        
         user = session.query(User).get(user_id)
         if not user:
             print(f"[IMMEDIATE-NOTIFICATION] ❌ Пользователь {user_id} не найден")
@@ -1136,13 +1140,18 @@ async def send_immediate_notification(
         print(f"[IMMEDIATE-NOTIFICATION] ✅ Аккаунт @{username} помечен как выполненный")
         
         # Получаем бота для отправки уведомлений
+        bot = None
         try:
             from ..bot import bot
-            if not bot:
-                print(f"[IMMEDIATE-NOTIFICATION] ❌ Бот не доступен")
-                return
         except ImportError:
-            print(f"[IMMEDIATE-NOTIFICATION] ❌ Не удалось импортировать бота")
+            try:
+                from bot import bot
+            except ImportError:
+                print(f"[IMMEDIATE-NOTIFICATION] ❌ Не удалось импортировать бота")
+                return
+        
+        if not bot:
+            print(f"[IMMEDIATE-NOTIFICATION] ❌ Бот не доступен")
             return
         
         # Рассчитываем время выполнения
@@ -1180,8 +1189,11 @@ async def send_immediate_notification(
 Статус: Аккаунт разблокирован✅"""
         
         # Отправляем текстовое сообщение
-        await bot.send_message(user.id, message)
-        print(f"[IMMEDIATE-NOTIFICATION] ✅ Текстовое сообщение отправлено для @{username}")
+        try:
+            await bot.send_message(user.id, message)
+            print(f"[IMMEDIATE-NOTIFICATION] ✅ Текстовое сообщение отправлено для @{username}")
+        except Exception as e:
+            print(f"[IMMEDIATE-NOTIFICATION] ❌ Ошибка отправки текстового сообщения: {e}")
         
         # Отправляем скриншот
         if screenshot_path and os.path.exists(screenshot_path):
