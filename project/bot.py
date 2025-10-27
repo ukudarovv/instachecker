@@ -2150,8 +2150,8 @@ class TelegramBot:
                             errors.append(f"Некорректные символы в username: {username_input}")
                             continue
                         
-                        # Check for consecutive dots or underscores
-                        if '..' in username or '__' in username:
+                        # Check for consecutive dots (Instagram doesn't allow this)
+                        if '..' in username:
                             errors.append(f"Некорректный формат username: {username_input}")
                             continue
                         
