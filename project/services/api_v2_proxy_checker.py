@@ -811,31 +811,49 @@ async def batch_check_with_optimized_screenshots(
     """
     print(f"[BATCH-OPTIMIZED] 🚀 Начинаем оптимизированную проверку {len(usernames)} аккаунтов")
     
-    # Этап 1: Собираем список активных аккаунтов через API (без скриншотов)
-    print(f"[BATCH-OPTIMIZED] 📡 Этап 1: Проверка через API...")
+    # Этап 1: Собираем список активных аккаунтов через API ПАРАЛЛЕЛЬНО
+    print(f"[BATCH-OPTIMIZED] 📡 Этап 1: Проверка через API ПАРАЛЛЕЛЬНО...")
     active_accounts = []
     api_results = []
     
-    for i, username in enumerate(usernames):
-        print(f"[BATCH-OPTIMIZED] 📊 API прогресс: {i + 1}/{len(usernames)} - @{username}")
+    async def process_single_api(username, index):
+        """Обработка одного API запроса в отдельном потоке."""
+        print(f"[BATCH-OPTIMIZED] 📊 API {index + 1}/{len(usernames)}: @{username}")
         
         # Проверяем только через API (без скриншота)
         api_result = await check_account_via_api_only(session, user_id, username)
-        api_results.append(api_result)
         
         # Если аккаунт активен - добавляем в список для скриншотов
         if api_result.get("exists") is True:
-            active_accounts.append({
-                "username": username,
-                "api_data": api_result
-            })
             print(f"[BATCH-OPTIMIZED] ✅ @{username} активен - добавим в очередь скриншотов")
+            return api_result, {"username": username, "api_data": api_result}
         else:
             print(f"[BATCH-OPTIMIZED] ❌ @{username} неактивен - пропускаем скриншот")
+            return api_result, None
+    
+    # Создаем задачи для параллельной обработки API запросов
+    api_tasks = []
+    for i, username in enumerate(usernames):
+        task = process_single_api(username, i)
+        api_tasks.append(task)
+    
+    # Запускаем все API запросы параллельно
+    if api_tasks:
+        print(f"[BATCH-OPTIMIZED] 🚀 Запускаем {len(api_tasks)} API запросов параллельно...")
+        api_task_results = await asyncio.gather(*api_tasks, return_exceptions=True)
+        print(f"[BATCH-OPTIMIZED] ✅ Все API запросы завершены")
         
-        # Убираем задержку между API запросами - делаем сразу один за другим
-        # if i < len(usernames) - 1:
-        #     await asyncio.sleep(delay_between_api)
+        # Обрабатываем результаты
+        for result in api_task_results:
+            if isinstance(result, Exception):
+                print(f"[BATCH-OPTIMIZED] ❌ Ошибка API запроса: {result}")
+                continue
+            
+            api_result, active_account = result
+            api_results.append(api_result)
+            
+            if active_account:
+                active_accounts.append(active_account)
     
     print(f"[BATCH-OPTIMIZED] 📊 API завершен: {len(active_accounts)} активных из {len(usernames)}")
     
@@ -853,10 +871,13 @@ async def batch_check_with_optimized_screenshots(
     for api_result in api_results:
         final_results.append(api_result)
     
-    # Делаем скриншоты для активных аккаунтов
-    for i, account_info in enumerate(active_accounts):
+    # Делаем скриншоты для активных аккаунтов ПАРАЛЛЕЛЬНО
+    print(f"[BATCH-OPTIMIZED] 📸 Создание скриншотов для {len(active_accounts)} активных аккаунтов ПАРАЛЛЕЛЬНО...")
+    
+    async def process_single_screenshot(account_info, index):
+        """Обработка одного скриншота в отдельном потоке."""
         username = account_info["username"]
-        print(f"[BATCH-OPTIMIZED] 📸 Скриншот {i + 1}/{len(active_accounts)}: @{username}")
+        print(f"[BATCH-OPTIMIZED] 📸 Скриншот {index + 1}/{len(active_accounts)}: @{username}")
         
         try:
             # Создаем скриншот с обработкой редиректов
@@ -899,10 +920,18 @@ async def batch_check_with_optimized_screenshots(
                     result["screenshot_error"] = f"critical_error: {str(e)}"
                     result["screenshot_success"] = False
                     break
-        
-        # Убираем задержку между скриншотами - делаем сразу один за другим
-        # if i < len(active_accounts) - 1:
-        #     await asyncio.sleep(delay_between_screenshots)
+    
+    # Создаем задачи для параллельной обработки скриншотов
+    screenshot_tasks = []
+    for i, account_info in enumerate(active_accounts):
+        task = process_single_screenshot(account_info, i)
+        screenshot_tasks.append(task)
+    
+    # Запускаем все скриншоты параллельно
+    if screenshot_tasks:
+        print(f"[BATCH-OPTIMIZED] 🚀 Запускаем {len(screenshot_tasks)} скриншотов параллельно...")
+        await asyncio.gather(*screenshot_tasks, return_exceptions=True)
+        print(f"[BATCH-OPTIMIZED] ✅ Все скриншоты завершены")
     
     print(f"[BATCH-OPTIMIZED] 🎉 Проверка завершена: {len(final_results)} результатов")
     return final_results
