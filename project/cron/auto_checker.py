@@ -139,8 +139,8 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
                 session=batch_session,
                 user_id=user_id,
                 usernames=usernames,
-                delay_between_api=1.0,  # 1 секунда между API запросами
-                delay_between_screenshots=3.0  # 3 секунды между скриншотами
+                delay_between_api=0.0,  # Без задержек между API запросами
+                delay_between_screenshots=0.0  # Без задержек между скриншотами
             )
         
         print(f"[AUTO-CHECK] ✅ Батчевая проверка завершена: {len(batch_results)} результатов")
@@ -171,79 +171,10 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
             
             if is_success:
                 found += 1
-                print(f"[AUTO-CHECK] ✅ @{username} - FOUND с скриншотом")
+                print(f"[AUTO-CHECK] ✅ @{username} - FOUND с скриншотом (уведомление уже отправлено)")
                 
-                # Mark account as done
-                with SessionLocal() as update_session:
-                    account = update_session.query(Account).filter(
-                        Account.user_id == user_id,
-                        Account.account == username
-                    ).first()
-                    if account:
-                        account.done = True
-                        account.date_of_finish = date.today()
-                        update_session.commit()
-                        print(f"[AUTO-CHECK] ✅ Marked @{username} as done")
-                
-                # Send notification to user if bot is provided
-                if bot:
-                    try:
-                        # Get user info
-                        with SessionLocal() as user_session:
-                            user = user_session.query(User).get(user_id)
-                        
-                        if user:
-                            # Calculate time completed
-                            completed_text = "1 дней"  # Default fallback
-                            if hasattr(acc_obj, 'from_date_time') and acc_obj.from_date_time:
-                                start_datetime = acc_obj.from_date_time
-                            elif acc_obj.from_date:
-                                if isinstance(acc_obj.from_date, datetime):
-                                    start_datetime = acc_obj.from_date
-                                else:
-                                    start_datetime = datetime.combine(acc_obj.from_date, datetime.min.time())
-                            else:
-                                start_datetime = None
-                            
-                            if start_datetime:
-                                current_datetime = datetime.now()
-                                time_diff = current_datetime - start_datetime
-                                
-                                if time_diff.total_seconds() < 86400:  # 24 hours
-                                    hours = int(time_diff.total_seconds() / 3600)
-                                    if hours < 1:
-                                        hours = 1
-                                    completed_text = f"{hours} часов" if hours > 1 else "1 час"
-                                else:
-                                    completed_days = time_diff.days + 1
-                                    completed_days = max(1, completed_days)
-                                    completed_text = f"{completed_days} дней"
-                            
-                            message = f"""Имя пользователя: <a href="https://www.instagram.com/{username}/">{username}</a>
-        Начало работ: {acc_obj.from_date.strftime("%d.%m.%Y") if acc_obj.from_date else "N/A"}
-        Заявлено: {acc_obj.period} дней
-        Завершено за: {completed_text}
-        Конец работ: {acc_obj.to_date.strftime("%d.%m.%Y") if acc_obj.to_date else "N/A"}
-        Статус: Аккаунт разблокирован✅"""
-                        
-                            await bot.send_message(user.id, message)
-                            
-                            # Send screenshot if available
-                            screenshot_path = result.get("screenshot_path")
-                            if screenshot_path and os.path.exists(screenshot_path):
-                                try:
-                                    success = await bot.send_photo(
-                                        user.id,
-                                        screenshot_path,
-                                        f'📸 <a href="https://www.instagram.com/{username}/">@{username}</a>'
-                                    )
-                                    if success:
-                                        print(f"[AUTO-CHECK] 📸 Screenshot sent successfully!")
-                                except Exception as e:
-                                    print(f"[AUTO-CHECK] ❌ Failed to send photo: {e}")
-                                
-                    except Exception as e:
-                        print(f"[AUTO-CHECK] ❌ Failed to send notification to user {user_id}: {e}")
+                # Уведомление уже отправлено в send_immediate_notification
+                # Аккаунт уже помечен как выполненный
             
             elif result.get("exists") is False:
                 not_found += 1

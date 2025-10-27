@@ -5,9 +5,10 @@ import json
 import random
 import asyncio
 import re
+import os
 from typing import Dict, List, Optional, Any
 from sqlalchemy.orm import Session
-from datetime import date
+from datetime import date, datetime
 
 try:
     from ..models import Account, Proxy
@@ -786,24 +787,24 @@ async def batch_check_with_optimized_screenshots(
     session: Session,
     user_id: int,
     usernames: List[str],
-    delay_between_api: float = 1.0,
-    delay_between_screenshots: float = 3.0
+    delay_between_api: float = 0.0,
+    delay_between_screenshots: float = 0.0
 ) -> List[Dict[str, Any]]:
     """
     Оптимизированная батчевая проверка: сначала API для всех, потом скриншоты только для активных.
     
     Логика:
-    1. Собираем список активных аккаунтов через API (без скриншотов)
-    2. Для активных аккаунтов делаем скриншоты батчами
-    3. При ошибке редиректа - создаем новую сессию
+    1. Собираем список активных аккаунтов через API (без скриншотов) - БЕЗ ЗАДЕРЖЕК
+    2. Для активных аккаунтов делаем скриншоты батчами - БЕЗ ЗАДЕРЖЕК
+    3. При ошибке редиректа - создаем новую сессию и пробуем сразу
     4. Отправляем уведомления только после успешных скриншотов
     
     Args:
         session: Database session
         user_id: User ID
         usernames: Список username'ов
-        delay_between_api: Задержка между API запросами (секунды)
-        delay_between_screenshots: Задержка между скриншотами (секунды)
+        delay_between_api: Задержка между API запросами (секунды) - по умолчанию 0
+        delay_between_screenshots: Задержка между скриншотами (секунды) - по умолчанию 0
         
     Returns:
         Список результатов
@@ -832,9 +833,9 @@ async def batch_check_with_optimized_screenshots(
         else:
             print(f"[BATCH-OPTIMIZED] ❌ @{username} неактивен - пропускаем скриншот")
         
-        # Задержка между API запросами
-        if i < len(usernames) - 1:
-            await asyncio.sleep(delay_between_api)
+        # Убираем задержку между API запросами - делаем сразу один за другим
+        # if i < len(usernames) - 1:
+        #     await asyncio.sleep(delay_between_api)
     
     print(f"[BATCH-OPTIMIZED] 📊 API завершен: {len(active_accounts)} активных из {len(usernames)}")
     
@@ -878,6 +879,15 @@ async def batch_check_with_optimized_screenshots(
             
             if screenshot_result.get("success"):
                 print(f"[BATCH-OPTIMIZED] ✅ Скриншот @{username} создан успешно")
+                
+                # СРАЗУ отправляем уведомление пользователю после успешного скриншота
+                await send_immediate_notification(
+                    session=session,
+                    user_id=user_id,
+                    username=username,
+                    screenshot_path=screenshot_result.get("screenshot_path"),
+                    api_data=account_info["api_data"]
+                )
             else:
                 print(f"[BATCH-OPTIMIZED] ❌ Ошибка скриншота @{username}: {screenshot_result.get('error')}")
                 
@@ -890,9 +900,9 @@ async def batch_check_with_optimized_screenshots(
                     result["screenshot_success"] = False
                     break
         
-        # Задержка между скриншотами
-        if i < len(active_accounts) - 1:
-            await asyncio.sleep(delay_between_screenshots)
+        # Убираем задержку между скриншотами - делаем сразу один за другим
+        # if i < len(active_accounts) - 1:
+        #     await asyncio.sleep(delay_between_screenshots)
     
     print(f"[BATCH-OPTIMIZED] 🎉 Проверка завершена: {len(final_results)} результатов")
     return final_results
@@ -1063,7 +1073,8 @@ async def create_screenshot_with_redirect_handling(
                     "timeout" in error_msg.lower() or "timeout_loading_page" in error_msg):
                     print(f"[SCREENSHOT-REDIRECT] 🔄 Обнаружена ошибка (редирект/timeout), пробуем еще раз...")
                     if attempt < max_retries - 1:
-                        await asyncio.sleep(1)  # Короткая пауза перед повтором
+                        # Убираем паузу - пробуем сразу
+                        # await asyncio.sleep(1)
                         continue
                 else:
                     result["error"] = error_msg
@@ -1074,6 +1085,122 @@ async def create_screenshot_with_redirect_handling(
             if attempt == max_retries - 1:
                 result["error"] = f"max_retries_exceeded: {str(e)}"
             else:
-                await asyncio.sleep(1)  # Короткая пауза перед повтором
+                # Убираем паузу - пробуем сразу
+                # await asyncio.sleep(1)
+                pass
     
     return result
+
+
+async def send_immediate_notification(
+    session: Session,
+    user_id: int,
+    username: str,
+    screenshot_path: str,
+    api_data: Dict[str, Any]
+) -> None:
+    """
+    Немедленно отправляет уведомление пользователю после успешного скриншота.
+    
+    Args:
+        session: Database session
+        user_id: User ID
+        username: Instagram username
+        screenshot_path: Path to screenshot file
+        api_data: API data for the account
+    """
+    try:
+        print(f"[IMMEDIATE-NOTIFICATION] 📤 Отправляем уведомление для @{username}")
+        
+        # Получаем информацию о пользователе
+        from ..models import User, Account
+        user = session.query(User).get(user_id)
+        if not user:
+            print(f"[IMMEDIATE-NOTIFICATION] ❌ Пользователь {user_id} не найден")
+            return
+        
+        # Получаем информацию об аккаунте
+        account = session.query(Account).filter(
+            Account.user_id == user_id,
+            Account.account == username
+        ).first()
+        
+        if not account:
+            print(f"[IMMEDIATE-NOTIFICATION] ❌ Аккаунт @{username} не найден в БД")
+            return
+        
+        # Помечаем аккаунт как выполненный
+        account.done = True
+        account.date_of_finish = date.today()
+        session.commit()
+        print(f"[IMMEDIATE-NOTIFICATION] ✅ Аккаунт @{username} помечен как выполненный")
+        
+        # Получаем бота для отправки уведомлений
+        try:
+            from ..bot import bot
+            if not bot:
+                print(f"[IMMEDIATE-NOTIFICATION] ❌ Бот не доступен")
+                return
+        except ImportError:
+            print(f"[IMMEDIATE-NOTIFICATION] ❌ Не удалось импортировать бота")
+            return
+        
+        # Рассчитываем время выполнения
+        completed_text = "1 дней"  # Default fallback
+        if hasattr(account, 'from_date_time') and account.from_date_time:
+            start_datetime = account.from_date_time
+        elif account.from_date:
+            if isinstance(account.from_date, datetime):
+                start_datetime = account.from_date
+            else:
+                start_datetime = datetime.combine(account.from_date, datetime.min.time())
+        else:
+            start_datetime = None
+        
+        if start_datetime:
+            current_datetime = datetime.now()
+            time_diff = current_datetime - start_datetime
+            
+            if time_diff.total_seconds() < 86400:  # 24 hours
+                hours = int(time_diff.total_seconds() / 3600)
+                if hours < 1:
+                    hours = 1
+                completed_text = f"{hours} часов" if hours > 1 else "1 час"
+            else:
+                completed_days = time_diff.days + 1
+                completed_days = max(1, completed_days)
+                completed_text = f"{completed_days} дней"
+        
+        # Формируем сообщение
+        message = f"""Имя пользователя: <a href="https://www.instagram.com/{username}/">{username}</a>
+Начало работ: {account.from_date.strftime("%d.%m.%Y") if account.from_date else "N/A"}
+Заявлено: {account.period} дней
+Завершено за: {completed_text}
+Конец работ: {account.to_date.strftime("%d.%m.%Y") if account.to_date else "N/A"}
+Статус: Аккаунт разблокирован✅"""
+        
+        # Отправляем текстовое сообщение
+        await bot.send_message(user.id, message)
+        print(f"[IMMEDIATE-NOTIFICATION] ✅ Текстовое сообщение отправлено для @{username}")
+        
+        # Отправляем скриншот
+        if screenshot_path and os.path.exists(screenshot_path):
+            try:
+                success = await bot.send_photo(
+                    user.id,
+                    screenshot_path,
+                    f'📸 <a href="https://www.instagram.com/{username}/">@{username}</a>'
+                )
+                if success:
+                    print(f"[IMMEDIATE-NOTIFICATION] ✅ Скриншот отправлен для @{username}")
+                else:
+                    print(f"[IMMEDIATE-NOTIFICATION] ❌ Не удалось отправить скриншот для @{username}")
+            except Exception as e:
+                print(f"[IMMEDIATE-NOTIFICATION] ❌ Ошибка отправки скриншота для @{username}: {e}")
+        else:
+            print(f"[IMMEDIATE-NOTIFICATION] ⚠️ Скриншот не найден для @{username}: {screenshot_path}")
+            
+    except Exception as e:
+        print(f"[IMMEDIATE-NOTIFICATION] ❌ Ошибка отправки уведомления для @{username}: {e}")
+        import traceback
+        traceback.print_exc()
