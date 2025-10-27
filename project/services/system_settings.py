@@ -58,13 +58,13 @@ def get_auto_check_interval(session: Session) -> int:
         session: Database session
         
     Returns:
-        Interval in minutes (default: 5)
+        Interval in minutes (default: 2)
     """
-    value = get_setting(session, "auto_check_interval_minutes", "5")
+    value = get_setting(session, "auto_check_interval_minutes", "2")
     try:
         return int(value)
     except:
-        return 5
+        return 2
 
 
 def set_auto_check_interval(session: Session, minutes: int) -> SystemSettings:
