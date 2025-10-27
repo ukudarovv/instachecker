@@ -281,7 +281,7 @@ async def check_account_with_header_screenshot(
                 
                 print(f"[PROXY-HEADER-SCREENSHOT] 📱 Эмуляция: iPhone 12")
             else:
-                # Обычный desktop режим с разрешением 1920x1080
+                # Обычный desktop режим с разрешением 1920x1080 (Full HD)
                 context_options = {
                     "viewport": {"width": 1920, "height": 1080},
                     "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -445,6 +445,27 @@ async def check_account_with_header_screenshot(
                             
                             if is_correct and username.lower() in current_url.lower():
                                 print(f"[PROXY-HEADER-SCREENSHOT] ✅ URL исправлен после попытки {retry + 1}")
+                                
+                                # ВАЖНО: Даем время странице загрузиться после исправления
+                                print(f"[PROXY-HEADER-SCREENSHOT] ⏳ Ожидаем полную загрузку после исправления URL...")
+                                await page.wait_for_timeout(5000)
+                                
+                                # Дополнительное ожидание загрузки контента
+                                try:
+                                    await page.wait_for_load_state('networkidle', timeout=10000)
+                                    print(f"[PROXY-HEADER-SCREENSHOT] ✅ Страница полностью загружена")
+                                except:
+                                    print(f"[PROXY-HEADER-SCREENSHOT] ⚠️ Timeout ожидания networkidle, продолжаем")
+                                
+                                # Сразу удаляем модальные окна после исправления
+                                print(f"[PROXY-HEADER-SCREENSHOT] 🚪 Удаляем модальные окна после исправления URL...")
+                                try:
+                                    for _ in range(5):
+                                        await page.keyboard.press("Escape")
+                                        await page.wait_for_timeout(200)
+                                except:
+                                    pass
+                                
                                 break
                             else:
                                 print(f"[PROXY-HEADER-SCREENSHOT] ❌ URL все еще неправильный после попытки {retry + 1}")
@@ -548,12 +569,12 @@ async def check_account_with_header_screenshot(
                 # Закрываем модальные окна и баннеры
                 print(f"[PROXY-HEADER-SCREENSHOT] 🚪 Закрываем модальные окна и баннеры...")
                 
-                # Сначала пробуем ESC для закрытия модалок (несколько раз)
+                # Сначала пробуем ESC для закрытия модалок (больше раз)
                 try:
-                    for _ in range(3):  # Нажимаем ESC 3 раза
+                    for _ in range(10):  # Нажимаем ESC 10 раз
                         await page.keyboard.press("Escape")
-                        await page.wait_for_timeout(300)
-                    print(f"[PROXY-HEADER-SCREENSHOT] ⌨️ Нажали ESC 3 раза")
+                        await page.wait_for_timeout(200)
+                    print(f"[PROXY-HEADER-SCREENSHOT] ⌨️ Нажали ESC 10 раз")
                 except:
                     pass
                 
@@ -621,14 +642,14 @@ async def check_account_with_header_screenshot(
                 print(f"[PROXY-HEADER-SCREENSHOT] ⏳ Финальное ожидание для стабилизации страницы...")
                 await page.wait_for_timeout(2000)  # 2 секунды для стабилизации
                 
-                # Принудительное удаление всех модальных окон через JavaScript - АГРЕССИВНО
-                print(f"[PROXY-HEADER-SCREENSHOT] 🔥 Принудительное удаление всех модальных окон (агрессивный режим)...")
+                # Принудительное удаление всех модальных окон через JavaScript - МАКСИМАЛЬНО АГРЕССИВНО
+                print(f"[PROXY-HEADER-SCREENSHOT] 🔥 Принудительное удаление всех модальных окон (УЛЬТРА-агрессивный режим)...")
                 removed_count = await page.evaluate("""
                     () => {
                         let count = 0;
                         
-                        // Удаляем несколько раз для надежности (увеличено до 7 итераций)
-                        for (let iteration = 0; iteration < 7; iteration++) {
+                        // Удаляем несколько раз для надежности (увеличено до 15 итераций)
+                        for (let iteration = 0; iteration < 15; iteration++) {
                             
                             // 1. Удаляем все диалоги и модальные окна (расширенный список)
                             document.querySelectorAll('[role="dialog"], [aria-modal="true"], [data-testid*="modal"], [data-testid*="dialog"], [data-testid*="popup"], [data-testid*="overlay"], [role="presentation"], [data-visualcompletion="loading-state"]').forEach(el => {
@@ -769,14 +790,39 @@ async def check_account_with_header_screenshot(
                 else:
                     print(f"[PROXY-HEADER-SCREENSHOT] ✅ Модальные окна не обнаружены")
                 
-                # Еще одна финальная попытка нажать ESC
+                # СУПЕР-АГРЕССИВНАЯ финальная попытка нажать ESC
                 try:
-                    for _ in range(5):
+                    for _ in range(15):
                         await page.keyboard.press("Escape")
-                        await page.wait_for_timeout(200)
-                    print(f"[PROXY-HEADER-SCREENSHOT] ⌨️ Финальный ESC нажат 5 раз")
+                        await page.wait_for_timeout(150)
+                    print(f"[PROXY-HEADER-SCREENSHOT] ⌨️ Финальный ESC нажат 15 раз")
                 except:
                     pass
+                
+                # Дополнительная финальная проверка и удаление модальных окон ПРЯМО ПЕРЕД СКРИНШОТОМ
+                print(f"[PROXY-HEADER-SCREENSHOT] 🔥 ПОСЛЕДНЯЯ проверка модальных окон перед скриншотом...")
+                await page.evaluate("""
+                    () => {
+                        // Удаляем ВСЕ элементы с role="dialog" или aria-modal="true"
+                        document.querySelectorAll('[role="dialog"], [aria-modal="true"]').forEach(el => el.remove());
+                        
+                        // Удаляем все overlay/backdrop
+                        document.querySelectorAll('[class*="overlay"], [class*="Overlay"], [class*="backdrop"], [class*="Backdrop"]').forEach(el => el.remove());
+                        
+                        // Удаляем все fixed элементы с высоким z-index
+                        document.querySelectorAll('div').forEach(el => {
+                            const style = window.getComputedStyle(el);
+                            if (style.position === 'fixed' && parseInt(style.zIndex) > 500) {
+                                el.remove();
+                            }
+                        });
+                        
+                        // Убираем overflow:hidden с body
+                        document.body.style.overflow = 'auto';
+                        document.documentElement.style.overflow = 'auto';
+                    }
+                """)
+                print(f"[PROXY-HEADER-SCREENSHOT] ✅ Последняя очистка выполнена")
                 
                 if "Sorry, this page isn't available" in content:
                     print(f"[PROXY-HEADER-SCREENSHOT] ❌ Страница недоступна")
@@ -1046,39 +1092,86 @@ async def check_account_with_header_screenshot(
                         
                         print(f"[PROXY-HEADER-SCREENSHOT] 📊 Средняя яркость: {mean_brightness:.2f}, Стандартное отклонение: {std_brightness:.2f}")
                         
-                        # Если яркость очень высокая (>240) и стандартное отклонение низкое (<20), это белый скрин
-                        if mean_brightness > 240 and std_brightness < 20:
+                        # ОЧЕНЬ СТРОГАЯ проверка: яркость >230 и std <30 ИЛИ яркость >245 и std <35
+                        is_white_screen = (mean_brightness > 230 and std_brightness < 30) or (mean_brightness > 245 and std_brightness < 35)
+                        
+                        if is_white_screen:
                             print(f"[PROXY-HEADER-SCREENSHOT] ⚠️ ОБНАРУЖЕН БЕЛЫЙ СКРИН! Яркость: {mean_brightness:.2f}, Std: {std_brightness:.2f}")
                             
-                            # Пробуем пересоздать скриншот
-                            print(f"[PROXY-HEADER-SCREENSHOT] 🔄 Пересоздаем скриншот...")
-                            await page.wait_for_timeout(3000)
+                            # Делаем МНОГО попыток пересоздания (до 5 раз)
+                            max_retries = 5
+                            screenshot_fixed = False
                             
-                            # Еще раз прокручиваем страницу
-                            await page.evaluate("window.scrollTo(0, 300)")
-                            await page.wait_for_timeout(1000)
-                            await page.evaluate("window.scrollTo(0, 0)")
-                            await page.wait_for_timeout(2000)
+                            for retry_attempt in range(max_retries):
+                                print(f"[PROXY-HEADER-SCREENSHOT] 🔄 Попытка {retry_attempt + 1}/{max_retries} пересоздания скриншота...")
+                                
+                                # Ждем еще дольше
+                                await page.wait_for_timeout(5000)
+                                
+                                # МАКСИМАЛЬНО АГРЕССИВНОЕ удаление модальных окон
+                                print(f"[PROXY-HEADER-SCREENSHOT] 🚪 МАКСИМАЛЬНО АГРЕССИВНОЕ удаление модальных окон...")
+                                try:
+                                    for _ in range(20):
+                                        await page.keyboard.press("Escape")
+                                        await page.wait_for_timeout(100)
+                                except:
+                                    pass
+                                
+                                # Прокручиваем страницу для триггера загрузки
+                                await page.evaluate("window.scrollTo(0, 500)")
+                                await page.wait_for_timeout(1000)
+                                await page.evaluate("window.scrollTo(0, 0)")
+                                await page.wait_for_timeout(2000)
+                                
+                                # Еще раз агрессивно удаляем модальные окна через JavaScript
+                                await page.evaluate("""
+                                    () => {
+                                        // Удаляем все overlay, modal, dialog элементы
+                                        document.querySelectorAll('[role="dialog"], [aria-modal="true"], [class*="modal"], [class*="Modal"], [class*="overlay"], [class*="Overlay"]').forEach(el => el.remove());
+                                        
+                                        // Удаляем белые блоки без контента
+                                        document.querySelectorAll('div').forEach(el => {
+                                            const style = window.getComputedStyle(el);
+                                            if (style.backgroundColor === 'rgb(255, 255, 255)' && el.innerText.trim() === '') {
+                                                const rect = el.getBoundingClientRect();
+                                                if (rect.width > 200 && rect.height > 100) {
+                                                    el.remove();
+                                                }
+                                            }
+                                        });
+                                        
+                                        // Убираем overflow hidden
+                                        document.body.style.overflow = 'auto';
+                                        document.documentElement.style.overflow = 'auto';
+                                    }
+                                """)
+                                
+                                await page.wait_for_timeout(1000)
+                                
+                                # Создаем скриншот повторно
+                                await page.screenshot(path=screenshot_path, full_page=False)
+                                
+                                # Проверяем повторно
+                                img = Image.open(screenshot_path)
+                                img_array = np.array(img.convert('RGB'))
+                                mean_brightness = np.mean(img_array)
+                                std_brightness = np.std(img_array)
+                                
+                                print(f"[PROXY-HEADER-SCREENSHOT] 📊 Попытка {retry_attempt + 1} - Яркость: {mean_brightness:.2f}, Std: {std_brightness:.2f}")
+                                
+                                is_white_screen = (mean_brightness > 230 and std_brightness < 30) or (mean_brightness > 245 and std_brightness < 35)
+                                
+                                if not is_white_screen:
+                                    print(f"[PROXY-HEADER-SCREENSHOT] ✅ После попытки {retry_attempt + 1} скрин стал нормальным!")
+                                    screenshot_fixed = True
+                                    break
                             
-                            # Создаем скриншот повторно
-                            await page.screenshot(path=screenshot_path, full_page=False)
-                            
-                            # Проверяем повторно
-                            img = Image.open(screenshot_path)
-                            img_array = np.array(img.convert('RGB'))
-                            mean_brightness = np.mean(img_array)
-                            std_brightness = np.std(img_array)
-                            
-                            print(f"[PROXY-HEADER-SCREENSHOT] 📊 После пересоздания - Яркость: {mean_brightness:.2f}, Std: {std_brightness:.2f}")
-                            
-                            if mean_brightness > 240 and std_brightness < 20:
-                                print(f"[PROXY-HEADER-SCREENSHOT] ❌ Белый скрин остался после пересоздания")
+                            if not screenshot_fixed:
+                                print(f"[PROXY-HEADER-SCREENSHOT] ❌ Белый скрин остался после {max_retries} попыток")
                                 result["error"] = "white_screen_detected"
                                 result["exists"] = False
                                 await browser.close()
                                 return result
-                            else:
-                                print(f"[PROXY-HEADER-SCREENSHOT] ✅ После пересоздания скрин стал нормальным")
                         else:
                             print(f"[PROXY-HEADER-SCREENSHOT] ✅ Скриншот нормальный (не белый)")
                     

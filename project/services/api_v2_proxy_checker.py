@@ -605,9 +605,9 @@ async def check_account_via_api_v2_proxy(
             "error": api_result.get("error")
         })
         
-                 # Если аккаунт существует - делаем скриншот
+        # Если аккаунт существует (API подтвердил) - делаем скриншот
         if api_result.get("exists") is True:
-            print(f"[API-V2-PROXY] ✅ Аккаунт @{username} существует - создаем скриншот через Playwright с прокси (как при тесте прокси)")
+            print(f"[API-V2-PROXY] ✅ Аккаунт @{username} существует - создаем скриншот")
             
             # Создаем скриншот через Playwright С ПРОКСИ (как при тесте прокси)
             screenshot_result = {

@@ -64,6 +64,10 @@ def register_admin_menu_handlers(bot, session_factory):
             f"• Рекомендуемые: 5, 10, 15, 30\n\n"
             f"Или отправьте /cancel для отмены."
         )
+        
+        # КРИТИЧНО: Устанавливаем FSM state для ожидания ввода интервала
+        user_id = message["from"]["id"]
+        bot.fsm_states[user_id] = {"state": "waiting_for_interval", "data": {}}
     
     def handle_verify_mode_menu(message, user):
         """Handle Режим проверки button."""
@@ -92,10 +96,30 @@ def register_admin_menu_handlers(bot, session_factory):
         """Handle interval input."""
         text = message.get("text", "").strip()
         
+        # Обработка команды отмены
+        if text.lower() in ["/cancel", "отмена", "cancel", "назад в меню"]:
+            # Clear FSM state
+            user_id = message["from"]["id"]
+            if user_id in bot.fsm_states:
+                del bot.fsm_states[user_id]
+            
+            # Get verify_mode for keyboard
+            with session_factory() as session:
+                verify_mode = get_global_verify_mode(session)
+            
+            keyboard = main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode)
+            bot.send_message(
+                message["chat"]["id"],
+                "❌ Изменение интервала отменено.",
+                keyboard
+            )
+            return
+        
         if not text.isdigit():
             bot.send_message(
                 message["chat"]["id"],
-                "❌ Неверный формат. Введите целое число от 1 до 1440."
+                "❌ Неверный формат. Введите целое число от 1 до 1440.\n"
+                "Или отправьте /cancel для отмены."
             )
             return
         
