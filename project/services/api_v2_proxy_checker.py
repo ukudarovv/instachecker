@@ -780,3 +780,299 @@ async def batch_check_accounts_via_api_v2_proxy(
             await asyncio.sleep(delay_between)
     
     return results
+
+
+async def batch_check_with_optimized_screenshots(
+    session: Session,
+    user_id: int,
+    usernames: List[str],
+    delay_between_api: float = 2.0,
+    delay_between_screenshots: float = 5.0
+) -> List[Dict[str, Any]]:
+    """
+    Оптимизированная батчевая проверка: сначала API для всех, потом скриншоты только для активных.
+    
+    Логика:
+    1. Собираем список активных аккаунтов через API (без скриншотов)
+    2. Для активных аккаунтов делаем скриншоты батчами
+    3. При ошибке редиректа - создаем новую сессию
+    4. Отправляем уведомления только после успешных скриншотов
+    
+    Args:
+        session: Database session
+        user_id: User ID
+        usernames: Список username'ов
+        delay_between_api: Задержка между API запросами (секунды)
+        delay_between_screenshots: Задержка между скриншотами (секунды)
+        
+    Returns:
+        Список результатов
+    """
+    print(f"[BATCH-OPTIMIZED] 🚀 Начинаем оптимизированную проверку {len(usernames)} аккаунтов")
+    
+    # Этап 1: Собираем список активных аккаунтов через API (без скриншотов)
+    print(f"[BATCH-OPTIMIZED] 📡 Этап 1: Проверка через API...")
+    active_accounts = []
+    api_results = []
+    
+    for i, username in enumerate(usernames):
+        print(f"[BATCH-OPTIMIZED] 📊 API прогресс: {i + 1}/{len(usernames)} - @{username}")
+        
+        # Проверяем только через API (без скриншота)
+        api_result = await check_account_via_api_only(session, user_id, username)
+        api_results.append(api_result)
+        
+        # Если аккаунт активен - добавляем в список для скриншотов
+        if api_result.get("exists") is True:
+            active_accounts.append({
+                "username": username,
+                "api_data": api_result
+            })
+            print(f"[BATCH-OPTIMIZED] ✅ @{username} активен - добавим в очередь скриншотов")
+        else:
+            print(f"[BATCH-OPTIMIZED] ❌ @{username} неактивен - пропускаем скриншот")
+        
+        # Задержка между API запросами
+        if i < len(usernames) - 1:
+            await asyncio.sleep(delay_between_api)
+    
+    print(f"[BATCH-OPTIMIZED] 📊 API завершен: {len(active_accounts)} активных из {len(usernames)}")
+    
+    # Этап 2: Делаем скриншоты только для активных аккаунтов
+    if not active_accounts:
+        print(f"[BATCH-OPTIMIZED] ⚠️ Нет активных аккаунтов для скриншотов")
+        return api_results
+    
+    print(f"[BATCH-OPTIMIZED] 📸 Этап 2: Создание скриншотов для {len(active_accounts)} активных аккаунтов...")
+    
+    # Создаем финальные результаты
+    final_results = []
+    
+    # Копируем API результаты
+    for api_result in api_results:
+        final_results.append(api_result)
+    
+    # Делаем скриншоты для активных аккаунтов
+    for i, account_info in enumerate(active_accounts):
+        username = account_info["username"]
+        print(f"[BATCH-OPTIMIZED] 📸 Скриншот {i + 1}/{len(active_accounts)}: @{username}")
+        
+        try:
+            # Создаем скриншот с обработкой редиректов
+            screenshot_result = await create_screenshot_with_redirect_handling(
+                session=session,
+                user_id=user_id,
+                username=username,
+                max_retries=3
+            )
+            
+            # Обновляем соответствующий результат
+            for result in final_results:
+                if result["username"] == username:
+                    result.update({
+                        "screenshot_path": screenshot_result.get("screenshot_path"),
+                        "screenshot_error": screenshot_result.get("error"),
+                        "screenshot_success": screenshot_result.get("success", False)
+                    })
+                    break
+            
+            if screenshot_result.get("success"):
+                print(f"[BATCH-OPTIMIZED] ✅ Скриншот @{username} создан успешно")
+            else:
+                print(f"[BATCH-OPTIMIZED] ❌ Ошибка скриншота @{username}: {screenshot_result.get('error')}")
+                
+        except Exception as e:
+            print(f"[BATCH-OPTIMIZED] ❌ Критическая ошибка скриншота @{username}: {e}")
+            # Обновляем результат с ошибкой
+            for result in final_results:
+                if result["username"] == username:
+                    result["screenshot_error"] = f"critical_error: {str(e)}"
+                    result["screenshot_success"] = False
+                    break
+        
+        # Задержка между скриншотами
+        if i < len(active_accounts) - 1:
+            await asyncio.sleep(delay_between_screenshots)
+    
+    print(f"[BATCH-OPTIMIZED] 🎉 Проверка завершена: {len(final_results)} результатов")
+    return final_results
+
+
+async def check_account_via_api_only(
+    session: Session,
+    user_id: int,
+    username: str,
+    max_attempts: int = 3
+) -> Dict[str, Any]:
+    """
+    Проверка аккаунта только через API (без скриншота).
+    
+    Args:
+        session: Database session
+        user_id: User ID
+        username: Instagram username to check
+        max_attempts: Maximum number of attempts
+        
+    Returns:
+        Dict with API results only
+    """
+    print(f"[API-ONLY] 🔍 Проверка @{username} только через API")
+    
+    result = {
+        "username": username,
+        "exists": None,
+        "full_name": None,
+        "followers": None,
+        "following": None,
+        "posts": None,
+        "error": None,
+        "checked_via": "api-only",
+        "proxy_used": None
+    }
+    
+    try:
+        # Получаем список прокси для пользователя
+        proxy_list = []
+        all_proxies = session.query(Proxy).filter(
+            Proxy.user_id == user_id,
+            Proxy.is_active == True
+        ).all()
+        
+        for proxy in all_proxies:
+            if is_available(proxy) and proxy.username and proxy.password:
+                if ':' in proxy.host:
+                    host, port = proxy.host.split(':', 1)
+                    proxy_str = f"{host}:{port}:{proxy.username}:{proxy.password}"
+                else:
+                    proxy_str = f"{proxy.host}:8080:{proxy.username}:{proxy.password}"
+                proxy_list.append(proxy_str)
+        
+        if not proxy_list:
+            result["error"] = "no_proxies_available"
+            return result
+        
+        # Инициализируем проверщик с прокси
+        checker = InstagramCheckerWithProxy(proxy_list=proxy_list)
+        
+        # Проверяем аккаунт только через API
+        api_result = await checker.check_account(username, max_attempts=max_attempts, use_proxy=True)
+        
+        # Обновляем результат
+        result.update({
+            "exists": api_result.get("exists"),
+            "full_name": api_result.get("full_name"),
+            "followers": api_result.get("followers"),
+            "following": api_result.get("following"),
+            "posts": api_result.get("posts"),
+            "proxy_used": api_result.get("proxy_used"),
+            "error": api_result.get("error")
+        })
+        
+    except Exception as e:
+        print(f"[API-ONLY] ❌ Ошибка проверки @{username}: {e}")
+        result["error"] = str(e)
+    
+    return result
+
+
+async def create_screenshot_with_redirect_handling(
+    session: Session,
+    user_id: int,
+    username: str,
+    max_retries: int = 3
+) -> Dict[str, Any]:
+    """
+    Создание скриншота с обработкой редиректов.
+    
+    При ошибке редиректа создает новую сессию и повторяет попытку.
+    
+    Args:
+        session: Database session
+        user_id: User ID
+        username: Instagram username
+        max_retries: Maximum number of retries
+        
+    Returns:
+        Dict with screenshot results
+    """
+    print(f"[SCREENSHOT-REDIRECT] 📸 Создание скриншота @{username} с обработкой редиректов")
+    
+    result = {
+        "success": False,
+        "screenshot_path": None,
+        "error": None
+    }
+    
+    # Создаем путь для скриншота
+    import os
+    from datetime import datetime
+    screenshot_dir = "screenshots"
+    os.makedirs(screenshot_dir, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    screenshot_path = os.path.join(screenshot_dir, f"{username}_header_{timestamp}.png")
+    
+    for attempt in range(max_retries):
+        try:
+            print(f"[SCREENSHOT-REDIRECT] 🔄 Попытка {attempt + 1}/{max_retries}")
+            
+            # Получаем лучший прокси для скриншота
+            best_proxy = select_best_proxy(session, user_id)
+            
+            if not best_proxy:
+                result["error"] = "no_proxy_for_screenshot"
+                break
+            
+            # Расшифровываем пароль прокси
+            try:
+                settings = get_settings()
+                from ..utils.encryptor import OptionalFernet
+                encryptor = OptionalFernet(settings.encryption_key)
+                decrypted_password = encryptor.decrypt(best_proxy.password)
+            except:
+                decrypted_password = best_proxy.password
+            
+            # Формируем URL прокси для скриншота
+            proxy_url_for_screenshot = f"{best_proxy.scheme}://{best_proxy.username}:{decrypted_password}@{best_proxy.host}"
+            
+            # Создаем скриншот через Playwright
+            from .ig_screenshot import check_account_with_header_screenshot
+            
+            screenshot_result = await check_account_with_header_screenshot(
+                username=username,
+                proxy_url=proxy_url_for_screenshot,
+                screenshot_path=screenshot_path,
+                headless=True,
+                timeout_ms=60000,
+                dark_theme=True,
+                mobile_emulation=False,
+                crop_ratio=0
+            )
+            
+            # Проверяем результат
+            if screenshot_result.get('exists') and screenshot_result.get('screenshot_path') and os.path.exists(screenshot_result['screenshot_path']):
+                result["success"] = True
+                result["screenshot_path"] = screenshot_result['screenshot_path']
+                print(f"[SCREENSHOT-REDIRECT] ✅ Скриншот @{username} создан успешно")
+                break
+            else:
+                error_msg = screenshot_result.get('error', 'Неизвестная ошибка')
+                print(f"[SCREENSHOT-REDIRECT] ⚠️ Ошибка скриншота @{username}: {error_msg}")
+                
+                # Если это ошибка редиректа - пробуем еще раз
+                if "wrong_page_redirect" in error_msg or "redirect" in error_msg.lower():
+                    print(f"[SCREENSHOT-REDIRECT] 🔄 Обнаружен редирект, пробуем еще раз...")
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(2)  # Небольшая пауза перед повтором
+                        continue
+                else:
+                    result["error"] = error_msg
+                    break
+                    
+        except Exception as e:
+            print(f"[SCREENSHOT-REDIRECT] ❌ Ошибка попытки {attempt + 1}: {e}")
+            if attempt == max_retries - 1:
+                result["error"] = f"max_retries_exceeded: {str(e)}"
+            else:
+                await asyncio.sleep(2)  # Пауза перед повтором
+    
+    return result

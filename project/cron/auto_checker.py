@@ -10,12 +10,14 @@ try:
     from ..models import Account, User
     from ..services.main_checker import check_account_main
     from ..services.system_settings import get_global_verify_mode
+    from ..services.api_v2_proxy_checker import batch_check_with_optimized_screenshots
     from ..utils.encryptor import OptionalFernet
     from ..config import get_settings
 except ImportError:
     from models import Account, User
     from services.main_checker import check_account_main
     from services.system_settings import get_global_verify_mode
+    from services.api_v2_proxy_checker import batch_check_with_optimized_screenshots
     from utils.encryptor import OptionalFernet
     from config import get_settings
 
@@ -124,179 +126,191 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
         traceback.print_exc()
         return {"checked": 0, "found": 0, "not_found": 0, "errors": 1}
     
-    # ✨ НОВАЯ ЛОГИКА: Параллельная проверка аккаунтов пользователя
-    # Используем список для потокобезопасного подсчета (вместо nonlocal переменных)
-    results_list = []
+    # ✨ НОВАЯ ОПТИМИЗИРОВАННАЯ ЛОГИКА: Сначала API для всех, потом скриншоты только для активных
+    print(f"[AUTO-CHECK] 🚀 Используем оптимизированную проверку для {len(user_accounts)} аккаунтов")
     
-    async def check_single_account(acc, idx):
-        """Check a single account for the user."""
-        try:
-            print(f"[AUTO-CHECK] [{idx+1}/{len(user_accounts)}] Проверка @{acc.account}...")
+    # Подготавливаем список username'ов для батчевой проверки
+    usernames = [acc.account for acc in user_accounts]
+    
+    try:
+        # Используем новую оптимизированную функцию
+        with SessionLocal() as batch_session:
+            batch_results = await batch_check_with_optimized_screenshots(
+                session=batch_session,
+                user_id=user_id,
+                usernames=usernames,
+                delay_between_api=2.0,  # 2 секунды между API запросами
+                delay_between_screenshots=5.0  # 5 секунд между скриншотами
+            )
+        
+        print(f"[AUTO-CHECK] ✅ Батчевая проверка завершена: {len(batch_results)} результатов")
+        
+        # Обрабатываем результаты и отправляем уведомления
+        checked = 0
+        found = 0
+        not_found = 0
+        errors = 0
+        
+        for result in batch_results:
+            checked += 1
+            username = result["username"]
             
-            # Add random delay before starting check (stagger checks)
-            await asyncio.sleep(random.uniform(1, 3))
+            # Находим соответствующий объект Account
+            acc_obj = None
+            for acc in user_accounts:
+                if acc.account == username:
+                    acc_obj = acc
+                    break
             
-            # КРИТИЧНО: Создаем НОВУЮ сессию для каждого потока (потокобезопасность!)
-            with SessionLocal() as thread_session:
-                # Use new main_checker with API + Proxy logic
-                success, message, screenshot_path = await check_account_main(
-                    username=acc.account,
-                    session=thread_session,
-                    user_id=user_id
-                )
+            if not acc_obj:
+                print(f"[AUTO-CHECK] ⚠️ Не найден объект Account для @{username}")
+                continue
+            
+            # Определяем успешность проверки
+            is_success = result.get("exists") is True and result.get("screenshot_success", False)
+            
+            if is_success:
+                found += 1
+                print(f"[AUTO-CHECK] ✅ @{username} - FOUND с скриншотом")
                 
-                # Сохраняем результат в список (потокобезопасно для asyncio)
-                results_list.append({
-                    "success": success,
-                    "message": message,
-                    "screenshot_path": screenshot_path,
-                    "account": acc.account,
-                    "acc_obj": acc
-                })
-                
-                if success:
-                    print(f"[AUTO-CHECK] ✅ @{acc.account} - FOUND: {message}")
-                    
-                    # Mark account as done В ЭТОЙ ЖЕ СЕССИИ
-                    account = thread_session.query(Account).filter(
+                # Mark account as done
+                with SessionLocal() as update_session:
+                    account = update_session.query(Account).filter(
                         Account.user_id == user_id,
-                        Account.account == acc.account
+                        Account.account == username
                     ).first()
                     if account:
                         account.done = True
                         account.date_of_finish = date.today()
-                        thread_session.commit()
-                        print(f"[AUTO-CHECK] ✅ Marked @{acc.account} as done")
-                    
-                    # Send notification to user if bot is provided
-                    # Получаем user ИЗ СВЕЖЕЙ СЕССИИ
-                    user = thread_session.query(User).get(user_id)
-                    if bot and user:
-                            try:
-                                # Calculate time completed
-                                completed_text = "1 дней"  # Default fallback
-                                # Используем from_date_time если доступно, иначе from_date
-                                if hasattr(acc, 'from_date_time') and acc.from_date_time:
-                                    start_datetime = acc.from_date_time
-                                elif acc.from_date:
-                                    if isinstance(acc.from_date, datetime):
-                                        start_datetime = acc.from_date
-                                    else:
-                                        start_datetime = datetime.combine(acc.from_date, datetime.min.time())
-                                else:
-                                    start_datetime = None
-                                
-                                if start_datetime:
-                                    current_datetime = datetime.now()
-                                    time_diff = current_datetime - start_datetime
-                                    
-                                    # If less than 24 hours, show hours
-                                    if time_diff.total_seconds() < 86400:  # 24 hours = 86400 seconds
-                                        hours = int(time_diff.total_seconds() / 3600)
-                                        if hours < 1:
-                                            hours = 1
-                                        completed_text = f"{hours} часов" if hours > 1 else "1 час"
-                                    else:
-                                        # Show days
-                                        completed_days = time_diff.days + 1  # +1 to include start day
-                                        completed_days = max(1, completed_days)
-                                        completed_text = f"{completed_days} дней"
-                                
-                                message = f"""Имя пользователя: <a href="https://www.instagram.com/{acc.account}/">{acc.account}</a>
-Начало работ: {acc.from_date.strftime("%d.%m.%Y") if acc.from_date else "N/A"}
-Заявлено: {acc.period} дней
-Завершено за: {completed_text}
-Конец работ: {acc.to_date.strftime("%d.%m.%Y") if acc.to_date else "N/A"}
-Статус: Аккаунт разблокирован✅"""
-                            
-                                await bot.send_message(user.id, message)
-                                
-                                # Send screenshot if available
-                                if screenshot_path and os.path.exists(screenshot_path):
-                                    try:
-                                        success = await bot.send_photo(
-                                            user.id,
-                                            screenshot_path,
-                                            f'📸 <a href="https://www.instagram.com/{acc.account}/">@{acc.account}</a>'
-                                        )
-                                        if success:
-                                            print(f"[AUTO-CHECK] 📸 Screenshot sent successfully!")
-                                    except Exception as e:
-                                        print(f"[AUTO-CHECK] ❌ Failed to send photo: {e}")
-                                    
-                            except Exception as e:
-                                print(f"[AUTO-CHECK] ❌ Failed to send notification to user {user.id}: {e}")
+                        update_session.commit()
+                        print(f"[AUTO-CHECK] ✅ Marked @{username} as done")
                 
-                    else:
-                        print(f"[AUTO-CHECK] ❌ @{acc.account} - NOT FOUND: {message}")
+                # Send notification to user if bot is provided
+                if bot:
+                    try:
+                        # Get user info
+                        with SessionLocal() as user_session:
+                            user = user_session.query(User).get(user_id)
                         
-                        # Send notification to user for missing proxies
-                        if bot and "no_proxies_available" in message:
-                            try:
-                                notification = f"""🔧 **Необходимо добавить прокси**
-
-Для проверки аккаунтов необходимо добавить прокси.
-
-Аккаунт: @{acc.account}
-Время: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}
-
-Используйте команду /add_proxy для добавления прокси."""
+                        if user:
+                            # Calculate time completed
+                            completed_text = "1 дней"  # Default fallback
+                            if hasattr(acc_obj, 'from_date_time') and acc_obj.from_date_time:
+                                start_datetime = acc_obj.from_date_time
+                            elif acc_obj.from_date:
+                                if isinstance(acc_obj.from_date, datetime):
+                                    start_datetime = acc_obj.from_date
+                                else:
+                                    start_datetime = datetime.combine(acc_obj.from_date, datetime.min.time())
+                            else:
+                                start_datetime = None
+                            
+                            if start_datetime:
+                                current_datetime = datetime.now()
+                                time_diff = current_datetime - start_datetime
                                 
-                                await bot.send_message(user.id, notification)
-                                print(f"[AUTO-CHECK] 📤 Sent proxy requirement notification to user {user.id}")
-                            except Exception as e:
-                                print(f"[AUTO-CHECK] ❌ Failed to send proxy requirement notification: {e}")
+                                if time_diff.total_seconds() < 86400:  # 24 hours
+                                    hours = int(time_diff.total_seconds() / 3600)
+                                    if hours < 1:
+                                        hours = 1
+                                    completed_text = f"{hours} часов" if hours > 1 else "1 час"
+                                else:
+                                    completed_days = time_diff.days + 1
+                                    completed_days = max(1, completed_days)
+                                    completed_text = f"{completed_days} дней"
+                            
+                            message = f"""Имя пользователя: <a href="https://www.instagram.com/{username}/">{username}</a>
+        Начало работ: {acc_obj.from_date.strftime("%d.%m.%Y") if acc_obj.from_date else "N/A"}
+        Заявлено: {acc_obj.period} дней
+        Завершено за: {completed_text}
+        Конец работ: {acc_obj.to_date.strftime("%d.%m.%Y") if acc_obj.to_date else "N/A"}
+        Статус: Аккаунт разблокирован✅"""
                         
-                        # Send notification to user for API key exhaustion
-                        elif bot and "Все API ключи исчерпаны" in message:
-                            try:
-                                notification = f"""⚠️ **Проблема с API ключами**
-
-Все API ключи исчерпаны.
-
-Аккаунт: @{acc.account}
-Время: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}"""
+                            await bot.send_message(user.id, message)
+                            
+                            # Send screenshot if available
+                            screenshot_path = result.get("screenshot_path")
+                            if screenshot_path and os.path.exists(screenshot_path):
+                                try:
+                                    success = await bot.send_photo(
+                                        user.id,
+                                        screenshot_path,
+                                        f'📸 <a href="https://www.instagram.com/{username}/">@{username}</a>'
+                                    )
+                                    if success:
+                                        print(f"[AUTO-CHECK] 📸 Screenshot sent successfully!")
+                                except Exception as e:
+                                    print(f"[AUTO-CHECK] ❌ Failed to send photo: {e}")
                                 
-                                await bot.send_message(user.id, notification)
-                                print(f"[AUTO-CHECK] 📤 Sent API exhaustion notification to user {user.id}")
-                            except Exception as e:
-                                print(f"[AUTO-CHECK] ❌ Failed to send API exhaustion notification: {e}")
+                    except Exception as e:
+                        print(f"[AUTO-CHECK] ❌ Failed to send notification to user {user_id}: {e}")
+            
+            elif result.get("exists") is False:
+                not_found += 1
+                print(f"[AUTO-CHECK] ❌ @{username} - NOT FOUND")
+                
+                # Mark account as done (not found)
+                with SessionLocal() as update_session:
+                    account = update_session.query(Account).filter(
+                        Account.user_id == user_id,
+                        Account.account == username
+                    ).first()
+                    if account:
+                        account.done = True
+                        account.date_of_finish = date.today()
+                        update_session.commit()
+                        print(f"[AUTO-CHECK] ✅ Marked @{username} as done (not found)")
+            
+            else:
+                errors += 1
+                error_msg = result.get("error", "Unknown error")
+                print(f"[AUTO-CHECK] ❌ @{username} - ERROR: {error_msg}")
+                
+                # Send notification to user for missing proxies
+                if bot and "no_proxies_available" in error_msg:
+                    try:
+                        with SessionLocal() as user_session:
+                            user = user_session.query(User).get(user_id)
                         
-        except Exception as e:
-            # Сохраняем ошибку в список результатов
-            results_list.append({
-                "success": False,
-                "message": str(e),
-                "screenshot_path": None,
-                "account": acc.account,
-                "acc_obj": acc,
-                "error": True
-            })
-            print(f"[AUTO-CHECK] ❌ Error checking @{acc.account}: {str(e)}")
+                        if user:
+                            notification = f"""🔧 **Необходимо добавить прокси**
+
+        Для проверки аккаунтов необходимо добавить прокси.
+
+        Аккаунт: @{username}
+        Время: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}
+
+        Используйте команду /add_proxy для добавления прокси."""
+                            
+                            await bot.send_message(user.id, notification)
+                            print(f"[AUTO-CHECK] 📤 Sent proxy requirement notification to user {user_id}")
+                    except Exception as e:
+                        print(f"[AUTO-CHECK] ❌ Failed to send proxy requirement notification: {e}")
+                
+                # Send notification to user for API key exhaustion
+                elif bot and "Все API ключи исчерпаны" in error_msg:
+                    try:
+                        with SessionLocal() as user_session:
+                            user = user_session.query(User).get(user_id)
+                        
+                        if user:
+                            notification = f"""⚠️ **Проблема с API ключами**
+
+        Все API ключи исчерпаны.
+
+        Аккаунт: @{username}
+        Время: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}"""
+                            
+                            await bot.send_message(user.id, notification)
+                            print(f"[AUTO-CHECK] 📤 Sent API exhaustion notification to user {user_id}")
+                    except Exception as e:
+                        print(f"[AUTO-CHECK] ❌ Failed to send API exhaustion notification: {e}")
     
-    # Create tasks for parallel account checking
-    account_tasks = []
-    print(f"[AUTO-CHECK] 📝 Creating {len(user_accounts)} check tasks...")
-    for idx, acc in enumerate(user_accounts):
-        print(f"[AUTO-CHECK]    Task {idx+1}: @{acc.account}")
-        task = check_single_account(acc, idx)
-        account_tasks.append(task)
-    
-    # Run all account checks in parallel for this user (adaptive concurrency)
-    print(f"[AUTO-CHECK] 🚀 Starting parallel checks for {len(account_tasks)} accounts...")
-    try:
-        await run_limited_parallel(account_tasks, task_type="accounts")
-        print(f"[AUTO-CHECK] ✅ All parallel checks completed")
     except Exception as e:
-        print(f"[AUTO-CHECK] ❌ Error in gather: {e}")
+        print(f"[AUTO-CHECK] ❌ Error in batch check: {e}")
         import traceback
         traceback.print_exc()
-    
-    # Подсчитываем результаты из results_list (потокобезопасно)
-    checked = len(results_list)
-    found = sum(1 for r in results_list if r.get("success"))
-    not_found = sum(1 for r in results_list if not r.get("success") and not r.get("error"))
-    errors = sum(1 for r in results_list if r.get("error"))
+        return {"checked": 0, "found": 0, "not_found": 0, "errors": len(user_accounts)}
     
     print(f"[AUTO-CHECK] 🧵 User {user_id} check complete: {checked} checked, {found} found, {not_found} not found, {errors} errors")
     return {"checked": checked, "found": found, "not_found": not_found, "errors": errors}
