@@ -34,6 +34,7 @@ class Account(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
     account = Column(String, index=True, nullable=False)
     from_date = Column(Date)
+    from_date_time = Column(DateTime)  # Точное время добавления аккаунта
     period = Column(Integer)  # дни
     to_date = Column(Date)
     date_of_finish = Column(Date)

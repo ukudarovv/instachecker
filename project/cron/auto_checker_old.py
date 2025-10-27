@@ -142,12 +142,18 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
                             try:
                                 # Calculate time completed
                                 completed_text = "1 дней"  # Default fallback
-                                if acc.from_date:
+                                # Используем from_date_time если доступно, иначе from_date
+                                if hasattr(acc, 'from_date_time') and acc.from_date_time:
+                                    start_datetime = acc.from_date_time
+                                elif acc.from_date:
                                     if isinstance(acc.from_date, datetime):
                                         start_datetime = acc.from_date
                                     else:
                                         start_datetime = datetime.combine(acc.from_date, datetime.min.time())
-                                    
+                                else:
+                                    start_datetime = None
+                                
+                                if start_datetime:
                                     current_datetime = datetime.now()
                                     time_diff = current_datetime - start_datetime
                                     

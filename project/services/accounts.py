@@ -1,7 +1,7 @@
 """Account management services."""
 
 from typing import Optional, List, Tuple
-from datetime import date
+from datetime import date, datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 
@@ -33,10 +33,12 @@ def create_account(session: Session, user_id: int, username: str, days: int = 30
     """Create new account with calculated dates. Default period is 30 days."""
     days = clamp_min_days(int(days))
     start = today()
+    start_datetime = datetime.now()  # Сохраняем точное время добавления
     acc = Account(
         user_id=user_id,
         account=username,
         from_date=start,
+        from_date_time=start_datetime,
         period=days,
         to_date=add_days(start, days),
         done=False,

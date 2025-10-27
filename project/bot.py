@@ -3079,13 +3079,19 @@ class TelegramBot:
                                 if success:
                                     # Calculate real time completed (hours or days)
                                     completed_text = "1 дней"  # Default fallback
-                                    if acc.from_date:
+                                    # Используем from_date_time если доступно, иначе from_date
+                                    if hasattr(acc, 'from_date_time') and acc.from_date_time:
+                                        start_datetime = acc.from_date_time
+                                    elif acc.from_date:
                                         if isinstance(acc.from_date, datetime):
                                             start_datetime = acc.from_date
                                         else:
                                             # If only date, assume start of day
                                             start_datetime = datetime.combine(acc.from_date, datetime.min.time())
-                                        
+                                    else:
+                                        start_datetime = None
+                                    
+                                    if start_datetime:
                                         current_datetime = datetime.now()
                                         time_diff = current_datetime - start_datetime
                                         
@@ -3372,13 +3378,19 @@ class TelegramBot:
                                         
                                         # Calculate real time completed (hours or days)
                                         completed_text = "1 дней"  # Default fallback
-                                        if a.from_date:
+                                        # Используем from_date_time если доступно, иначе from_date
+                                        if hasattr(a, 'from_date_time') and a.from_date_time:
+                                            start_datetime = a.from_date_time
+                                        elif a.from_date:
                                             if isinstance(a.from_date, datetime):
                                                 start_datetime = a.from_date
                                             else:
                                                 # If only date, assume start of day
                                                 start_datetime = datetime.combine(a.from_date, datetime.min.time())
-                                            
+                                        else:
+                                            start_datetime = None
+                                        
+                                        if start_datetime:
                                             current_datetime = datetime.now()
                                             time_diff = current_datetime - start_datetime
                                             

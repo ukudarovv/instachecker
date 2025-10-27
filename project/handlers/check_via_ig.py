@@ -27,12 +27,18 @@ def _fmt_result(d, account=None) -> str:
         
         # Calculate time completed
         completed_text = "1 дней"  # Default fallback
-        if account.from_date:
+        # Используем from_date_time если доступно, иначе from_date
+        if hasattr(account, 'from_date_time') and account.from_date_time:
+            start_datetime = account.from_date_time
+        elif account.from_date:
             if isinstance(account.from_date, datetime):
                 start_datetime = account.from_date
             else:
                 start_datetime = datetime.combine(account.from_date, datetime.min.time())
-            
+        else:
+            start_datetime = None
+        
+        if start_datetime:
             current_datetime = datetime.now()
             time_diff = current_datetime - start_datetime
             
