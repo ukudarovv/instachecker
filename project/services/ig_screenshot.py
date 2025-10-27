@@ -533,11 +533,12 @@ async def check_account_with_header_screenshot(
                 # Закрываем модальные окна и баннеры
                 print(f"[PROXY-HEADER-SCREENSHOT] 🚪 Закрываем модальные окна и баннеры...")
                 
-                # Сначала пробуем ESC для закрытия модалок
+                # Сначала пробуем ESC для закрытия модалок (несколько раз)
                 try:
-                    await page.keyboard.press("Escape")
-                    await page.wait_for_timeout(500)
-                    print(f"[PROXY-HEADER-SCREENSHOT] ⌨️ Нажали ESC")
+                    for _ in range(3):  # Нажимаем ESC 3 раза
+                        await page.keyboard.press("Escape")
+                        await page.wait_for_timeout(300)
+                    print(f"[PROXY-HEADER-SCREENSHOT] ⌨️ Нажали ESC 3 раза")
                 except:
                     pass
                 
@@ -611,22 +612,22 @@ async def check_account_with_header_screenshot(
                     () => {
                         let count = 0;
                         
-                        // Удаляем несколько раз для надежности (увеличено до 5 итераций)
-                        for (let iteration = 0; iteration < 5; iteration++) {
+                        // Удаляем несколько раз для надежности (увеличено до 7 итераций)
+                        for (let iteration = 0; iteration < 7; iteration++) {
                             
                             // 1. Удаляем все диалоги и модальные окна (расширенный список)
-                            document.querySelectorAll('[role="dialog"], [aria-modal="true"], [data-testid*="modal"], [data-testid*="dialog"], [data-testid*="popup"], [data-testid*="overlay"]').forEach(el => {
+                            document.querySelectorAll('[role="dialog"], [aria-modal="true"], [data-testid*="modal"], [data-testid*="dialog"], [data-testid*="popup"], [data-testid*="overlay"], [role="presentation"], [data-visualcompletion="loading-state"]').forEach(el => {
                                 el.remove();
                                 count++;
                             });
                             
                             // 2. Удаляем все overlay/backdrop/modal элементы (расширенный список)
-                            document.querySelectorAll('[class*="overlay"], [class*="Overlay"], [class*="backdrop"], [class*="Backdrop"], [class*="modal"], [class*="Modal"], [class*="popup"], [class*="PopUp"], [class*="Popup"], [class*="lightbox"], [class*="Lightbox"], [class*="drawer"], [class*="Drawer"], [class*="sheet"], [class*="Sheet"], [class*="panel"], [class*="Panel"], [class*="mask"], [class*="Mask"], [class*="shade"], [class*="Shade"], [class*="curtain"], [class*="Curtain"], [class*="veil"], [class*="Veil"], [class*="screen"], [class*="Screen"], [class*="window"], [class*="Window"]').forEach(el => {
+                            document.querySelectorAll('[class*="overlay"], [class*="Overlay"], [class*="backdrop"], [class*="Backdrop"], [class*="modal"], [class*="Modal"], [class*="popup"], [class*="PopUp"], [class*="Popup"], [class*="lightbox"], [class*="Lightbox"], [class*="drawer"], [class*="Drawer"], [class*="sheet"], [class*="Sheet"], [class*="panel"], [class*="Panel"], [class*="mask"], [class*="Mask"], [class*="shade"], [class*="Shade"], [class*="curtain"], [class*="Curtain"], [class*="veil"], [class*="Veil"], [class*="screen"], [class*="Screen"], [class*="window"], [class*="Window"], [class*="scrim"], [class*="Scrim"]').forEach(el => {
                                 el.remove();
                                 count++;
                             });
                             
-                            // 3. Удаляем скелетоны загрузки (белые прямоугольники)
+                            // 3. Удаляем скелетоны загрузки (белые прямоугольники) и плейсхолдеры
                             document.querySelectorAll('[class*="skeleton"], [class*="Skeleton"], [class*="placeholder"], [class*="Placeholder"]').forEach(el => {
                                 el.remove();
                                 count++;
@@ -683,11 +684,41 @@ async def check_account_with_header_screenshot(
                                     count++;
                                 }
                             });
+                            
+                            // 7. Удаляем белые блоки-заглушки (loading states)
+                            document.querySelectorAll('div').forEach(el => {
+                                const style = window.getComputedStyle(el);
+                                const bgColor = style.backgroundColor;
+                                
+                                // Проверяем: белый фон и нет текста внутри
+                                if ((bgColor === 'rgb(255, 255, 255)' || bgColor === 'white') && 
+                                    el.innerText.trim() === '' &&
+                                    el.children.length === 0) {
+                                    const rect = el.getBoundingClientRect();
+                                    // Если это большой белый блок
+                                    if (rect.width > 100 && rect.height > 50) {
+                                        el.remove();
+                                        count++;
+                                    }
+                                }
+                            });
+                            
+                            // 8. Удаляем элементы с pointer-events: none (часто overlay)
+                            document.querySelectorAll('[style*="pointer-events: none"], [style*="pointer-events:none"]').forEach(el => {
+                                if (el.style.position === 'fixed' || el.style.position === 'absolute') {
+                                    el.remove();
+                                    count++;
+                                }
+                            });
                         }
                         
                         // Убираем overflow: hidden с body (модалки часто блокируют прокрутку)
                         document.body.style.overflow = 'auto';
                         document.documentElement.style.overflow = 'auto';
+                        
+                        // Убираем pointer-events: none с body
+                        document.body.style.pointerEvents = 'auto';
+                        document.documentElement.style.pointerEvents = 'auto';
                         
                         return count;
                     }
@@ -948,6 +979,64 @@ async def check_account_with_header_screenshot(
                 if os.path.exists(screenshot_path):
                     size = os.path.getsize(screenshot_path) / 1024
                     print(f"[PROXY-FULL-SCREENSHOT] ✅ Полный скриншот создан: {size:.1f} KB")
+                    
+                    # Проверка на белый скрин
+                    try:
+                        from PIL import Image
+                        import numpy as np
+                        
+                        img = Image.open(screenshot_path)
+                        img_array = np.array(img.convert('RGB'))
+                        
+                        # Вычисляем среднюю яркость изображения
+                        mean_brightness = np.mean(img_array)
+                        
+                        # Вычисляем стандартное отклонение (для определения однородности)
+                        std_brightness = np.std(img_array)
+                        
+                        print(f"[PROXY-HEADER-SCREENSHOT] 📊 Средняя яркость: {mean_brightness:.2f}, Стандартное отклонение: {std_brightness:.2f}")
+                        
+                        # Если яркость очень высокая (>240) и стандартное отклонение низкое (<20), это белый скрин
+                        if mean_brightness > 240 and std_brightness < 20:
+                            print(f"[PROXY-HEADER-SCREENSHOT] ⚠️ ОБНАРУЖЕН БЕЛЫЙ СКРИН! Яркость: {mean_brightness:.2f}, Std: {std_brightness:.2f}")
+                            
+                            # Пробуем пересоздать скриншот
+                            print(f"[PROXY-HEADER-SCREENSHOT] 🔄 Пересоздаем скриншот...")
+                            await page.wait_for_timeout(3000)
+                            
+                            # Еще раз прокручиваем страницу
+                            await page.evaluate("window.scrollTo(0, 300)")
+                            await page.wait_for_timeout(1000)
+                            await page.evaluate("window.scrollTo(0, 0)")
+                            await page.wait_for_timeout(2000)
+                            
+                            # Создаем скриншот повторно
+                            await page.screenshot(path=screenshot_path, full_page=False)
+                            
+                            # Проверяем повторно
+                            img = Image.open(screenshot_path)
+                            img_array = np.array(img.convert('RGB'))
+                            mean_brightness = np.mean(img_array)
+                            std_brightness = np.std(img_array)
+                            
+                            print(f"[PROXY-HEADER-SCREENSHOT] 📊 После пересоздания - Яркость: {mean_brightness:.2f}, Std: {std_brightness:.2f}")
+                            
+                            if mean_brightness > 240 and std_brightness < 20:
+                                print(f"[PROXY-HEADER-SCREENSHOT] ❌ Белый скрин остался после пересоздания")
+                                result["error"] = "white_screen_detected"
+                                result["exists"] = False
+                                await browser.close()
+                                return result
+                            else:
+                                print(f"[PROXY-HEADER-SCREENSHOT] ✅ После пересоздания скрин стал нормальным")
+                        else:
+                            print(f"[PROXY-HEADER-SCREENSHOT] ✅ Скриншот нормальный (не белый)")
+                    
+                    except ImportError:
+                        print(f"[PROXY-HEADER-SCREENSHOT] ⚠️ PIL или numpy не установлены, пропускаем проверку белого скрина")
+                    except Exception as check_error:
+                        print(f"[PROXY-HEADER-SCREENSHOT] ⚠️ Ошибка проверки белого скрина: {check_error}")
+                    
                     result["screenshot_path"] = screenshot_path
                     # Устанавливаем exists = True если скриншот создан, даже если были проблемы с Proxy
                     result["exists"] = True

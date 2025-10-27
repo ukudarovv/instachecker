@@ -52,6 +52,7 @@ screenshots/
 temp/
 .env.local
 .env.production
+bot.db
 
 
 # Temporary files
