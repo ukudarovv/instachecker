@@ -1748,7 +1748,7 @@ class TelegramBot:
                                                 print(f"[AUTO-CHECK] ⚠️ Screenshot file NOT found: {screenshot_path}")
                                     else:
                                         # Not found
-                                        not_found_message = f"❌ <a href='https://www.instagram.com/{username}/'>@{username}</a> не найден: {message}"
+                                        not_found_message = f"❌ <a href='https://www.instagram.com/{username}/'>@{username}</a> не найден"
                                         self.send_message(user.id, not_found_message)
                             
                             loop.close()
