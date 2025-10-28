@@ -358,9 +358,69 @@ class InstagramCheckerWithProxy:
                         
                         if response_status != 200:
                             print(f"⚠️ Статус код {response_status} для @{username}")
+                            
+                            # Обработка специфических статус кодов
+                            if response_status == 401:
+                                print(f"[API-V2-DEBUG] 401 Unauthorized - возможно проблема с API ключом или прокси")
+                            elif response_status == 403:
+                                print(f"[API-V2-DEBUG] 403 Forbidden - Instagram заблокировал запрос")
+                            elif response_status == 404:
+                                print(f"[API-V2-DEBUG] 404 Not Found - аккаунт не найден")
+                            elif response_status == 429:
+                                print(f"[API-V2-DEBUG] 429 Rate Limited - превышен лимит запросов")
+                            elif response_status >= 500:
+                                print(f"[API-V2-DEBUG] {response_status} Server Error - проблема на стороне сервера")
+                            
+                            # Для 404 сразу возвращаем результат
+                            if response_status == 404:
+                                result = {
+                                    'exists': False,
+                                    'is_banned': False,
+                                    'is_private': False,
+                                    'followers': 0,
+                                    'following': 0,
+                                    'posts': 0,
+                                    'is_verified': False,
+                                    'full_name': '',
+                                    'username': username,
+                                    'profile_pic_url': '',
+                                    'biography': '',
+                                    'error': f'Account not found (404)',
+                                    'attempts': attempts,
+                                    'final_attempt': attempt + 1,
+                                    'proxy_used': proxy_config['ip'] if proxy_config else 'none'
+                                }
+                                return result
+                            
                             continue
                         
                         userinfo = json.loads(data)
+                        
+                        # Проверяем на наличие ошибок в ответе
+                        if 'error' in userinfo:
+                            print(f"[API-V2-DEBUG] API вернул ошибку: {userinfo['error']}")
+                            if attempt < max_attempts - 1:
+                                await asyncio.sleep(2)
+                                continue
+                            else:
+                                result = {
+                                    'exists': False,
+                                    'is_banned': False,
+                                    'is_private': False,
+                                    'followers': 0,
+                                    'following': 0,
+                                    'posts': 0,
+                                    'is_verified': False,
+                                    'full_name': '',
+                                    'username': username,
+                                    'profile_pic_url': '',
+                                    'biography': '',
+                                    'error': f"API error: {userinfo['error']}",
+                                    'attempts': attempts,
+                                    'final_attempt': attempt + 1,
+                                    'proxy_used': proxy_config['ip'] if proxy_config else 'none'
+                                }
+                                return result
                         
                         # Анализ ответа
                         if 'data' in userinfo and userinfo['data'].get('user') is not None:
@@ -434,6 +494,36 @@ class InstagramCheckerWithProxy:
                         
                         else:
                             print(f"⚠️ Неизвестная структура ответа для @{username}")
+                            print(f"[API-V2-DEBUG] Структура ответа: {list(userinfo.keys())}")
+                            if 'data' in userinfo:
+                                print(f"[API-V2-DEBUG] data keys: {list(userinfo['data'].keys()) if isinstance(userinfo['data'], dict) else type(userinfo['data'])}")
+                            if 'status' in userinfo:
+                                print(f"[API-V2-DEBUG] status: {userinfo['status']}")
+                            if 'message' in userinfo:
+                                print(f"[API-V2-DEBUG] message: {userinfo['message']}")
+                            print(f"[API-V2-DEBUG] Полный ответ: {str(userinfo)[:500]}...")
+                            
+                            # Если это последняя попытка, возвращаем ошибку
+                            if attempt == max_attempts - 1:
+                                result = {
+                                    'exists': False,
+                                    'is_banned': False,
+                                    'is_private': False,
+                                    'followers': 0,
+                                    'following': 0,
+                                    'posts': 0,
+                                    'is_verified': False,
+                                    'full_name': '',
+                                    'username': username,
+                                    'profile_pic_url': '',
+                                    'biography': '',
+                                    'error': f"Unknown response structure: {list(userinfo.keys())}",
+                                    'attempts': attempts,
+                                    'final_attempt': attempt + 1,
+                                    'proxy_used': proxy_config['ip'] if proxy_config else 'none'
+                                }
+                                return result
+                            
                             continue
                             
             except asyncio.TimeoutError:
@@ -460,8 +550,34 @@ class InstagramCheckerWithProxy:
                     await asyncio.sleep(3)
                 continue
                 
-            except Exception as e:
+            except aiohttp.ClientError as e:
+                error_str = str(e)
                 print(f"❌ Ошибка для @{username}: {e}")
+                
+                # Специфическая обработка ошибок прокси
+                if "502" in error_str or "Bad Gateway" in error_str:
+                    print(f"[PROXY-DEBUG] 502 Bad Gateway - прокси недоступен")
+                elif "ERR_TUNNEL_CONNECTION_FAILED" in error_str:
+                    print(f"[PROXY-DEBUG] Tunnel connection failed - проблема с туннелем прокси")
+                elif "407" in error_str:
+                    print(f"[PROXY-DEBUG] 407 Proxy Authentication Required - неверные данные прокси")
+                elif "403" in error_str:
+                    print(f"[PROXY-DEBUG] 403 Forbidden - прокси заблокирован")
+                elif "timeout" in error_str.lower():
+                    print(f"[PROXY-DEBUG] Timeout - прокси слишком медленный")
+                
+                attempts.append({
+                    'attempt': attempt + 1,
+                    'error': str(e),
+                    'proxy_used': proxy_config['ip'] if proxy_config else 'none',
+                    'success': False
+                })
+                if attempt < max_attempts - 1:
+                    await asyncio.sleep(2)
+                continue
+                
+            except Exception as e:
+                print(f"❌ Неожиданная ошибка для @{username}: {e}")
                 attempts.append({
                     'attempt': attempt + 1,
                     'error': str(e),
