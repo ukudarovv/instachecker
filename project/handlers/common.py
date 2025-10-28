@@ -104,6 +104,45 @@ def register_common_handlers(dp, SessionLocal):
                 await message.answer("⛔ Доступ пока не выдан.")
                 return
             await message.answer("🔍 Проверка аккаунтов — будет реализована на Этапе 4.")
+    
+    @dp.message_handler(commands=["traffic_stats"])
+    async def traffic_stats(message):
+        """Показать статистику трафика."""
+        try:
+            from ..services.traffic_monitor import get_traffic_monitor
+        except ImportError:
+            from services.traffic_monitor import get_traffic_monitor
+        
+        monitor = get_traffic_monitor()
+        total_stats = monitor.get_total_stats()
+        
+        if total_stats['total_requests'] == 0:
+            await message.answer("📊 Статистика трафика пуста. Запросы через прокси еще не выполнялись.")
+            return
+        
+        # Форматируем статистику
+        stats_text = f"""📊 **СТАТИСТИКА ТРАФИКА**
+
+📊 **Общий трафик:** {monitor._format_bytes(total_stats['total_traffic'])}
+🔢 **Всего запросов:** {total_stats['total_requests']}
+✅ **Успешных:** {total_stats['successful_requests']}
+❌ **Неудачных:** {total_stats['failed_requests']}
+📈 **Успешность:** {total_stats['success_rate']}%
+📊 **Средний трафик на запрос:** {monitor._format_bytes(total_stats['average_traffic_per_request'])}
+🌐 **Прокси использовано:** {total_stats['proxies_used']}
+
+📊 **ПО ПРОКСИ:**"""
+        
+        # Добавляем статистику по каждому прокси
+        for proxy_ip, proxy_stats in monitor.proxy_traffic.items():
+            proxy_stats_detailed = monitor.get_proxy_stats(proxy_ip)
+            stats_text += f"""
+🌐 **{proxy_ip}:**
+  📊 Трафик: {monitor._format_bytes(proxy_stats['total_traffic'])}
+  🔢 Запросов: {proxy_stats['total_requests']}
+  ✅ Успешность: {proxy_stats_detailed['success_rate']}%"""
+        
+        await message.answer(stats_text, parse_mode="Markdown")
 
     @dp.message_handler(lambda m: m.text == "API")
     async def api_menu(message):

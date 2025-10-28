@@ -5,6 +5,13 @@ from aiohttp import ClientSession, ClientTimeout
 from aiohttp_socks import ProxyConnector, ProxyType
 from urllib.parse import urlparse
 
+try:
+    from .traffic_monitor import get_traffic_monitor
+    from .traffic_decorator import TrafficAwareSession
+except ImportError:
+    from services.traffic_monitor import get_traffic_monitor
+    from services.traffic_decorator import TrafficAwareSession
+
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit Safari/537.36"
 
 
@@ -61,7 +68,8 @@ async def fetch_with_cookies(
         )
     
     try:
-        async with ClientSession(
+        # Используем TrafficAwareSession для мониторинга трафика
+        async with TrafficAwareSession(
             cookie_jar=jar, 
             connector=connector, 
             timeout=timeout, 
