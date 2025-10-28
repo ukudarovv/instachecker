@@ -403,8 +403,8 @@ async def check_account_with_header_screenshot(
                 request = route.request
                 resource_type = request.resource_type
                 
-                # Логируем все запросы, но не блокируем
-                traffic_monitor.log_request(resource_type, len(request.post_data or ""))
+                # Упрощенный мониторинг - только тип ресурса без размера
+                traffic_monitor.log_request(resource_type, 0)
                 await route.continue_()
             
             await page.route("**/*", handle_route)
@@ -565,7 +565,11 @@ async def check_account_with_header_screenshot(
                                 return result
                 
                 # Проверяем контент страницы СНАЧАЛА
-                content = await page.content()
+                try:
+                    content = await page.content()
+                except Exception as content_error:
+                    print(f"[PROXY-HEADER-SCREENSHOT] ⚠️ Ошибка получения контента: {content_error}")
+                    content = ""
                 
                 # Пропускаем проверку на перенаправления - создаем скриншот в любом случае
                 print(f"[PROXY-HEADER-SCREENSHOT] 📸 Создаем скриншот независимо от перенаправлений")
@@ -641,7 +645,11 @@ async def check_account_with_header_screenshot(
                     print(f"[PROXY-HEADER-SCREENSHOT] ⏳ Ожидаем загрузку...")
                     await page.wait_for_timeout(5000)
                     current_url = page.url
-                    content = await page.content()
+                    try:
+                        content = await page.content()
+                    except Exception as content_error:
+                        print(f"[PROXY-HEADER-SCREENSHOT] ⚠️ Ошибка получения контента: {content_error}")
+                        content = ""
                     print(f"[PROXY-HEADER-SCREENSHOT] 🔗 URL: {current_url}")
                 
                 # Закрываем модальные окна и баннеры
@@ -1028,17 +1036,23 @@ async def check_account_with_header_screenshot(
                 # Дополнительная проверка видимости контента
                 try:
                     # Проверяем, что страница не пустая
-                    body_text = await page.evaluate("document.body.innerText")
-                    if len(body_text.strip()) < 10:
-                        print(f"[PROXY-FULL-SCREENSHOT] ⚠️ Страница кажется пустой, ждем еще...")
-                        await page.wait_for_timeout(5000)
-                        
-                        # Принудительная прокрутка для загрузки контента
-                        print(f"[PROXY-FULL-SCREENSHOT] 📜 Принудительная прокрутка для загрузки контента...")
-                        await page.evaluate("window.scrollTo(0, 500)")
-                        await page.wait_for_timeout(2000)
-                        await page.evaluate("window.scrollTo(0, 0)")
-                        await page.wait_for_timeout(2000)
+                    try:
+                        body_text = await page.evaluate("document.body.innerText")
+                        if len(body_text.strip()) < 10:
+                            print(f"[PROXY-FULL-SCREENSHOT] ⚠️ Страница кажется пустой, ждем еще...")
+                            await page.wait_for_timeout(5000)
+                            
+                            # Принудительная прокрутка для загрузки контента
+                            print(f"[PROXY-FULL-SCREENSHOT] 📜 Принудительная прокрутка для загрузки контента...")
+                            try:
+                                await page.evaluate("window.scrollTo(0, 500)")
+                                await page.wait_for_timeout(2000)
+                                await page.evaluate("window.scrollTo(0, 0)")
+                                await page.wait_for_timeout(2000)
+                            except Exception as scroll_error:
+                                print(f"[PROXY-FULL-SCREENSHOT] ⚠️ Ошибка прокрутки: {scroll_error}")
+                    except Exception as eval_error:
+                        print(f"[PROXY-FULL-SCREENSHOT] ⚠️ Ошибка evaluate: {eval_error}")
                 except Exception as e:
                     print(f"[PROXY-FULL-SCREENSHOT] ⚠️ Не удалось проверить контент: {e}")
                 
