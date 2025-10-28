@@ -148,15 +148,19 @@ class TrafficAwareSession:
             status_code = response.status
             success = 200 <= status_code < 400
             
-            # Get response size
+            # Get response size from headers (не читаем контент, чтобы не блокировать повторное чтение)
             if hasattr(response, 'content_length') and response.content_length:
                 response_size = response.content_length
             else:
-                # Read content to get size
-                content = await response.read()
-                response_size = len(content)
-                # Create a new response with the content
-                response._body = content
+                # Попробуем получить размер из headers
+                content_length_header = response.headers.get('Content-Length')
+                if content_length_header:
+                    try:
+                        response_size = int(content_length_header)
+                    except (ValueError, TypeError):
+                        response_size = 0
+                else:
+                    response_size = 0
             
             return response
             
@@ -216,13 +220,19 @@ class TrafficAwareSession:
             status_code = response.status
             success = 200 <= status_code < 400
             
-            # Get response size
+            # Get response size from headers (не читаем контент, чтобы не блокировать повторное чтение)
             if hasattr(response, 'content_length') and response.content_length:
                 response_size = response.content_length
             else:
-                content = await response.read()
-                response_size = len(content)
-                response._body = content
+                # Попробуем получить размер из headers
+                content_length_header = response.headers.get('Content-Length')
+                if content_length_header:
+                    try:
+                        response_size = int(content_length_header)
+                    except (ValueError, TypeError):
+                        response_size = 0
+                else:
+                    response_size = 0
             
             return response
             

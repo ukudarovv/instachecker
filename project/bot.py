@@ -3797,7 +3797,8 @@ class TelegramBot:
                     stats_text += f"✅ <b>Успешных:</b> {total_stats['successful_requests']}\n"
                     stats_text += f"❌ <b>Неудачных:</b> {total_stats['failed_requests']}\n"
                     stats_text += f"📈 <b>Успешность:</b> {total_stats['success_rate']}%\n"
-                    stats_text += f"📊 <b>Средний трафик на запрос:</b> {monitor._format_bytes(total_stats['average_traffic_per_request'])}\n"
+                    stats_text += f"⏱️ <b>Среднее время:</b> {total_stats['average_duration_ms']:.0f}ms\n"
+                    stats_text += f"📊 <b>Средний трафик:</b> {monitor._format_bytes(total_stats['average_traffic_per_request'])}\n"
                     stats_text += f"🌐 <b>Прокси использовано:</b> {total_stats['proxies_used']}\n"
                     
                     if monitor.proxy_traffic:

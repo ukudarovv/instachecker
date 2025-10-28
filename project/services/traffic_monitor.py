@@ -166,6 +166,10 @@ class TrafficMonitor:
         total_successful = sum(stats['successful_requests'] for stats in self.proxy_traffic.values())
         success_rate = (total_successful / total_requests * 100) if total_requests > 0 else 0
         
+        # Вычисляем среднее время запроса
+        completed_requests = [stats for stats in self.stats.values() if hasattr(stats, 'duration_ms') and stats.duration_ms > 0]
+        average_duration_ms = sum(s.duration_ms for s in completed_requests) / len(completed_requests) if completed_requests else 0
+        
         return {
             'total_traffic': self.total_traffic,
             'total_requests': total_requests,
@@ -173,6 +177,7 @@ class TrafficMonitor:
             'failed_requests': total_requests - total_successful,
             'success_rate': round(success_rate, 2),
             'average_traffic_per_request': round(self.total_traffic / total_requests, 2) if total_requests > 0 else 0,
+            'average_duration_ms': round(average_duration_ms, 2),
             'proxies_used': len(self.proxy_traffic)
         }
     
@@ -186,6 +191,7 @@ class TrafficMonitor:
         print(f"  ✅ Успешных: {total_stats['successful_requests']}")
         print(f"  ❌ Неудачных: {total_stats['failed_requests']}")
         print(f"  📈 Успешность: {total_stats['success_rate']}%")
+        print(f"  ⏱️  Среднее время запроса: {total_stats['average_duration_ms']:.0f}ms")
         print(f"  📊 Средний трафик на запрос: {self._format_bytes(total_stats['average_traffic_per_request'])}")
         print(f"  🌐 Прокси использовано: {total_stats['proxies_used']}")
         
