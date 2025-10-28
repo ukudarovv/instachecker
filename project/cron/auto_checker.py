@@ -1,4 +1,4 @@
-"""Automatic background checker for accounts with parallel user processing."""
+"""Automatic background checker for accounts with parallel user processing in one thread."""
 
 import asyncio
 import os
@@ -22,12 +22,12 @@ except ImportError:
     from config import get_settings
 
 
-# Removed parallel processing functions - now using sequential processing
+# Using parallel processing for all users in one thread
 
 
 async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: sessionmaker, fernet: OptionalFernet, bot=None):
     """
-    Check accounts for a specific user using new API + Proxy logic (sequential processing).
+    Check accounts for a specific user using new API + Proxy logic (parallel processing).
     
     Args:
         user_id: User ID
@@ -195,7 +195,7 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
 
 async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accounts: int = 5, notify_admin: bool = True):
     """
-    Check pending accounts (done=False) for all users sequentially in one thread.
+    Check pending accounts (done=False) for all users in parallel in one thread.
     
     Args:
         SessionLocal: SQLAlchemy session factory
@@ -236,8 +236,8 @@ async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accou
         
         print(f"[AUTO-CHECK] Found {len(pending_accounts)} pending accounts to check.")
         
-        # Process all accounts sequentially in one thread
-        print(f"[AUTO-CHECK] 🚀 Starting sequential check for {len(pending_accounts)} accounts...")
+        # Process all accounts in parallel in one thread
+        print(f"[AUTO-CHECK] 🚀 Starting parallel check for {len(pending_accounts)} accounts...")
         
         # Group accounts by user for batch processing
         accounts_by_user = {}
@@ -248,37 +248,54 @@ async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accou
         
         print(f"[AUTO-CHECK] 📊 Found {len(accounts_by_user)} users with pending accounts")
         
-        # Process each user's accounts sequentially
-        total_checked = 0
-        total_found = 0
-        total_not_found = 0
-        total_errors = 0
-        
+        # Process all users' accounts in parallel using asyncio.gather
+        tasks = []
         for user_id, user_accounts in accounts_by_user.items():
-            print(f"[AUTO-CHECK] 👤 Processing user {user_id} with {len(user_accounts)} accounts...")
-            try:
-                result = await check_user_accounts(user_id, user_accounts, SessionLocal, fernet, bot)
-                total_checked += result.get("checked", 0)
-                total_found += result.get("found", 0)
-                total_not_found += result.get("not_found", 0)
-                total_errors += result.get("errors", 0)
-            except Exception as e:
-                print(f"[AUTO-CHECK] ❌ Error processing user {user_id}: {e}")
-                total_errors += len(user_accounts)
+            print(f"[AUTO-CHECK] 👤 Creating task for user {user_id} with {len(user_accounts)} accounts...")
+            task = check_user_accounts(user_id, user_accounts, SessionLocal, fernet, bot)
+            tasks.append(task)
         
-        print(f"[AUTO-CHECK] 📊 Final results: {total_checked} checked, {total_found} found, {total_not_found} not found, {total_errors} errors")
-        
-        # Update final statistics
-        checked = total_checked
-        found = total_found
-        not_found = total_not_found
-        errors = total_errors
-        
-        print(f"[AUTO-CHECK] Completed!")
-        print(f"  • Checked: {checked}")
-        print(f"  • Found: {found}")
-        print(f"  • Not found: {not_found}")
-        print(f"  • Errors: {errors}")
+        # Execute all user checks in parallel
+        print(f"[AUTO-CHECK] 🔄 Executing {len(tasks)} parallel user checks...")
+        try:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Process results
+            total_checked = 0
+            total_found = 0
+            total_not_found = 0
+            total_errors = 0
+            
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    print(f"[AUTO-CHECK] ❌ Error in user task {i}: {result}")
+                    # Count all accounts for this user as errors
+                    user_id = list(accounts_by_user.keys())[i]
+                    total_errors += len(accounts_by_user[user_id])
+                else:
+                    total_checked += result.get("checked", 0)
+                    total_found += result.get("found", 0)
+                    total_not_found += result.get("not_found", 0)
+                    total_errors += result.get("errors", 0)
+            
+            print(f"[AUTO-CHECK] 📊 Final results: {total_checked} checked, {total_found} found, {total_not_found} not found, {total_errors} errors")
+            
+            # Update final statistics
+            checked = total_checked
+            found = total_found
+            not_found = total_not_found
+            errors = total_errors
+            
+            print(f"[AUTO-CHECK] Completed!")
+            print(f"  • Checked: {checked}")
+            print(f"  • Found: {found}")
+            print(f"  • Not found: {not_found}")
+            print(f"  • Errors: {errors}")
+            
+        except Exception as e:
+            print(f"[AUTO-CHECK] ❌ Error in parallel execution: {e}")
+            import traceback
+            traceback.print_exc()
 
 
 def start_auto_checker(SessionLocal: sessionmaker, bot=None, interval_minutes: int = 3, run_immediately: bool = True):
