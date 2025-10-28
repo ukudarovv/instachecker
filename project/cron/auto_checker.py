@@ -1,4 +1,13 @@
-"""Automatic background checker for accounts with parallel user processing in one thread."""
+"""Optimized automatic background checker for accounts with parallel user processing.
+
+Features:
+- Parallel processing of all users in one thread (non-blocking)
+- Concurrency limits to prevent resource exhaustion (max 10 users)
+- Timeout protection (5 minutes per user)
+- Account limits (max 100 accounts per run)
+- Performance monitoring and logging
+- Runs in separate thread via AutoCheckerScheduler
+"""
 
 import asyncio
 import os
@@ -206,7 +215,8 @@ async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accou
     settings = get_settings()
     fernet = OptionalFernet(settings.encryption_key)
     
-    print(f"\n[AUTO-CHECK] {datetime.now()} - Starting automatic check...")
+    start_time = datetime.now()
+    print(f"\n[AUTO-CHECK] {start_time} - Starting automatic check...")
     
     # NOTE: Expiry notifications are now handled by separate daily scheduler at 10:00 AM
     # See project/expiry_scheduler.py
@@ -221,12 +231,14 @@ async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accou
             ).all()
     
     with SessionLocal() as session:
-        # Get all pending accounts
+        # Get all pending accounts with reasonable limit
+        # Limit to prevent system overload
+        effective_max_accounts = min(max_accounts, 100)  # Max 100 accounts per run
         pending_accounts = (
             session.query(Account)
             .filter(Account.done == False)
             .order_by(Account.from_date.asc())
-            .limit(max_accounts)
+            .limit(effective_max_accounts)
             .all()
         )
         
@@ -248,17 +260,39 @@ async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accou
         
         print(f"[AUTO-CHECK] 📊 Found {len(accounts_by_user)} users with pending accounts")
         
-        # Process all users' accounts in parallel using asyncio.gather
+        # Process all users' accounts in parallel using asyncio.gather with concurrency limit
         tasks = []
         for user_id, user_accounts in accounts_by_user.items():
             print(f"[AUTO-CHECK] 👤 Creating task for user {user_id} with {len(user_accounts)} accounts...")
             task = check_user_accounts(user_id, user_accounts, SessionLocal, fernet, bot)
             tasks.append(task)
         
-        # Execute all user checks in parallel
+        # Execute all user checks in parallel with concurrency limit
         print(f"[AUTO-CHECK] 🔄 Executing {len(tasks)} parallel user checks...")
         try:
-            results = await asyncio.gather(*tasks, return_exceptions=True)
+            # Limit concurrent users to prevent resource exhaustion
+            max_concurrent_users = min(10, len(tasks))  # Max 10 users at once
+            semaphore = asyncio.Semaphore(max_concurrent_users)
+            
+            async def limited_check_user_accounts(user_id, user_accounts, SessionLocal, fernet, bot):
+                async with semaphore:
+                    try:
+                        # Add timeout to prevent hanging
+                        return await asyncio.wait_for(
+                            check_user_accounts(user_id, user_accounts, SessionLocal, fernet, bot),
+                            timeout=300  # 5 minutes timeout per user
+                        )
+                    except asyncio.TimeoutError:
+                        print(f"[AUTO-CHECK] ⏰ Timeout for user {user_id} after 5 minutes")
+                        return {"checked": 0, "found": 0, "not_found": 0, "errors": len(user_accounts)}
+            
+            # Create limited tasks
+            limited_tasks = []
+            for i, (user_id, user_accounts) in enumerate(accounts_by_user.items()):
+                task = limited_check_user_accounts(user_id, user_accounts, SessionLocal, fernet, bot)
+                limited_tasks.append(task)
+            
+            results = await asyncio.gather(*limited_tasks, return_exceptions=True)
             
             # Process results
             total_checked = 0
@@ -286,11 +320,15 @@ async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accou
             not_found = total_not_found
             errors = total_errors
             
-            print(f"[AUTO-CHECK] Completed!")
+            end_time = datetime.now()
+            duration = (end_time - start_time).total_seconds()
+            
+            print(f"[AUTO-CHECK] ✅ Completed in {duration:.2f} seconds!")
             print(f"  • Checked: {checked}")
             print(f"  • Found: {found}")
             print(f"  • Not found: {not_found}")
             print(f"  • Errors: {errors}")
+            print(f"  • Performance: {checked/duration:.2f} accounts/second" if duration > 0 else "  • Performance: N/A")
             
         except Exception as e:
             print(f"[AUTO-CHECK] ❌ Error in parallel execution: {e}")
@@ -298,60 +336,5 @@ async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accou
             traceback.print_exc()
 
 
-def start_auto_checker(SessionLocal: sessionmaker, bot=None, interval_minutes: int = 3, run_immediately: bool = True):
-    """
-    Start the automatic checker with APScheduler.
-    
-    Args:
-        SessionLocal: SQLAlchemy session factory
-        bot: Optional TelegramBot instance
-        interval_minutes: Check interval in minutes
-        run_immediately: Run check immediately on start
-    """
-    print(f"[AUTO-CHECK-SCHEDULER] Starting automatic checker (every {interval_minutes} minutes)")
-    
-    # Import APScheduler
-    try:
-        from apscheduler.schedulers.asyncio import AsyncIOScheduler
-        from apscheduler.triggers.interval import IntervalTrigger
-    except ImportError:
-        print("[AUTO-CHECK-SCHEDULER] APScheduler not available, using fallback timer")
-        return
-    
-    # Create scheduler
-    scheduler = AsyncIOScheduler()
-    
-    # Define the check job
-    async def auto_check_job():
-        """Periodic auto-check job."""
-        print(f"[AUTO-CHECK-SCHEDULER] Check started at {datetime.now()}")
-        try:
-            await check_pending_accounts(SessionLocal, bot, max_accounts=999999, notify_admin=True)
-            print(f"[AUTO-CHECK-SCHEDULER] Check completed at {datetime.now()}")
-        except Exception as e:
-            print(f"[AUTO-CHECK-SCHEDULER] Error in auto-check: {e}")
-    
-    # Add job to scheduler
-    scheduler.add_job(
-        auto_check_job,
-        trigger=IntervalTrigger(minutes=interval_minutes),
-        id='auto_check_job',
-        name='Automatic Account Checker',
-        replace_existing=True
-    )
-    
-    # Start scheduler
-    scheduler.start()
-    print(f"[AUTO-CHECK-SCHEDULER] Scheduler started (every {interval_minutes} minutes)")
-    
-    # Run immediately if requested
-    if run_immediately:
-        print(f"[AUTO-CHECK-SCHEDULER] Running initial check...")
-        try:
-            import asyncio
-            loop = asyncio.get_event_loop()
-            loop.create_task(auto_check_job())
-        except Exception as e:
-            print(f"[AUTO-CHECK-SCHEDULER] Error in initial check: {e}")
-    
-    return scheduler
+# Note: start_auto_checker function removed - use AutoCheckerScheduler instead
+# This prevents confusion and potential blocking of the main thread

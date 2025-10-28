@@ -1,6 +1,13 @@
 """
-Auto-checker using APScheduler for reliable interval-based checking.
-This replaces the threading-based approach with a more robust scheduler.
+Optimized auto-checker using APScheduler for reliable interval-based checking.
+
+Features:
+- Runs in separate thread with own event loop (non-blocking)
+- Uses APScheduler for reliable scheduling
+- Prevents overlapping runs (max_instances=1)
+- Combines missed runs (coalesce=True)
+- Optimized event loop handling
+- Thread-safe operation
 """
 
 import asyncio
@@ -110,8 +117,11 @@ class AutoCheckerScheduler:
                 self._loop.run_until_complete(self._check_job())
             
             # Run event loop until stop event is set
-            while not self._stop_event.is_set():
-                self._loop.run_until_complete(asyncio.sleep(1))
+            # Use asyncio.run() for better performance
+            try:
+                self._loop.run_forever()
+            except KeyboardInterrupt:
+                pass
                 
         except Exception as e:
             print(f"[AUTO-CHECK-SCHEDULER] Error in scheduler thread: {e}")
