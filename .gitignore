@@ -62,4 +62,4 @@ bot.db
 *.backup
 
 # Documentation
-AWAIT_FIXED.md
+*.md
