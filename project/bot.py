@@ -3775,6 +3775,47 @@ class TelegramBot:
                     return
                 self.send_message(chat_id, "🛡 Админ-панель (заглушка). Разделы появятся на Этапе 6.")
             
+            elif text and text.startswith("/traffic_stats"):
+                # Обработка команды /traffic_stats для статистики трафика
+                try:
+                    from .services.traffic_monitor import get_traffic_monitor
+                except ImportError:
+                    from services.traffic_monitor import get_traffic_monitor
+                
+                try:
+                    monitor = get_traffic_monitor()
+                    total_stats = monitor.get_total_stats()
+                    
+                    if total_stats['total_requests'] == 0:
+                        self.send_message(chat_id, "📊 Статистика трафика пуста. Запросы через прокси еще не выполнялись.")
+                        return
+                    
+                    # Форматируем статистику
+                    stats_text = f"📊 <b>СТАТИСТИКА ТРАФИКА</b>\n\n"
+                    stats_text += f"📊 <b>Общий трафик:</b> {monitor._format_bytes(total_stats['total_traffic'])}\n"
+                    stats_text += f"🔢 <b>Всего запросов:</b> {total_stats['total_requests']}\n"
+                    stats_text += f"✅ <b>Успешных:</b> {total_stats['successful_requests']}\n"
+                    stats_text += f"❌ <b>Неудачных:</b> {total_stats['failed_requests']}\n"
+                    stats_text += f"📈 <b>Успешность:</b> {total_stats['success_rate']}%\n"
+                    stats_text += f"📊 <b>Средний трафик на запрос:</b> {monitor._format_bytes(total_stats['average_traffic_per_request'])}\n"
+                    stats_text += f"🌐 <b>Прокси использовано:</b> {total_stats['proxies_used']}\n"
+                    
+                    if monitor.proxy_traffic:
+                        stats_text += f"\n📊 <b>ПО ПРОКСИ:</b>\n"
+                        for proxy_ip, proxy_stats in list(monitor.proxy_traffic.items())[:10]:  # Показываем первые 10
+                            proxy_stats_detailed = monitor.get_proxy_stats(proxy_ip)
+                            stats_text += f"\n🌐 <b>{proxy_ip}:</b>\n"
+                            stats_text += f"  📊 Трафик: {monitor._format_bytes(proxy_stats['total_traffic'])}\n"
+                            stats_text += f"  🔢 Запросов: {proxy_stats['total_requests']}\n"
+                            stats_text += f"  ✅ Успешность: {proxy_stats_detailed['success_rate']}%\n"
+                    
+                    self.send_message(chat_id, stats_text)
+                except Exception as e:
+                    self.send_message(chat_id, f"❌ Ошибка получения статистики: {e}")
+                    print(f"[BOT] ❌ Error in /traffic_stats: {e}")
+                    import traceback
+                    traceback.print_exc()
+            
             else:
                 # Handle other messages
                 if ensure_active(user):
