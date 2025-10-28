@@ -140,7 +140,8 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
                 user_id=user_id,
                 usernames=usernames,
                 delay_between_api=0.0,  # Без задержек между API запросами
-                delay_between_screenshots=0.0  # Без задержек между скриншотами
+                delay_between_screenshots=0.0,  # Без задержек между скриншотами
+                bot=bot  # Передаем бота для уведомлений
             )
         
         print(f"[AUTO-CHECK] ✅ Батчевая проверка завершена: {len(batch_results)} результатов")
@@ -198,7 +199,7 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
                 print(f"[AUTO-CHECK] ❌ @{username} - ERROR: {error_msg}")
                 
                 # Send notification to user for missing proxies
-                if bot and "no_proxies_available" in error_msg:
+                if bot and error_msg and "no_proxies_available" in error_msg:
                     try:
                         with SessionLocal() as user_session:
                             user = user_session.query(User).get(user_id)

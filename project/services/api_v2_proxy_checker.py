@@ -788,7 +788,8 @@ async def batch_check_with_optimized_screenshots(
     user_id: int,
     usernames: List[str],
     delay_between_api: float = 0.0,
-    delay_between_screenshots: float = 0.0
+    delay_between_screenshots: float = 0.0,
+    bot=None
 ) -> List[Dict[str, Any]]:
     """
     Оптимизированная батчевая проверка: сначала API для всех, потом скриншоты только для активных.
@@ -907,7 +908,8 @@ async def batch_check_with_optimized_screenshots(
                     user_id=user_id,
                     username=username,
                     screenshot_path=screenshot_result.get("screenshot_path"),
-                    api_data=account_info["api_data"]
+                    api_data=account_info["api_data"],
+                    bot=bot
                 )
             else:
                 print(f"[BATCH-OPTIMIZED] ❌ Ошибка скриншота @{username}: {screenshot_result.get('error')}")
@@ -1126,7 +1128,8 @@ async def send_immediate_notification(
     user_id: int,
     username: str,
     screenshot_path: str,
-    api_data: Dict[str, Any]
+    api_data: Dict[str, Any],
+    bot=None
 ) -> None:
     """
     Немедленно отправляет уведомление пользователю после успешного скриншота.
@@ -1169,14 +1172,29 @@ async def send_immediate_notification(
         print(f"[IMMEDIATE-NOTIFICATION] ✅ Аккаунт @{username} помечен как выполненный")
         
         # Получаем бота для отправки уведомлений
-        bot = None
-        try:
-            from ..bot import bot
-        except ImportError:
+        if not bot:
             try:
-                from bot import bot
-            except ImportError:
-                print(f"[IMMEDIATE-NOTIFICATION] ❌ Не удалось импортировать бота")
+                # Пытаемся получить бота из глобального контекста
+                import sys
+                if 'bot' in sys.modules:
+                    bot = sys.modules['bot'].bot
+                else:
+                    # Пытаемся импортировать бота
+                    try:
+                        from ..bot import bot
+                    except ImportError:
+                        try:
+                            from bot import bot
+                        except ImportError:
+                            # Последняя попытка - ищем в текущем модуле
+                            try:
+                                import bot
+                                bot = bot.bot
+                            except:
+                                print(f"[IMMEDIATE-NOTIFICATION] ❌ Не удалось импортировать бота")
+                                return
+            except Exception as e:
+                print(f"[IMMEDIATE-NOTIFICATION] ❌ Ошибка получения бота: {e}")
                 return
         
         if not bot:
