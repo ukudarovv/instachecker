@@ -261,17 +261,10 @@ async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accou
         print(f"[AUTO-CHECK] 📊 Found {len(accounts_by_user)} users with pending accounts")
         
         # Process all users' accounts in parallel using asyncio.gather with concurrency limit
-        tasks = []
-        for user_id, user_accounts in accounts_by_user.items():
-            print(f"[AUTO-CHECK] 👤 Creating task for user {user_id} with {len(user_accounts)} accounts...")
-            task = check_user_accounts(user_id, user_accounts, SessionLocal, fernet, bot)
-            tasks.append(task)
-        
-        # Execute all user checks in parallel with concurrency limit
-        print(f"[AUTO-CHECK] 🔄 Executing {len(tasks)} parallel user checks...")
+        print(f"[AUTO-CHECK] 🔄 Executing parallel user checks...")
         try:
             # Limit concurrent users to prevent resource exhaustion
-            max_concurrent_users = min(10, len(tasks))  # Max 10 users at once
+            max_concurrent_users = min(10, len(accounts_by_user))  # Max 10 users at once
             semaphore = asyncio.Semaphore(max_concurrent_users)
             
             async def limited_check_user_accounts(user_id, user_accounts, SessionLocal, fernet, bot):
@@ -288,7 +281,8 @@ async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accou
             
             # Create limited tasks
             limited_tasks = []
-            for i, (user_id, user_accounts) in enumerate(accounts_by_user.items()):
+            for user_id, user_accounts in accounts_by_user.items():
+                print(f"[AUTO-CHECK] 👤 Creating task for user {user_id} with {len(user_accounts)} accounts...")
                 task = limited_check_user_accounts(user_id, user_accounts, SessionLocal, fernet, bot)
                 limited_tasks.append(task)
             
