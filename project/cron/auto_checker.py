@@ -22,67 +22,12 @@ except ImportError:
     from config import get_settings
 
 
-def calculate_optimal_concurrency(total_tasks: int, task_type: str = "accounts") -> int:
-    """
-    Calculate optimal concurrency based on task count and type.
-    
-    Args:
-        total_tasks: Total number of tasks
-        task_type: Type of tasks ("accounts" or "users")
-        
-    Returns:
-        Optimal concurrency limit
-    """
-    if task_type == "accounts":
-        # Для аккаунтов: минимум 5, максимум 20, зависит от количества
-        if total_tasks <= 10:
-            return min(5, total_tasks)
-        elif total_tasks <= 50:
-            return min(10, total_tasks)
-        elif total_tasks <= 100:
-            return min(15, total_tasks)
-        else:
-            return min(20, total_tasks)
-    else:  # users
-        # Для пользователей: минимум 2, максимум 8
-        if total_tasks <= 5:
-            return min(3, total_tasks)
-        elif total_tasks <= 20:
-            return min(5, total_tasks)
-        else:
-            return min(8, total_tasks)
-
-
-async def run_limited_parallel(tasks, max_concurrent=None, task_type="accounts"):
-    """
-    Run tasks in parallel with adaptive concurrency to prevent database overload.
-    
-    Args:
-        tasks: List of coroutines to run
-        max_concurrent: Maximum number of concurrent tasks (auto-calculated if None)
-        task_type: Type of tasks ("accounts" or "users")
-        
-    Returns:
-        List of results
-    """
-    if max_concurrent is None:
-        max_concurrent = calculate_optimal_concurrency(len(tasks), task_type)
-    
-    print(f"[AUTO-CHECK] 🎯 Optimal concurrency for {len(tasks)} {task_type}: {max_concurrent}")
-    
-    semaphore = asyncio.Semaphore(max_concurrent)
-    
-    async def limited_task(task):
-        async with semaphore:
-            return await task
-    
-    limited_tasks = [limited_task(task) for task in tasks]
-    return await asyncio.gather(*limited_tasks, return_exceptions=True)
+# Removed parallel processing functions - now using sequential processing
 
 
 async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: sessionmaker, fernet: OptionalFernet, bot=None):
     """
-    Check accounts for a specific user using new API + Proxy logic.
+    Check accounts for a specific user using new API + Proxy logic (sequential processing).
     
     Args:
         user_id: User ID
@@ -250,7 +195,7 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
 
 async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accounts: int = 5, notify_admin: bool = True):
     """
-    Check pending accounts (done=False) for all users in parallel.
+    Check pending accounts (done=False) for all users sequentially in one thread.
     
     Args:
         SessionLocal: SQLAlchemy session factory
@@ -291,7 +236,10 @@ async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accou
         
         print(f"[AUTO-CHECK] Found {len(pending_accounts)} pending accounts to check.")
         
-        # Group accounts by user for parallel processing
+        # Process all accounts sequentially in one thread
+        print(f"[AUTO-CHECK] 🚀 Starting sequential check for {len(pending_accounts)} accounts...")
+        
+        # Group accounts by user for batch processing
         accounts_by_user = {}
         for acc in pending_accounts:
             if acc.user_id not in accounts_by_user:
@@ -300,31 +248,23 @@ async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accou
         
         print(f"[AUTO-CHECK] 📊 Found {len(accounts_by_user)} users with pending accounts")
         
-        # Create tasks for parallel processing
-        tasks = []
-        for user_id, user_accounts in accounts_by_user.items():
-            task = check_user_accounts(user_id, user_accounts, SessionLocal, fernet, bot)
-            tasks.append(task)
-        
-        # Run all user checks in parallel (adaptive concurrency)
-        print(f"[AUTO-CHECK] 🚀 Starting parallel checks for {len(tasks)} users...")
-        results = await run_limited_parallel(tasks, task_type="users")
-        
-        # Aggregate results
+        # Process each user's accounts sequentially
         total_checked = 0
         total_found = 0
         total_not_found = 0
         total_errors = 0
         
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                print(f"[AUTO-CHECK] ❌ Error in user {list(accounts_by_user.keys())[i]}: {result}")
-                total_errors += 1
-            else:
+        for user_id, user_accounts in accounts_by_user.items():
+            print(f"[AUTO-CHECK] 👤 Processing user {user_id} with {len(user_accounts)} accounts...")
+            try:
+                result = await check_user_accounts(user_id, user_accounts, SessionLocal, fernet, bot)
                 total_checked += result.get("checked", 0)
                 total_found += result.get("found", 0)
                 total_not_found += result.get("not_found", 0)
                 total_errors += result.get("errors", 0)
+            except Exception as e:
+                print(f"[AUTO-CHECK] ❌ Error processing user {user_id}: {e}")
+                total_errors += len(user_accounts)
         
         print(f"[AUTO-CHECK] 📊 Final results: {total_checked} checked, {total_found} found, {total_not_found} not found, {total_errors} errors")
         
