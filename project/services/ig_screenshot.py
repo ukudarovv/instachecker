@@ -1,6 +1,7 @@
 """Instagram profile screenshot via Playwright + proxy."""
 
 import asyncio
+import time
 from typing import Optional
 from playwright.async_api import async_playwright, TimeoutError as PWTimeoutError
 
@@ -16,6 +17,51 @@ def _proxy_kwargs_from_url(proxy_url: str):
         auth["username"] = u.username
         auth["password"] = u.password
     return {"server": f"{u.scheme}://{u.hostname}:{u.port}", **auth}
+
+
+class TrafficMonitor:
+    """Мониторинг трафика для оптимизации proxy."""
+    
+    def __init__(self):
+        self.start_time = None
+        self.requests_count = 0
+        self.blocked_resources = 0
+        self.total_data = 0
+    
+    def start(self):
+        """Начать мониторинг."""
+        self.start_time = time.time()
+        self.requests_count = 0
+        self.blocked_resources = 0
+        self.total_data = 0
+        print(f"[TRAFFIC-MONITOR] 🚀 Начинаем мониторинг трафика...")
+    
+    def log_request(self, request_type: str, size: int = 0):
+        """Логировать запрос."""
+        self.requests_count += 1
+        self.total_data += size
+        print(f"[TRAFFIC-MONITOR] 📡 Запрос #{self.requests_count}: {request_type} ({size} bytes)")
+    
+    def log_blocked(self, resource_type: str):
+        """Логировать заблокированный ресурс."""
+        self.blocked_resources += 1
+        print(f"[TRAFFIC-MONITOR] 🚫 Заблокирован: {resource_type} (всего: {self.blocked_resources})")
+    
+    def get_summary(self):
+        """Получить сводку по трафику."""
+        if not self.start_time:
+            return "Мониторинг не запущен"
+        
+        duration = time.time() - self.start_time
+        data_kb = self.total_data / 1024
+        
+        return {
+            "duration": f"{duration:.2f}s",
+            "requests": self.requests_count,
+            "blocked": self.blocked_resources,
+            "data_kb": f"{data_kb:.2f}KB",
+            "efficiency": f"{(self.blocked_resources / (self.requests_count + self.blocked_resources) * 100):.1f}%" if (self.requests_count + self.blocked_resources) > 0 else "0%"
+        }
 
 
 async def _apply_dark_theme(page):
@@ -197,6 +243,12 @@ async def check_account_with_header_screenshot(
     print(f"[PROXY-FULL-SCREENSHOT] 🌙 Темная тема: {dark_theme}")
     print(f"[PROXY-FULL-SCREENSHOT] 🖥️ Desktop формат: {not mobile_emulation}")
     print(f"[PROXY-FULL-SCREENSHOT] 📸 Полный скриншот страницы (без обрезки)")
+    print(f"[PROXY-FULL-SCREENSHOT] ✅ Блокировка ресурсов: ОТКЛЮЧЕНА (качество скриншотов)")
+    print(f"[PROXY-FULL-SCREENSHOT] 📐 Размер viewport: 1366x768 (оптимизировано)")
+    
+    # Инициализируем мониторинг трафика
+    traffic_monitor = TrafficMonitor()
+    traffic_monitor.start()
     
     result = {
         "username": username,
@@ -205,7 +257,8 @@ async def check_account_with_header_screenshot(
         "error": None,
         "checked_via": "proxy_full_screenshot",
         "dark_theme_applied": False,
-        "mobile_emulation": mobile_emulation
+        "mobile_emulation": mobile_emulation,
+        "traffic_stats": None
     }
     
     # Генерируем путь для скриншота если не указан
@@ -247,7 +300,18 @@ async def check_account_with_header_screenshot(
                 "--force-device-scale-factor=1",
                 "--disable-web-security",
                 "--disable-features=VizDisplayCompositor",
-                "--window-size=1920,1080",  # Фиксированный размер окна 1920x1080
+                "--window-size=1366,768",  # Уменьшенный размер окна для экономии трафика
+                # "--disable-images",  # ОТКЛЮЧЕНО: влияет на качество скриншотов
+                # "--disable-javascript",  # ОТКЛЮЧЕНО: нужен для работы Instagram
+                "--disable-plugins",  # Отключаем плагины
+                "--disable-extensions",  # Отключаем расширения
+                "--disable-background-timer-throttling",  # Ускоряем загрузку
+                "--disable-renderer-backgrounding",  # Ускоряем рендеринг
+                "--disable-backgrounding-occluded-windows",  # Ускоряем работу
+                "--disable-ipc-flooding-protection",  # Ускоряем IPC
+                "--aggressive-cache-discard",  # Агрессивная очистка кеша
+                "--memory-pressure-off",  # Отключаем давление памяти
+                "--max_old_space_size=512",  # Ограничиваем память
                 # "--start-maximized",  # ОТКЛЮЧЕНО: конфликт с headless режимом
             ]
             
@@ -281,9 +345,9 @@ async def check_account_with_header_screenshot(
                 
                 print(f"[PROXY-HEADER-SCREENSHOT] 📱 Эмуляция: iPhone 12")
             else:
-                # Обычный desktop режим с разрешением 1920x1080 (Full HD)
+                # Обычный desktop режим с уменьшенным разрешением для экономии трафика
                 context_options = {
-                    "viewport": {"width": 1920, "height": 1080},
+                    "viewport": {"width": 1366, "height": 768},  # Уменьшенный viewport
                     "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
                     # proxy НЕ передаем - уже передан в browser.launch()
                 }
@@ -331,6 +395,20 @@ async def check_account_with_header_screenshot(
             
             page = await context.new_page()
             
+            # 🚫 БЛОКИРОВКА РЕСУРСОВ ОТКЛЮЧЕНА для качества скриншотов
+            print(f"[PROXY-HEADER-SCREENSHOT] ✅ Блокировка ресурсов ОТКЛЮЧЕНА (качество скриншотов)")
+            
+            # Настраиваем мониторинг трафика БЕЗ блокировки
+            async def handle_route(route):
+                request = route.request
+                resource_type = request.resource_type
+                
+                # Логируем все запросы, но не блокируем
+                traffic_monitor.log_request(resource_type, len(request.post_data or ""))
+                await route.continue_()
+            
+            await page.route("**/*", handle_route)
+            
             # 🔥 ЭМУЛЯЦИЯ ТЕМНОЙ ТЕМЫ через media - ОТКЛЮЧЕНО
             if dark_theme:
                 # Отключено для исправления черных скриншотов
@@ -365,17 +443,17 @@ async def check_account_with_header_screenshot(
                     await browser.close()
                     return result
                 
-                # Ждем загрузки контента - УВЕЛИЧЕНО для полной загрузки
-                print(f"[PROXY-HEADER-SCREENSHOT] ⏳ Ожидаем полную загрузку страницы...")
+                # Ждем загрузки контента - ОПТИМИЗИРОВАНО для экономии трафика
+                print(f"[PROXY-HEADER-SCREENSHOT] ⏳ Ожидаем загрузку страницы...")
                 try:
-                    await page.wait_for_timeout(5000)  # 5 секунд для полной загрузки
+                    await page.wait_for_timeout(2000)  # Уменьшено до 2 секунд
                 except Exception as e:
                     print(f"[PROXY-HEADER-SCREENSHOT] ⚠️ Проблема с ожиданием загрузки: {e}")
                     # Продолжаем выполнение даже если есть проблемы с ожиданием
                 
-                # Дополнительное ожидание для загрузки контента
+                # Дополнительное ожидание для загрузки контента - ОПТИМИЗИРОВАНО
                 print(f"[PROXY-HEADER-SCREENSHOT] ⏳ Дополнительное ожидание для загрузки контента...")
-                await page.wait_for_timeout(3000)  # Еще 3 секунды
+                await page.wait_for_timeout(1000)  # Уменьшено до 1 секунды
                 
                 # УСИЛЕННАЯ ПРОВЕРКА на редирект и неправильные страницы
                 current_url = page.url
@@ -420,8 +498,8 @@ async def check_account_with_header_screenshot(
                             await page.close()
                             page = await context.new_page()
                             
-                            # Ждем перед новым запросом
-                            await page.wait_for_timeout(2000)
+                            # Ждем перед новым запросом - ОПТИМИЗИРОВАНО
+                            await page.wait_for_timeout(1000)  # Уменьшено до 1 секунды
                             
                             # Делаем новый запрос
                             print(f"[PROXY-HEADER-SCREENSHOT] 📡 Новый запрос на: {url}")
@@ -429,8 +507,8 @@ async def check_account_with_header_screenshot(
                             status_code = response.status if response else None
                             print(f"[PROXY-HEADER-SCREENSHOT] 📊 HTTP Status: {status_code}")
                             
-                            # Ждем загрузки
-                            await page.wait_for_timeout(5000)
+                            # Ждем загрузки - ОПТИМИЗИРОВАНО
+                            await page.wait_for_timeout(2000)  # Уменьшено до 2 секунд
                             
                             # Проверяем новый URL
                             current_url = page.url
@@ -446,14 +524,14 @@ async def check_account_with_header_screenshot(
                             if is_correct and username.lower() in current_url.lower():
                                 print(f"[PROXY-HEADER-SCREENSHOT] ✅ URL исправлен после попытки {retry + 1}")
                                 
-                                # ВАЖНО: Даем время странице загрузиться после исправления
-                                print(f"[PROXY-HEADER-SCREENSHOT] ⏳ Ожидаем полную загрузку после исправления URL...")
-                                await page.wait_for_timeout(5000)
+                                # ВАЖНО: Даем время странице загрузиться после исправления - ОПТИМИЗИРОВАНО
+                                print(f"[PROXY-HEADER-SCREENSHOT] ⏳ Ожидаем загрузку после исправления URL...")
+                                await page.wait_for_timeout(2000)  # Уменьшено до 2 секунд
                                 
-                                # Дополнительное ожидание загрузки контента
+                                # Дополнительное ожидание загрузки контента - ОПТИМИЗИРОВАНО
                                 try:
-                                    await page.wait_for_load_state('networkidle', timeout=10000)
-                                    print(f"[PROXY-HEADER-SCREENSHOT] ✅ Страница полностью загружена")
+                                    await page.wait_for_load_state('networkidle', timeout=5000)  # Уменьшено до 5 секунд
+                                    print(f"[PROXY-HEADER-SCREENSHOT] ✅ Страница загружена")
                                 except:
                                     print(f"[PROXY-HEADER-SCREENSHOT] ⚠️ Timeout ожидания networkidle, продолжаем")
                                 
@@ -849,7 +927,7 @@ async def check_account_with_header_screenshot(
                                 const hasNumbers = statsElements.some(el => {
                                     const text = el.textContent.trim();
                                     // Проверяем на числа типа "123", "1.2M", "695M" и т.д.
-                                    return /^\d+(\.\d+)?[KMB]?$/.test(text.replace(/,/g, ''));
+                                    return /^\\d+(\\.\\d+)?[KMB]?$/.test(text.replace(/,/g, ''));
                                 });
                                 
                                 // Также проверяем наличие слов "posts", "followers", "following"
@@ -967,27 +1045,27 @@ async def check_account_with_header_screenshot(
                 # Делаем скриншот видимой области (viewport)
                 print(f"[PROXY-FULL-SCREENSHOT] 📸 Создание скриншота видимой области...")
                 
-                # Используем размер viewport 1920x1080
-                print(f"[PROXY-FULL-SCREENSHOT] 📐 Используем размер viewport: 1920x1080")
+                # Используем размер viewport 1366x768 (оптимизировано)
+                print(f"[PROXY-FULL-SCREENSHOT] 📐 Используем размер viewport: 1366x768 (оптимизировано)")
                 
                 # Принудительная установка размеров viewport через JavaScript для исправления белых скриншотов на Linux
-                print(f"[PROXY-FULL-SCREENSHOT] 🔧 Принудительная установка viewport 1920x1080...")
+                print(f"[PROXY-FULL-SCREENSHOT] 🔧 Принудительная установка viewport 1366x768...")
                 try:
                     await page.evaluate("""
                         () => {
                             // Принудительно устанавливаем размеры окна и viewport
-                            window.innerWidth = 1920;
-                            window.innerHeight = 1080;
-                            window.outerWidth = 1920;
-                            window.outerHeight = 1080;
+                            window.innerWidth = 1366;
+                            window.innerHeight = 768;
+                            window.outerWidth = 1366;
+                            window.outerHeight = 768;
                             
                             // Принудительно устанавливаем размеры document
-                            document.documentElement.style.width = '1920px';
-                            document.documentElement.style.height = '1080px';
-                            document.body.style.width = '1920px';
-                            document.body.style.height = '1080px';
+                            document.documentElement.style.width = '1366px';
+                            document.documentElement.style.height = '768px';
+                            document.body.style.width = '1366px';
+                            document.body.style.height = '768px';
                             
-                            console.log('✅ Viewport установлен принудительно: 1920x1080');
+                            console.log('✅ Viewport установлен принудительно: 1366x768');
                         }
                     """)
                     
@@ -1013,9 +1091,9 @@ async def check_account_with_header_screenshot(
                 await page.wait_for_timeout(2000)
                 
                 try:
-                    # Скриншот только видимой области (viewport 1920x1080)
+                    # Скриншот только видимой области (viewport 1366x768)
                     await page.screenshot(path=screenshot_path, full_page=False)
-                    print(f"[PROXY-FULL-SCREENSHOT] ✅ Скриншот создан успешно (viewport: 1920x1080)")
+                    print(f"[PROXY-FULL-SCREENSHOT] ✅ Скриншот создан успешно (viewport: 1366x768)")
                 except Exception as e:
                     print(f"[PROXY-FULL-SCREENSHOT] ❌ Ошибка при создании скриншота: {e}")
                     result["error"] = f"screenshot_failed: {str(e)}"
@@ -1079,34 +1157,42 @@ async def check_account_with_header_screenshot(
                     # Проверка на белый скрин
                     try:
                         from PIL import Image
-                        import numpy as np
+                        try:
+                            import numpy as np
+                        except ImportError:
+                            print(f"[PROXY-HEADER-SCREENSHOT] ⚠️ numpy не установлен, пропускаем проверку белого скрина")
+                            np = None
                         
                         img = Image.open(screenshot_path)
-                        img_array = np.array(img.convert('RGB'))
                         
-                        # Вычисляем среднюю яркость изображения
-                        mean_brightness = np.mean(img_array)
+                        if np is None:
+                            print(f"[PROXY-HEADER-SCREENSHOT] ⚠️ Пропускаем проверку белого скрина (numpy недоступен)")
+                        else:
+                            img_array = np.array(img.convert('RGB'))
+                            
+                            # Вычисляем среднюю яркость изображения
+                            mean_brightness = np.mean(img_array)
+                            
+                            # Вычисляем стандартное отклонение (для определения однородности)
+                            std_brightness = np.std(img_array)
                         
-                        # Вычисляем стандартное отклонение (для определения однородности)
-                        std_brightness = np.std(img_array)
+                            print(f"[PROXY-HEADER-SCREENSHOT] 📊 Средняя яркость: {mean_brightness:.2f}, Стандартное отклонение: {std_brightness:.2f}")
+                            
+                            # ОЧЕНЬ СТРОГАЯ проверка: яркость >230 и std <30 ИЛИ яркость >245 и std <35
+                            is_white_screen = (mean_brightness > 230 and std_brightness < 30) or (mean_brightness > 245 and std_brightness < 35)
                         
-                        print(f"[PROXY-HEADER-SCREENSHOT] 📊 Средняя яркость: {mean_brightness:.2f}, Стандартное отклонение: {std_brightness:.2f}")
-                        
-                        # ОЧЕНЬ СТРОГАЯ проверка: яркость >230 и std <30 ИЛИ яркость >245 и std <35
-                        is_white_screen = (mean_brightness > 230 and std_brightness < 30) or (mean_brightness > 245 and std_brightness < 35)
-                        
-                        if is_white_screen:
+                        if np is not None and is_white_screen:
                             print(f"[PROXY-HEADER-SCREENSHOT] ⚠️ ОБНАРУЖЕН БЕЛЫЙ СКРИН! Яркость: {mean_brightness:.2f}, Std: {std_brightness:.2f}")
                             
-                            # Делаем МНОГО попыток пересоздания (до 5 раз)
-                            max_retries = 5
+                            # Делаем ОПТИМИЗИРОВАННЫЕ попытки пересоздания (до 3 раз)
+                            max_retries = 3  # Уменьшено с 5 до 3
                             screenshot_fixed = False
                             
                             for retry_attempt in range(max_retries):
                                 print(f"[PROXY-HEADER-SCREENSHOT] 🔄 Попытка {retry_attempt + 1}/{max_retries} пересоздания скриншота...")
                                 
-                                # Ждем еще дольше
-                                await page.wait_for_timeout(5000)
+                                # Ждем меньше времени - ОПТИМИЗИРОВАНО
+                                await page.wait_for_timeout(2000)  # Уменьшено с 5000 до 2000
                                 
                                 # МАКСИМАЛЬНО АГРЕССИВНОЕ удаление модальных окон
                                 print(f"[PROXY-HEADER-SCREENSHOT] 🚪 МАКСИМАЛЬНО АГРЕССИВНОЕ удаление модальных окон...")
@@ -1173,7 +1259,10 @@ async def check_account_with_header_screenshot(
                                 await browser.close()
                                 return result
                         else:
-                            print(f"[PROXY-HEADER-SCREENSHOT] ✅ Скриншот нормальный (не белый)")
+                            if np is not None:
+                                print(f"[PROXY-HEADER-SCREENSHOT] ✅ Скриншот нормальный (не белый)")
+                            else:
+                                print(f"[PROXY-HEADER-SCREENSHOT] ✅ Скриншот создан (проверка белого экрана пропущена)")
                     
                     except ImportError:
                         print(f"[PROXY-HEADER-SCREENSHOT] ⚠️ PIL или numpy не установлены, пропускаем проверку белого скрина")
@@ -1204,5 +1293,10 @@ async def check_account_with_header_screenshot(
     except Exception as e:
         print(f"[PROXY-HEADER-SCREENSHOT] ❌ Критическая ошибка: {e}")
         result["error"] = str(e)
+    
+    # Выводим статистику трафика
+    traffic_stats = traffic_monitor.get_summary()
+    result["traffic_stats"] = traffic_stats
+    print(f"[TRAFFIC-MONITOR] 📊 Статистика трафика: {traffic_stats}")
     
     return result
