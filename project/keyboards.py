@@ -14,13 +14,24 @@ def main_menu(is_admin: bool = False, verify_mode: str = None) -> dict:
     
     Args:
         is_admin: Whether to show admin button
-        verify_mode: Current verification mode (to show/hide Instagram button)
+        verify_mode: Current verification mode (to show/hide buttons)
+                    - API button is shown ONLY if verify_mode is "api+proxy"
+                    - API button is hidden for all other modes
+                    - Instagram button is shown if verify_mode contains "instagram"
         
     Returns:
         dict with keyboard configuration
     """
     # Build third row based on verify_mode
-    third_row = [{"text": "API"}, {"text": "Прокси"}]
+    third_row = []
+    
+    # Show API button ONLY if verify_mode is "api+proxy"
+    # Hide API button for all other modes
+    if verify_mode and verify_mode.lower() == "api+proxy":
+        third_row.append({"text": "API"})
+    
+    # Always show Proxy button
+    third_row.append({"text": "Прокси"})
     
     # Show Instagram button only if verify_mode contains "instagram"
     if verify_mode and "instagram" in verify_mode.lower():
