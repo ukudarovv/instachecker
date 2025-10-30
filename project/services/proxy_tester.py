@@ -137,7 +137,7 @@ async def test_proxy_with_screenshot(
     bot_token: str = None
 ) -> Tuple[bool, str, Optional[str]]:
     """
-    Test proxy with Instagram check and screenshot.
+    Test proxy with Instagram check and generated profile image (NO BROWSER).
     
     Args:
         proxy: Proxy object
@@ -150,52 +150,93 @@ async def test_proxy_with_screenshot(
     proxy_url = build_proxy_url(proxy)
     
     try:
-        # Import universal checker
-        try:
-            from ..services.universal_playwright_checker import check_instagram_account_universal
-        except ImportError:
-            from services.universal_playwright_checker import check_instagram_account_universal
+        # Import API checker and profile generator
+        import sys
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
         
-        # Generate screenshot path
+        from test_api_with_profile_gen import generate_instagram_profile_image_improved
+        import aiohttp
+        
+        # Get Instagram API data via proxy WITH TRAFFIC MONITORING
+        url = f"https://www.instagram.com/api/v1/users/web_profile_info/?username={test_username}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "*/*",
+            "X-IG-App-ID": "936619743392459",
+        }
+        
+        # Traffic monitoring
+        traffic_sent = 0
+        traffic_received = 0
+        
+        timeout = aiohttp.ClientTimeout(total=15)
+        async with aiohttp.ClientSession(headers=headers, timeout=timeout) as session:
+            async with session.get(url, proxy=proxy_url) as resp:
+                if resp.status != 200:
+                    return False, f"❌ API ошибка: HTTP {resp.status}", None
+                
+                # Calculate traffic
+                content = await resp.read()
+                traffic_received = len(content)
+                
+                # Estimate sent traffic (headers + request line)
+                request_line = f"GET {url} HTTP/1.1\r\n"
+                headers_str = "\r\n".join([f"{k}: {v}" for k, v in headers.items()])
+                traffic_sent = len(request_line.encode()) + len(headers_str.encode()) + len(url.encode())
+                
+                # Parse JSON
+                import json
+                data = json.loads(content)
+                user = data.get("data", {}).get("user", {})
+                
+                if not user:
+                    return False, f"❌ Аккаунт @{test_username} не найден", None
+        
+        # Generate profile image
         screenshots_dir = "screenshots"
         os.makedirs(screenshots_dir, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         screenshot_path = os.path.join(screenshots_dir, f"{test_username}_{timestamp}.png")
         
-        # Test with header screenshot (same as ptest_screenshot mode)
-        try:
-            from .ig_screenshot import check_account_with_header_screenshot
-        except ImportError:
-            from ig_screenshot import check_account_with_header_screenshot
-        
-        result = await check_account_with_header_screenshot(
-            username=test_username,
-            proxy_url=proxy_url,
-            screenshot_path=screenshot_path,
-            headless=True,
-            timeout_ms=60000,
-            dark_theme=True,
-            mobile_emulation=False,  # Desktop режим (как в ptest_screenshot)
-            crop_ratio=0
+        result = await generate_instagram_profile_image_improved(
+            username=user.get("username", test_username),
+            full_name=user.get("full_name", ""),
+            posts=(user.get("edge_owner_to_timeline_media") or {}).get("count", 0),
+            followers=(user.get("edge_followed_by") or {}).get("count", 0),
+            following=(user.get("edge_follow") or {}).get("count", 0),
+            is_private=user.get("is_private", False),
+            is_verified=user.get("is_verified", False),
+            biography=user.get("biography", ""),
+            profile_pic_url=user.get("profile_pic_url_hd") or user.get("profile_pic_url") or "",
+            output_path=screenshot_path
         )
         
-        success = result.get('exists', False)
+        success = result.get('success', False)
         
-        if success and result.get('screenshot_path') and os.path.exists(result['screenshot_path']):
-            file_size = os.path.getsize(result['screenshot_path']) / 1024
+        if success and result.get('image_path') and os.path.exists(result['image_path']):
+            file_size = os.path.getsize(result['image_path']) / 1024
+            screenshot_path = result['image_path']
+            
+            # Calculate total traffic
+            total_traffic_kb = (traffic_sent + traffic_received) / 1024
             
             message = (
                 f"✅ <b>Прокси работает отлично!</b>\n\n"
-                f"📸 Скриншот профиля @{test_username}\n"
+                f"🎨 Шапка профиля @{test_username} сгенерирована\n"
                 f"📁 Размер файла: {file_size:.1f} KB\n"
                 f"🌐 Прокси: {proxy.scheme}://{proxy.host}\n"
-                f"⚡ Статус: Активен"
+                f"⚡ Статус: Активен\n"
+                f"🚀 Без браузера (API + генерация)\n\n"
+                f"📊 <b>Трафик:</b>\n"
+                f"   ⬆️ Отправлено: {traffic_sent / 1024:.2f} KB\n"
+                f"   ⬇️ Получено: {traffic_received / 1024:.2f} KB\n"
+                f"   📈 Всего: {total_traffic_kb:.2f} KB"
             )
             
             if result.get('error'):
                 message += f"\n⚠️ Предупреждение: {result['error']}"
             
-            return True, message, result['screenshot_path']
+            return True, message, screenshot_path
         else:
             error_msg = result.get('error', 'Неизвестная ошибка')
             return False, f"❌ Прокси не работает: {error_msg}", None

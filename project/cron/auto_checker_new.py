@@ -168,21 +168,35 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
                                 if start_datetime:
                                     current_datetime = datetime.now()
                                     time_diff = current_datetime - start_datetime
+                                    total_seconds = int(time_diff.total_seconds())
                                     
-                                    # If less than 24 hours, show hours
-                                    if time_diff.total_seconds() < 86400:  # 24 hours = 86400 seconds
-                                        hours = int(time_diff.total_seconds() / 3600)
-                                        if hours < 1:
-                                            hours = 1
-                                        completed_text = f"{hours} часов" if hours > 1 else "1 час"
-                                    else:
-                                        # Show days
-                                        completed_days = time_diff.days + 1  # +1 to include start day
-                                        completed_days = max(1, completed_days)
-                                        completed_text = f"{completed_days} дней"
+                                    # Calculate days, hours, minutes
+                                    days = total_seconds // 86400
+                                    remaining_seconds = total_seconds % 86400
+                                    hours = remaining_seconds // 3600
+                                    minutes = (remaining_seconds % 3600) // 60
+                                    
+                                    # Format result: "X дней Y часов Z минут"
+                                    parts = []
+                                    if days > 0:
+                                        parts.append(f"{days} {'день' if days == 1 else 'дней' if days > 4 else 'дня'}")
+                                    if hours > 0:
+                                        parts.append(f"{hours} {'час' if hours == 1 else 'часов' if hours > 4 else 'часа'}")
+                                    if minutes > 0 or not parts:  # Show minutes if present or if no days/hours
+                                        parts.append(f"{minutes} {'минута' if minutes == 1 else 'минут' if minutes > 4 else 'минуты'}")
+                                    
+                                    completed_text = " ".join(parts)
+                                
+                                # Format start date with time if available
+                                if hasattr(acc, 'from_date_time') and acc.from_date_time:
+                                    start_date_str = acc.from_date_time.strftime("%d.%m.%Y в %H:%M")
+                                elif acc.from_date:
+                                    start_date_str = acc.from_date.strftime("%d.%m.%Y")
+                                else:
+                                    start_date_str = "N/A"
                                 
                                 message = f"""Имя пользователя: <a href="https://www.instagram.com/{acc.account}/">{acc.account}</a>
-Начало работ: {acc.from_date.strftime("%d.%m.%Y") if acc.from_date else "N/A"}
+Начало работ: {start_date_str}
 Заявлено: {acc.period} дней
 Завершено за: {completed_text}
 Конец работ: {acc.to_date.strftime("%d.%m.%Y") if acc.to_date else "N/A"}

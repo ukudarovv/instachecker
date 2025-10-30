@@ -20,14 +20,12 @@ from datetime import date
 try:
     from ..models import Account, Proxy
     from ..config import get_settings
-    from .ig_screenshot import check_account_with_header_screenshot
     from .proxy_utils import select_best_proxy, is_available
     from .traffic_monitor import get_traffic_monitor
     from .traffic_decorator import TrafficAwareSession
 except ImportError:
     from models import Account, Proxy
     from config import get_settings
-    from services.ig_screenshot import check_account_with_header_screenshot
     from services.proxy_utils import select_best_proxy, is_available
     from services.traffic_monitor import get_traffic_monitor
     from services.traffic_decorator import TrafficAwareSession
@@ -639,111 +637,48 @@ async def check_account_via_api_v2_proxy(
             "error": api_result.get("error")
         })
         
-                 # Если аккаунт существует - делаем скриншот
+                 # Если аккаунт существует — генерируем шапку профиля вместо реального скриншота
         if api_result.get("exists") is True:
-            print(f"[API-V2-PROXY] ✅ Аккаунт @{username} существует - создаем скриншот через Playwright с прокси (как при тесте прокси)")
-            
-            # Создаем скриншот через Playwright С ПРОКСИ (как при тесте прокси)
-            screenshot_result = {
-                "exists": None,
-                "screenshot_path": None,
-                "error": None,
-                "proxy_used": None
-            }
-            
+            print(f"[API-V2-PROXY] ✅ Аккаунт @{username} существует — генерируем шапку профиля (без браузера)")
             try:
                 import os
-                
-                # Создаем директорию если не существует
                 os.makedirs(os.path.dirname(screenshot_path), exist_ok=True)
-                
-                # Получаем лучший прокси для скриншота
-                best_proxy = select_best_proxy(session, user_id)
-                
-                if not best_proxy:
-                    print(f"[API-V2-PROXY] ⚠️ Нет доступного прокси для скриншота")
-                    screenshot_result["proxy_used"] = "none"
-                    screenshot_result["error"] = "no_proxy_for_screenshot"
+                # Импорт генератора шапки
+                from test_api_with_profile_gen import generate_instagram_profile_image_improved
+                gen = await generate_instagram_profile_image_improved(
+                    username=api_result.get('username', username),
+                    full_name=api_result.get('full_name', ''),
+                    posts=api_result.get('posts', 0),
+                    followers=api_result.get('followers', 0),
+                    following=api_result.get('following', 0),
+                    is_private=api_result.get('is_private', False),
+                    is_verified=api_result.get('is_verified', False),
+                    biography=api_result.get('biography', ''),
+                    profile_pic_url=api_result.get('profile_pic_url', ''),
+                    output_path=screenshot_path.replace('header_', 'profile_')
+                )
+                if gen.get("success"):
+                    result["screenshot_path"] = gen.get("image_path")
                 else:
-                    # Расшифровываем пароль прокси (как в enhanced_proxy_tester)
-                    try:
-                        settings = get_settings()
-                        from ..utils.encryptor import OptionalFernet
-                        encryptor = OptionalFernet(settings.encryption_key)
-                        decrypted_password = encryptor.decrypt(best_proxy.password)
-                    except:
-                        # Fallback: если не удалось расшифровать, используем как есть
-                        decrypted_password = best_proxy.password
-                    
-                    # Формируем URL прокси для скриншота
-                    proxy_url_for_screenshot = f"{best_proxy.scheme}://{best_proxy.username}:{decrypted_password}@{best_proxy.host}"
-                    print(f"[API-V2-PROXY] 🔗 Используем прокси для скриншота: {best_proxy.scheme}://{best_proxy.host}")
-                    screenshot_result["proxy_used"] = best_proxy.host
-                    
-                    # Используем Playwright (как в тесте прокси)
-                    from .ig_screenshot import check_account_with_header_screenshot
-                    
-                    print(f"[API-V2-PLAYWRIGHT] 🎭 Создание скриншота через Playwright с прокси (как в тесте)")
-                    
-                    # Точно такие же параметры как в test_proxy_screenshot
-                    result = await check_account_with_header_screenshot(
-                        username=username,
-                        proxy_url=proxy_url_for_screenshot,
-                        screenshot_path=screenshot_path,
-                        headless=True,
-                        timeout_ms=60000,
-                        dark_theme=True,
-                        mobile_emulation=False,
-                        crop_ratio=0
-                    )
-                    
-                    if result.get('exists') and result.get('screenshot_path') and os.path.exists(result['screenshot_path']):
-                        file_size = os.path.getsize(result['screenshot_path']) / 1024
-                        screenshot_result["screenshot_path"] = result['screenshot_path']
-                        screenshot_result["exists"] = True
-                        print(f"[API-V2-PROXY] ✅ Playwright скриншот создан: {result['screenshot_path']} ({file_size:.1f} KB)")
-                    else:
-                        error_msg = result.get('error', 'Неизвестная ошибка')
-                        print(f"[API-V2-PROXY] ⚠️ Не удалось создать скриншот: {error_msg}")
-                        screenshot_result["error"] = error_msg
-                    
+                    result["error"] = gen.get("error", "header_generation_failed")
             except Exception as e:
-                print(f"[API-V2-PROXY] ❌ Ошибка создания Playwright скриншота: {e}")
-                screenshot_result["error"] = f"screenshot_error: {str(e)}"
-                import traceback
-                traceback.print_exc()
-            
-            # Обновляем результат с данными из скриншота
-            print(f"[API-V2-DEBUG] screenshot_result: {screenshot_result}")
-            print(f"[API-V2-DEBUG] screenshot_result.get('exists'): {screenshot_result.get('exists')}")
-            print(f"[API-V2-DEBUG] screenshot_result.get('exists') is True: {screenshot_result.get('exists') is True}")
-            
-            if screenshot_result.get("exists") is True:
-                print(f"[API-V2-DEBUG] Входим в блок if screenshot_result.get('exists') is True")
-                result.update({
-                    "exists": screenshot_result.get("exists"),
-                    "full_name": screenshot_result.get("full_name"),
-                    "followers": screenshot_result.get("followers"),
-                    "following": screenshot_result.get("following"),
-                    "posts": screenshot_result.get("posts"),
-                    "is_verified": screenshot_result.get("is_verified"),
-                    "is_private": screenshot_result.get("is_private"),
-                    "screenshot_path": screenshot_result.get("screenshot_path"),
-                    "proxy_used": screenshot_result.get("proxy_used")
-                })
-                
-                if screenshot_result.get("screenshot_path"):
-                    print(f"[API-V2-PROXY] 📸 Скриншот создан: {screenshot_result['screenshot_path']}")
-                else:
-                    print(f"[API-V2-PROXY] ⚠️ Не удалось создать скриншот, но аккаунт найден")
-                
-                # ВАЖНО: Скриншот создан и аккаунт существует, НО он всё еще АКТИВЕН (на проверке)
-                # НЕ помечаем как done, так как аккаунт активен и требует мониторинга
-                print(f"[API-V2-PROXY] ✅ Аккаунт @{username} АКТИВЕН (exists=True)")
-                print(f"[API-V2-PROXY] 📌 Аккаунт остается на проверке (done=False) для дальнейшего мониторинга")
-            else:
-                print(f"[API-V2-PROXY] ⚠️ Скриншот не подтвердил существование аккаунта")
-                result["error"] = "screenshot_verification_failed"
+                result["error"] = f"header_generation_exception: {e}"
+            # Обновляем статус аккаунта в БД как активный (найден)
+            try:
+                normalized_username = (api_result.get('username') or username).lower()
+                account = session.query(Account).filter(
+                    Account.user_id == user_id,
+                    Account.account == normalized_username
+                ).first()
+                if account:
+                    account.done = True
+                    account.date_of_finish = date.today()
+                    session.commit()
+                    print(f"[API-V2-PROXY] ✅ Аккаунт @{normalized_username} помечен как активный (найден)")
+            except Exception as db_e:
+                session.rollback()
+                print(f"[API-V2-PROXY] ⚠️ Не удалось обновить статус аккаунта в БД: {db_e}")
+            return result
         
         elif api_result.get("exists") is False:
             print(f"[API-V2-PROXY] ❌ Аккаунт @{username} не существует")

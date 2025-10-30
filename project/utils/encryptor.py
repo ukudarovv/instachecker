@@ -7,7 +7,7 @@ from cryptography.fernet import Fernet
 class OptionalFernet:
     """Optional Fernet encryption - works with or without encryption key."""
     
-    def __init__(self, key: Optional[str]):
+    def __init__(self, key: Optional[str] = None):
         """Initialize with optional encryption key."""
         self._fernet = None
         if key:
