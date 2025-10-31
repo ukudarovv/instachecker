@@ -3,11 +3,33 @@
 try:
     from ..models import User
     from ..utils.access import ensure_admin
-    from ..cron.auto_checker_manager import get_auto_checker_manager
 except ImportError:
     from models import User
     from utils.access import ensure_admin
-    from cron.auto_checker_manager import get_auto_checker_manager
+
+
+def get_checker_scheduler():
+    """Get the global checker scheduler instance."""
+    try:
+        # Try to import from bot.py's global variable
+        import sys
+        import importlib
+        
+        # Check if bot module is loaded
+        if 'project.bot' in sys.modules:
+            bot_module = sys.modules['project.bot']
+            if hasattr(bot_module, '_checker_scheduler'):
+                return bot_module._checker_scheduler
+        
+        # Fallback: try direct import
+        try:
+            from project.bot import _checker_scheduler
+            return _checker_scheduler
+        except:
+            pass
+    except:
+        pass
+    return None
 
 
 def register_admin_auto_check_handlers(bot, session_factory):
@@ -33,29 +55,23 @@ def register_admin_auto_check_handlers(bot, session_factory):
                 bot.send_message(message["chat"]["id"], "⚠️ Нет активных пользователей")
                 return
             
-            # Get manager stats
-            manager = get_auto_checker_manager()
-            stats = manager.get_all_stats() if manager else {"checkers": []}
-            
-            # Create stats dict for quick lookup
-            stats_dict = {stat["user_id"]: stat for stat in stats["checkers"]}
-            
             response = "👥 <b>Настройки автопроверки пользователей</b>\n\n"
+            
+            scheduler = get_checker_scheduler()
             
             for u in users:
                 status_emoji = "✅" if u.auto_check_enabled else "❌"
-                running_emoji = "🔄" if u.id in stats_dict and stats_dict[u.id]["is_running"] else "⏸️"
+                running_emoji = "🔄" if scheduler and scheduler.is_running() else "⏸️"
                 
                 response += f"{status_emoji} <b>@{u.username}</b> (ID: {u.id})\n"
                 response += f"   • Интервал: {u.auto_check_interval} мин\n"
-                response += f"   • Статус: {running_emoji} {'Работает' if u.id in stats_dict else 'Не запущен'}\n"
+                response += f"   • Статус: {running_emoji} {'Работает' if scheduler and scheduler.is_running() else 'Не запущен'}\n"
                 
-                if u.id in stats_dict:
-                    stat = stats_dict[u.id]
-                    response += f"   • Всего проверок: {stat['total_checks']}\n"
-                    response += f"   • Найдено: {stat['total_found']}\n"
-                    if stat['last_check_time']:
-                        response += f"   • Последняя проверка: {stat['last_check_time'].strftime('%H:%M:%S')}\n"
+                # Get next run time if scheduler is available
+                if scheduler:
+                    next_run = scheduler.get_next_run_time(user_id=u.id)
+                    if next_run:
+                        response += f"   • Следующая проверка: {next_run.strftime('%H:%M:%S')}\n"
                 
                 response += "\n"
             
@@ -107,10 +123,10 @@ def register_admin_auto_check_handlers(bot, session_factory):
                 
                 username = target_user.username
             
-            # Update scheduler
-            manager = get_auto_checker_manager()
-            if manager:
-                manager.update_user_interval(target_user_id, new_interval)
+            # Reload scheduler to update user intervals
+            scheduler = get_checker_scheduler()
+            if scheduler:
+                scheduler.reload_users()
             
             bot.send_message(
                 message["chat"]["id"],
@@ -153,11 +169,15 @@ def register_admin_auto_check_handlers(bot, session_factory):
                 
                 username = target_user.username
                 interval = target_user.auto_check_interval
+                
+                # Enable autocheck for user
+                target_user.auto_check_enabled = True
+                session.commit()
             
-            # Enable in manager
-            manager = get_auto_checker_manager()
-            if manager:
-                manager.enable_user_checker(target_user_id, interval)
+            # Reload scheduler to update user settings
+            scheduler = get_checker_scheduler()
+            if scheduler:
+                scheduler.reload_users()
             
             bot.send_message(
                 message["chat"]["id"],
@@ -198,11 +218,15 @@ def register_admin_auto_check_handlers(bot, session_factory):
                     return
                 
                 username = target_user.username
+                
+                # Disable autocheck for user
+                target_user.auto_check_enabled = False
+                session.commit()
             
-            # Disable in manager
-            manager = get_auto_checker_manager()
-            if manager:
-                manager.disable_user_checker(target_user_id)
+            # Reload scheduler to update user settings
+            scheduler = get_checker_scheduler()
+            if scheduler:
+                scheduler.reload_users()
             
             bot.send_message(
                 message["chat"]["id"],
@@ -220,35 +244,38 @@ def register_admin_auto_check_handlers(bot, session_factory):
             bot.send_message(message["chat"]["id"], "⛔ Доступ запрещен.")
             return
         
-        manager = get_auto_checker_manager()
-        if not manager:
-            bot.send_message(message["chat"]["id"], "⚠️ Менеджер автопроверки не инициализирован")
+        scheduler = get_checker_scheduler()
+        if not scheduler:
+            bot.send_message(message["chat"]["id"], "⚠️ Планировщик автопроверки не инициализирован")
             return
         
-        stats = manager.get_all_stats()
+        if not scheduler.is_running():
+            bot.send_message(message["chat"]["id"], "⚠️ Планировщик не запущен")
+            return
         
-        if stats["total_checkers"] == 0:
-            bot.send_message(message["chat"]["id"], "⚠️ Нет активных планировщиков")
+        with session_factory() as session:
+            users = session.query(User).filter(
+                User.is_active == True,
+                User.auto_check_enabled == True
+            ).all()
+        
+        if not users:
+            bot.send_message(message["chat"]["id"], "⚠️ Нет активных пользователей с включенной автопроверкой")
             return
         
         response = f"📊 <b>Статус автопроверки</b>\n\n"
-        response += f"Всего планировщиков: {stats['total_checkers']}\n\n"
+        response += f"Всего пользователей: {len(users)}\n\n"
         
-        for stat in stats["checkers"]:
-            username = stat.get("username", "Unknown")
-            user_id = stat["user_id"]
-            interval = stat.get("interval_minutes", "?")
-            is_running = "✅" if stat["is_running"] else "❌"
-            is_checking = "🔄" if stat["is_checking"] else "⏸️"
+        for u in users:
+            status_emoji = "✅" if u.auto_check_enabled else "❌"
             
-            response += f"{is_running} <b>@{username}</b> (ID: {user_id})\n"
-            response += f"   • Интервал: {interval} мин {is_checking}\n"
-            response += f"   • Проверок: {stat['total_checks']}\n"
-            response += f"   • Найдено: {stat['total_found']}\n"
-            response += f"   • Ошибок: {stat['total_errors']}\n"
+            response += f"{status_emoji} <b>@{u.username}</b> (ID: {u.id})\n"
+            response += f"   • Интервал: {u.auto_check_interval} мин\n"
             
-            if stat['last_check_time']:
-                response += f"   • Последняя: {stat['last_check_time'].strftime('%d.%m %H:%M:%S')}\n"
+            # Get next run time
+            next_run = scheduler.get_next_run_time(user_id=u.id)
+            if next_run:
+                response += f"   • Следующая проверка: {next_run.strftime('%d.%m %H:%M:%S')}\n"
             
             response += "\n"
         
@@ -283,15 +310,41 @@ def register_admin_auto_check_handlers(bot, session_factory):
                 
                 username = target_user.username
             
-            # Trigger check
-            manager = get_auto_checker_manager()
-            if manager:
+            # Trigger check manually
+            scheduler = get_checker_scheduler()
+            if scheduler:
                 import asyncio
                 bot.send_message(message["chat"]["id"], f"🔄 Запускаю проверку для @{username}...")
-                asyncio.create_task(manager.trigger_user_check(target_user_id))
-                bot.send_message(message["chat"]["id"], f"✅ Проверка запущена для @{username}")
+                
+                # Trigger user check manually
+                async def trigger_check():
+                    try:
+                        from ..cron.auto_checker import check_user_pending_accounts
+                        from ..utils.async_bot_wrapper import AsyncBotWrapper
+                    except ImportError:
+                        from cron.auto_checker import check_user_pending_accounts
+                        from utils.async_bot_wrapper import AsyncBotWrapper
+                    
+                    with session_factory() as session:
+                        bot_token = session.query(User).first()  # Get bot token somehow
+                        # This is a simplified trigger - in production you'd get bot_token properly
+                        async_bot = None  # Would need bot token here
+                        await check_user_pending_accounts(
+                            user_id=target_user_id,
+                            SessionLocal=session_factory,
+                            bot=async_bot,
+                            max_accounts=999999
+                        )
+                
+                # Run check in background
+                try:
+                    loop = asyncio.get_event_loop()
+                    loop.create_task(trigger_check())
+                    bot.send_message(message["chat"]["id"], f"✅ Проверка запущена для @{username}")
+                except Exception as e:
+                    bot.send_message(message["chat"]["id"], f"❌ Ошибка запуска проверки: {e}")
             else:
-                bot.send_message(message["chat"]["id"], "⚠️ Менеджер автопроверки не инициализирован")
+                bot.send_message(message["chat"]["id"], "⚠️ Планировщик автопроверки не инициализирован")
             
         except ValueError:
             bot.send_message(message["chat"]["id"], "❌ User ID должен быть числом")

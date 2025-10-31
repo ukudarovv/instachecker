@@ -130,21 +130,24 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
 Завершено за: {completed_text}
 Конец работ: {acc.to_date.strftime("%d.%m.%Y") if acc.to_date else "N/A"}
 Статус: Аккаунт разблокирован✅"""
-                            
-                                await bot.send_message(user.id, message)
                                 
-                                # Send screenshot if available
+                                # Send screenshot with message as caption
                                 if screenshot_path and os.path.exists(screenshot_path):
                                     try:
                                                 success = await bot.send_photo(
                                                     user.id,
                                                     screenshot_path,
-                                                    f'📸 <a href="https://www.instagram.com/{acc.account}/">@{acc.account}</a>'
+                                                    message
                                                 )
                                                 if success:
-                                                    print(f"[AUTO-CHECK] 📸 Screenshot sent successfully!")
+                                                    print(f"[AUTO-CHECK] 📸 Screenshot sent successfully with caption!")
                                     except Exception as e:
                                         print(f"[AUTO-CHECK] ❌ Failed to send photo: {e}")
+                                        # Fallback: send message separately if photo fails
+                                        await bot.send_message(user.id, message)
+                                else:
+                                    # If no screenshot, send message separately
+                                    await bot.send_message(user.id, message)
                                     
                             except Exception as e:
                                 print(f"[AUTO-CHECK] ❌ Failed to send notification to user {user.id}: {e}")
@@ -180,6 +183,54 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
         
         print(f"[AUTO-CHECK] 🧵 User {user_id} check complete: {checked} checked, {found} found, {not_found} not found, {errors} errors")
         return {"checked": checked, "found": found, "not_found": not_found, "errors": errors}
+
+
+async def check_user_pending_accounts(user_id: int, SessionLocal: sessionmaker, bot=None, max_accounts: int = 999999):
+    """
+    Check pending accounts (done=False) for a specific user.
+    
+    Args:
+        user_id: User ID to check accounts for
+        SessionLocal: SQLAlchemy session factory
+        bot: Optional TelegramBot instance to send notifications
+        max_accounts: Maximum number of accounts to check per run
+    """
+    settings = get_settings()
+    fernet = OptionalFernet(settings.encryption_key)
+    
+    with SessionLocal() as session:
+        # Check if user exists and autocheck is enabled
+        user = session.query(User).get(user_id)
+        if not user:
+            print(f"[AUTO-CHECK-USER-{user_id}] ❌ User {user_id} not found")
+            return
+        
+        if not user.auto_check_enabled:
+            print(f"[AUTO-CHECK-USER-{user_id}] ⏸️ Auto-check disabled for user {user_id}")
+            return
+        
+        # Get pending accounts for this user only
+        pending_accounts = (
+            session.query(Account)
+            .filter(
+                Account.user_id == user_id,
+                Account.done == False
+            )
+            .order_by(Account.from_date.asc())
+            .limit(max_accounts)
+            .all()
+        )
+        
+        if not pending_accounts:
+            print(f"[AUTO-CHECK-USER-{user_id}] No pending accounts to check.")
+            return
+        
+        print(f"[AUTO-CHECK-USER-{user_id}] {datetime.now()} - Starting check for user {user_id} with {len(pending_accounts)} accounts")
+        
+        # Check accounts for this user
+        result = await check_user_accounts(user_id, pending_accounts, SessionLocal, fernet, bot)
+        
+        print(f"[AUTO-CHECK-USER-{user_id}] ✅ Check completed: {result.get('checked', 0)} checked, {result.get('found', 0)} found")
 
 
 async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accounts: int = 5, notify_admin: bool = True):

@@ -1,35 +1,37 @@
 """
 Auto-checker using APScheduler for reliable interval-based checking.
-This replaces the threading-based approach with a more robust scheduler.
+This creates separate scheduler jobs for each user with their own intervals.
 """
 
 import asyncio
 import threading
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict
 from sqlalchemy.orm import sessionmaker
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
 try:
-    from .cron.auto_checker import check_pending_accounts
+    from .cron.auto_checker import check_user_pending_accounts
     from .utils.async_bot_wrapper import AsyncBotWrapper
+    from .models import User
 except ImportError:
-    from cron.auto_checker import check_pending_accounts
+    from cron.auto_checker import check_user_pending_accounts
     from utils.async_bot_wrapper import AsyncBotWrapper
+    from models import User
 
 
 class AutoCheckerScheduler:
     """
     Automatic account checker using APScheduler.
-    Runs checks at specified intervals using AsyncIOScheduler.
+    Creates separate scheduler jobs for each user with their individual intervals.
     """
     
     def __init__(
         self,
         bot_token: str,
         SessionLocal: sessionmaker,
-        interval_minutes: int = 5,
+        interval_minutes: int = 5,  # Legacy: not used anymore, each user has their own interval
         run_immediately: bool = True,
     ):
         """
@@ -38,12 +40,11 @@ class AutoCheckerScheduler:
         Args:
             bot_token: Telegram bot token
             SessionLocal: SQLAlchemy session factory
-            interval_minutes: Check interval in minutes (default: 5)
+            interval_minutes: Legacy parameter (not used, each user has their own interval)
             run_immediately: Run initial check on startup (default: True)
         """
         self._bot_token = bot_token
         self._SessionLocal = SessionLocal
-        self._interval_minutes = interval_minutes
         self._run_immediately = run_immediately
         
         # Initialize scheduler
@@ -52,29 +53,75 @@ class AutoCheckerScheduler:
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._stop_event = threading.Event()
         
-        print(f"[AUTO-CHECK-SCHEDULER] Initialized (interval: {interval_minutes} minutes)")
+        # Track user jobs: {user_id: job_id}
+        self._user_jobs: Dict[int, str] = {}
+        
+        print(f"[AUTO-CHECK-SCHEDULER] Initialized (per-user intervals)")
     
-    async def _check_job(self):
-        """Job that runs on schedule."""
+    async def _check_user_job(self, user_id: int):
+        """Job that runs on schedule for a specific user."""
         try:
-            print(f"[AUTO-CHECK-SCHEDULER] Starting check at {datetime.now()}")
+            print(f"[AUTO-CHECK-SCHEDULER-USER-{user_id}] Starting check at {datetime.now()}")
             
             # Create bot wrapper for this check
             async_bot = AsyncBotWrapper(self._bot_token)
             
-            await check_pending_accounts(
+            await check_user_pending_accounts(
+                user_id=user_id,
                 SessionLocal=self._SessionLocal,
                 bot=async_bot,
-                max_accounts=999999,
-                notify_admin=True
+                max_accounts=999999
             )
             
-            print(f"[AUTO-CHECK-SCHEDULER] Check completed at {datetime.now()}")
+            print(f"[AUTO-CHECK-SCHEDULER-USER-{user_id}] Check completed at {datetime.now()}")
             
         except Exception as e:
-            print(f"[AUTO-CHECK-SCHEDULER] Error during check: {e}")
+            print(f"[AUTO-CHECK-SCHEDULER-USER-{user_id}] Error during check: {e}")
             import traceback
             traceback.print_exc()
+    
+    def _load_and_schedule_users(self):
+        """Load all users with autocheck enabled and schedule their jobs."""
+        with self._SessionLocal() as session:
+            # Get all active users with autocheck enabled
+            users = session.query(User).filter(
+                User.is_active == True,
+                User.auto_check_enabled == True
+            ).all()
+            
+            print(f"[AUTO-CHECK-SCHEDULER] Found {len(users)} users with autocheck enabled")
+            
+            for user in users:
+                interval = user.auto_check_interval or 5  # Default to 5 minutes if not set
+                job_id = f"user_check_{user.id}"
+                user_id = user.id  # Capture user_id in local variable to avoid closure issue
+                
+                # Remove existing job if it exists
+                if job_id in self._user_jobs.values():
+                    try:
+                        self._scheduler.remove_job(job_id)
+                    except:
+                        pass
+                
+                # Create async wrapper function factory to properly capture user_id
+                def make_user_check_job(uid):
+                    async def user_check_job():
+                        await self._check_user_job(uid)
+                    return user_check_job
+                
+                # Add job with user's specific interval
+                self._scheduler.add_job(
+                    make_user_check_job(user_id),
+                    trigger=IntervalTrigger(minutes=interval),
+                    id=job_id,
+                    name=f'User {user_id} Auto-Check ({interval} min)',
+                    replace_existing=True,
+                    max_instances=1,  # Prevent overlapping runs
+                    coalesce=True,    # Combine missed runs into one
+                )
+                
+                self._user_jobs[user_id] = job_id
+                print(f"[AUTO-CHECK-SCHEDULER] ✅ Scheduled user {user_id} (@{user.username}) - interval: {interval} minutes")
     
     def _run_scheduler(self):
         """Run scheduler in separate thread with its own event loop."""
@@ -86,28 +133,24 @@ class AutoCheckerScheduler:
             # Create scheduler
             self._scheduler = AsyncIOScheduler()
             
-            # Add job with interval trigger
-            self._scheduler.add_job(
-                self._check_job,
-                trigger=IntervalTrigger(minutes=self._interval_minutes),
-                id='auto_check',
-                name='Instagram Account Auto-Check',
-                replace_existing=True,
-                max_instances=1,  # Prevent overlapping runs
-                coalesce=True,    # Combine missed runs into one
-            )
+            # Load users and schedule their jobs
+            self._load_and_schedule_users()
             
             # Start scheduler
             self._scheduler.start()
             
-            print(f"[AUTO-CHECK-SCHEDULER] Scheduler started (every {self._interval_minutes} minutes)")
-            if self._scheduler.get_jobs():
-                print(f"[AUTO-CHECK-SCHEDULER] Next check scheduled at: {self._scheduler.get_jobs()[0].next_run_time}")
+            print(f"[AUTO-CHECK-SCHEDULER] Scheduler started with {len(self._user_jobs)} user jobs")
             
             # Run immediate check if requested
             if self._run_immediately:
-                print("[AUTO-CHECK-SCHEDULER] Running immediate initial check...")
-                self._loop.run_until_complete(self._check_job())
+                print("[AUTO-CHECK-SCHEDULER] Running immediate initial checks...")
+                # Run initial check for all users
+                tasks = []
+                for user_id in self._user_jobs.keys():
+                    tasks.append(self._check_user_job(user_id))
+                
+                if tasks:
+                    self._loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
             
             # Run event loop until stop event is set
             while not self._stop_event.is_set():
@@ -140,15 +183,46 @@ class AutoCheckerScheduler:
             self._thread.join(timeout=5)
         print("[AUTO-CHECK-SCHEDULER] Scheduler stopped")
     
-    def get_next_run_time(self) -> Optional[datetime]:
-        """Get next scheduled run time."""
-        if self._scheduler and self._scheduler.running:
+    def reload_users(self):
+        """Reload users and update scheduler jobs. Call this when users are added/removed or intervals change."""
+        if self._scheduler and self._scheduler.running and self._loop:
+            print("[AUTO-CHECK-SCHEDULER] Reloading users and updating jobs...")
+            # Schedule reload in the event loop thread-safe way
+            def reload():
+                try:
+                    self._load_and_schedule_users()
+                except Exception as e:
+                    print(f"[AUTO-CHECK-SCHEDULER] Error reloading users: {e}")
+            
+            # Schedule in the event loop
+            if self._loop.is_running():
+                self._loop.call_soon_threadsafe(reload)
+            else:
+                # If loop is not running, call directly (shouldn't happen normally)
+                reload()
+    
+    def get_next_run_time(self, user_id: Optional[int] = None) -> Optional[datetime]:
+        """Get next scheduled run time for a user or all users."""
+        if not self._scheduler or not self._scheduler.running:
+            return None
+        
+        if user_id:
+            # Get next run time for specific user
+            job_id = self._user_jobs.get(user_id)
+            if job_id:
+                job = self._scheduler.get_job(job_id)
+                if job:
+                    return job.next_run_time
+        else:
+            # Get earliest next run time across all users
             jobs = self._scheduler.get_jobs()
             if jobs:
-                return jobs[0].next_run_time
+                next_times = [job.next_run_time for job in jobs if job.next_run_time]
+                if next_times:
+                    return min(next_times)
+        
         return None
     
     def is_running(self) -> bool:
         """Check if scheduler is running."""
         return self._scheduler is not None and self._scheduler.running
-
