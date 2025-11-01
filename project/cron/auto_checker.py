@@ -10,14 +10,56 @@ try:
     from ..models import Account, User
     from ..services.main_checker import check_account_main
     from ..services.system_settings import get_global_verify_mode
+    from ..services.traffic_monitor import get_traffic_monitor
+    from ..services.autocheck_traffic_stats import AutoCheckTrafficStats
     from ..utils.encryptor import OptionalFernet
     from ..config import get_settings
 except ImportError:
     from models import Account, User
     from services.main_checker import check_account_main
     from services.system_settings import get_global_verify_mode
+    from services.traffic_monitor import get_traffic_monitor
+    from services.autocheck_traffic_stats import AutoCheckTrafficStats
     from utils.encryptor import OptionalFernet
     from config import get_settings
+
+
+async def send_traffic_report_to_admins(SessionLocal: sessionmaker, bot, user_id: int, traffic_stats):
+    """
+    Send traffic report to all admin users.
+    
+    Args:
+        SessionLocal: SQLAlchemy session factory
+        bot: TelegramBot instance
+        user_id: User ID that was checked
+        traffic_stats: AutoCheckTrafficStats instance with statistics
+    """
+    with SessionLocal() as session:
+        # Get all admin users
+        admin_users = session.query(User).filter(
+            User.role.in_(['admin', 'superuser']),
+            User.is_active == True
+        ).all()
+        
+        if not admin_users:
+            print("[AUTO-CHECK] ⚠️ No admin users found to send traffic report")
+            return
+        
+        # Get checked user info
+        checked_user = session.query(User).get(user_id)
+        username = checked_user.username if checked_user else f"User {user_id}"
+        
+        # Generate report
+        report = f"👤 <b>Пользователь: @{username}</b>\n\n"
+        report += traffic_stats.get_report()
+        
+        # Send report to all admins
+        for admin in admin_users:
+            try:
+                await bot.send_message(admin.id, report)
+                print(f"[AUTO-CHECK] 📤 Traffic report sent to admin {admin.id} (@{admin.username})")
+            except Exception as e:
+                print(f"[AUTO-CHECK] ❌ Failed to send traffic report to admin {admin.id}: {e}")
 
 
 async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: sessionmaker, fernet: OptionalFernet, bot=None):
@@ -38,6 +80,13 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
     not_found = 0
     errors = 0
     
+    # Initialize traffic statistics tracker
+    traffic_stats = AutoCheckTrafficStats()
+    traffic_monitor = get_traffic_monitor()
+    
+    # Get initial traffic count
+    initial_traffic = traffic_monitor.total_traffic
+    
     with SessionLocal() as session:
         # Get user info
         user = session.query(User).get(user_id)
@@ -51,6 +100,9 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
         
         # Check all accounts using new main_checker logic
         for idx, acc in enumerate(user_accounts):
+            check_start_traffic = traffic_monitor.total_traffic
+            check_start_time = datetime.now()
+            
             try:
                 print(f"[AUTO-CHECK] [{idx+1}/{len(user_accounts)}] Проверка @{acc.account}...")
                 
@@ -62,6 +114,20 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
                     )
                 
                 checked += 1
+                
+                # Calculate traffic consumed by this check
+                check_end_time = datetime.now()
+                check_traffic = traffic_monitor.total_traffic - check_start_traffic
+                check_duration_ms = (check_end_time - check_start_time).total_seconds() * 1000
+                
+                # Add to traffic stats
+                traffic_stats.add_check(
+                    username=acc.account,
+                    is_active=success,
+                    traffic_bytes=check_traffic,
+                    duration_ms=check_duration_ms,
+                    error=False
+                )
                     
                 if success:
                     found += 1
@@ -180,12 +246,37 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
             except Exception as e:
                 errors += 1
                 print(f"[AUTO-CHECK] ❌ Error checking @{acc.account}: {str(e)}")
+                
+                # Calculate traffic even for errors
+                check_end_time = datetime.now()
+                check_traffic = traffic_monitor.total_traffic - check_start_traffic
+                check_duration_ms = (check_end_time - check_start_time).total_seconds() * 1000
+                
+                # Add error to traffic stats
+                traffic_stats.add_check(
+                    username=acc.account,
+                    is_active=False,
+                    traffic_bytes=check_traffic,
+                    duration_ms=check_duration_ms,
+                    error=True
+                )
+        
+        # Finalize traffic stats
+        traffic_stats.finalize()
         
         print(f"[AUTO-CHECK] 🧵 User {user_id} check complete: {checked} checked, {found} found, {not_found} not found, {errors} errors")
-        return {"checked": checked, "found": found, "not_found": not_found, "errors": errors}
+        print(f"[AUTO-CHECK] 📊 Total traffic consumed: {traffic_stats.format_bytes(traffic_monitor.total_traffic - initial_traffic)}")
+        
+        return {
+            "checked": checked,
+            "found": found,
+            "not_found": not_found,
+            "errors": errors,
+            "traffic_stats": traffic_stats
+        }
 
 
-async def check_user_pending_accounts(user_id: int, SessionLocal: sessionmaker, bot=None, max_accounts: int = 999999):
+async def check_user_pending_accounts(user_id: int, SessionLocal: sessionmaker, bot=None, max_accounts: int = 999999, send_report: bool = True):
     """
     Check pending accounts (done=False) for a specific user.
     
@@ -194,6 +285,7 @@ async def check_user_pending_accounts(user_id: int, SessionLocal: sessionmaker, 
         SessionLocal: SQLAlchemy session factory
         bot: Optional TelegramBot instance to send notifications
         max_accounts: Maximum number of accounts to check per run
+        send_report: Send traffic report to admins after check
     """
     settings = get_settings()
     fernet = OptionalFernet(settings.encryption_key)
@@ -231,6 +323,15 @@ async def check_user_pending_accounts(user_id: int, SessionLocal: sessionmaker, 
         result = await check_user_accounts(user_id, pending_accounts, SessionLocal, fernet, bot)
         
         print(f"[AUTO-CHECK-USER-{user_id}] ✅ Check completed: {result.get('checked', 0)} checked, {result.get('found', 0)} found")
+        
+        # Send traffic report to admins if requested
+        if send_report and bot and result.get('traffic_stats'):
+            await send_traffic_report_to_admins(
+                SessionLocal=SessionLocal,
+                bot=bot,
+                user_id=user_id,
+                traffic_stats=result['traffic_stats']
+            )
 
 
 async def check_pending_accounts(SessionLocal: sessionmaker, bot=None, max_accounts: int = 5, notify_admin: bool = True):
