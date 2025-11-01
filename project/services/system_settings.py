@@ -120,3 +120,31 @@ def set_global_verify_mode(session: Session, mode: str) -> SystemSettings:
         raise ValueError(f"Invalid verification mode: {mode}")
     
     return set_setting(session, "global_verify_mode", mode)
+
+
+def get_traffic_reports_enabled(session: Session) -> bool:
+    """
+    Get whether traffic reports are enabled.
+    
+    Args:
+        session: Database session
+        
+    Returns:
+        True if traffic reports enabled (default: True)
+    """
+    value = get_setting(session, "traffic_reports_enabled", "true")
+    return value.lower() in ["true", "1", "yes"]
+
+
+def set_traffic_reports_enabled(session: Session, enabled: bool) -> SystemSettings:
+    """
+    Enable or disable traffic reports to admins.
+    
+    Args:
+        session: Database session
+        enabled: True to enable, False to disable
+        
+    Returns:
+        SystemSettings object
+    """
+    return set_setting(session, "traffic_reports_enabled", "true" if enabled else "false")

@@ -5,13 +5,21 @@ import os
 try:
     from ..keyboards import admin_menu_kb, main_menu, admin_verify_mode_selection_kb
     from ..utils.access import get_or_create_user, ensure_active, ensure_admin
-    from ..services.system_settings import get_auto_check_interval, set_auto_check_interval, get_global_verify_mode, set_global_verify_mode
+    from ..services.system_settings import (
+        get_auto_check_interval, set_auto_check_interval, 
+        get_global_verify_mode, set_global_verify_mode,
+        get_traffic_reports_enabled, set_traffic_reports_enabled
+    )
     from ..models import Account, User, APIKey, Proxy, InstagramSession
     from .user_management import register_user_management_handlers
 except ImportError:
     from keyboards import admin_menu_kb, main_menu, admin_verify_mode_selection_kb
     from utils.access import get_or_create_user, ensure_active, ensure_admin
-    from services.system_settings import get_auto_check_interval, set_auto_check_interval, get_global_verify_mode, set_global_verify_mode
+    from services.system_settings import (
+        get_auto_check_interval, set_auto_check_interval, 
+        get_global_verify_mode, set_global_verify_mode,
+        get_traffic_reports_enabled, set_traffic_reports_enabled
+    )
     from models import Account, User, APIKey, Proxy, InstagramSession
     from handlers.user_management import register_user_management_handlers
 
@@ -34,13 +42,17 @@ def register_admin_menu_handlers(bot, session_factory):
         with session_factory() as session:
             interval = get_auto_check_interval(session)
             current_mode = get_global_verify_mode(session)
+            traffic_reports = get_traffic_reports_enabled(session)
+        
+        traffic_status = "✅ Включены" if traffic_reports else "❌ Выключены"
         
         bot.send_message(
             message["chat"]["id"],
             f"⚙️ **Админ-панель**\n\n"
             f"Текущие настройки:\n"
             f"• Интервал автопроверки: **{interval} мин**\n"
-            f"• Режим проверки: **{current_mode}**\n\n"
+            f"• Режим проверки: **{current_mode}**\n"
+            f"• Отчеты по трафику: {traffic_status}\n\n"
             f"Выберите действие:",
             admin_menu_kb()
         )
@@ -53,6 +65,10 @@ def register_admin_menu_handlers(bot, session_factory):
         
         with session_factory() as session:
             interval = get_auto_check_interval(session)
+        
+        # Устанавливаем FSM state для обработки ввода интервала
+        user_id = message["from"]["id"]
+        bot.fsm_states[user_id] = {"state": "waiting_for_interval", "data": {}}
         
         bot.send_message(
             message["chat"]["id"],
@@ -91,6 +107,27 @@ def register_admin_menu_handlers(bot, session_factory):
     def handle_interval_input(message, user):
         """Handle interval input."""
         text = message.get("text", "").strip()
+        user_id = message["from"]["id"]
+        
+        # Check for cancel command
+        if text.lower() in ['/cancel', 'отмена', 'cancel', '❌ отмена']:
+            # Clear FSM state
+            if user_id in bot.fsm_states:
+                del bot.fsm_states[user_id]
+            
+            # Get verify_mode for keyboard
+            with session_factory() as session:
+                verify_mode = get_global_verify_mode(session)
+                interval = get_auto_check_interval(session)
+            
+            keyboard = main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode)
+            bot.send_message(
+                message["chat"]["id"],
+                f"❌ Изменение интервала отменено.\n\n"
+                f"Текущий интервал: **{interval} минут**",
+                keyboard
+            )
+            return
         
         if not text.isdigit():
             bot.send_message(
@@ -111,32 +148,45 @@ def register_admin_menu_handlers(bot, session_factory):
         
         # Save to database
         with session_factory() as session:
+            print(f"[ADMIN] 💾 Сохранение интервала автопроверки: {interval} минут")
             set_auto_check_interval(session, interval)
         
+        # Проверяем, что значение сохранилось - используем новую сессию для проверки
+        with session_factory() as session:
+            saved_interval = get_auto_check_interval(session)
+            verify_mode = get_global_verify_mode(session)
+            print(f"[ADMIN] ✅ Проверка сохранения: запрошено {interval}, сохранено {saved_interval}")
+            if saved_interval != interval:
+                print(f"[ADMIN] ⚠️ Warning: Saved interval {saved_interval} != requested {interval}")
+            actual_interval = saved_interval
+        
         # Clear FSM state
-        user_id = message["from"]["id"]
         if user_id in bot.fsm_states:
             del bot.fsm_states[user_id]
         
         # Calculate stats
-        checks_per_hour = 60 // interval
+        checks_per_hour = 60 // actual_interval
         checks_per_day = checks_per_hour * 24
         
-        # Get verify_mode for keyboard
-        with session_factory() as session:
-            verify_mode = get_global_verify_mode(session)
+        try:
+            from ..keyboards import admin_menu_kb
+        except ImportError:
+            from keyboards import admin_menu_kb
         
-        keyboard = main_menu(is_admin=ensure_admin(user), verify_mode=verify_mode)
+        keyboard = admin_menu_kb()
         bot.send_message(
             message["chat"]["id"],
             f"✅ **Интервал автопроверки обновлен!**\n\n"
-            f"• Новый интервал: **{interval} минут**\n"
+            f"• Новый интервал: **{actual_interval} минут**\n"
             f"• Проверок в час: ~{checks_per_hour}\n"
             f"• Проверок в день: ~{checks_per_day}\n\n"
             f"⚠️ **Важно:** Для применения изменений перезапустите бота!\n"
             f"Текущая сессия использует старый интервал.",
             keyboard
         )
+        
+        # Обновляем сообщение в админ-панели, если оно было открыто
+        # Это делается для того, чтобы сразу показать актуальное значение
     
     def handle_statistics(message, user):
         """Handle Статистика системы button."""
@@ -194,6 +244,48 @@ def register_admin_menu_handlers(bot, session_factory):
         )
         
         bot.send_message(message["chat"]["id"], stats_text)
+    
+    def handle_traffic_reports_menu(message, user):
+        """Handle Отчеты по трафику button."""
+        if not ensure_admin(user):
+            bot.send_message(message["chat"]["id"], "⛔ Доступ запрещен.")
+            return
+        
+        with session_factory() as session:
+            current_status = get_traffic_reports_enabled(session)
+        
+        status_emoji = "✅" if current_status else "❌"
+        status_text = "включены" if current_status else "выключены"
+        action_text = "выключить" if current_status else "включить"
+        action_emoji = "❌" if current_status else "✅"
+        
+        # Create inline keyboard for toggle
+        keyboard = {
+            "inline_keyboard": [
+                [{
+                    "text": f"{action_emoji} {action_text.capitalize()}",
+                    "callback_data": f"traffic_reports_toggle"
+                }],
+                [{
+                    "text": "⬅ Назад в админку",
+                    "callback_data": "back_to_admin"
+                }]
+            ]
+        }
+        
+        bot.send_message(
+            message["chat"]["id"],
+            f"📊 **Отчеты по трафику**\n\n"
+            f"Текущий статус: {status_emoji} **{status_text.capitalize()}**\n\n"
+            f"💡 Отчеты отправляются администраторам после каждой автопроверки.\n\n"
+            f"Отчет содержит:\n"
+            f"• Количество проверенных аккаунтов\n"
+            f"• Разделение на активные/неактивные\n"
+            f"• Потребленный трафик\n"
+            f"• Среднее потребление трафика\n\n"
+            f"Чтобы {action_text} отчеты, нажмите кнопку ниже:",
+            keyboard
+        )
     
     def handle_restart_bot(message, user):
         """Handle Перезапуск бота button."""
@@ -254,11 +346,90 @@ def register_admin_menu_handlers(bot, session_factory):
     # Register user management handlers
     user_mgmt_handlers, user_mgmt_callbacks = register_user_management_handlers(bot, session_factory)
     
+    # Callback handler for traffic reports toggle
+    def handle_traffic_reports_toggle(callback_query, user):
+        """Handle traffic reports toggle callback."""
+        if not ensure_admin(user):
+            bot.answer_callback_query(callback_query["id"], "⛔ Доступ запрещен")
+            return
+        
+        with session_factory() as session:
+            current_status = get_traffic_reports_enabled(session)
+            new_status = not current_status
+            set_traffic_reports_enabled(session, new_status)
+        
+        status_emoji = "✅" if new_status else "❌"
+        status_text = "включены" if new_status else "выключены"
+        action_text = "выключить" if new_status else "включить"
+        action_emoji = "❌" if new_status else "✅"
+        
+        # Update keyboard
+        keyboard = {
+            "inline_keyboard": [
+                [{
+                    "text": f"{action_emoji} {action_text.capitalize()}",
+                    "callback_data": f"traffic_reports_toggle"
+                }],
+                [{
+                    "text": "⬅ Назад в админку",
+                    "callback_data": "back_to_admin"
+                }]
+            ]
+        }
+        
+        # Update message
+        bot.edit_message_text(
+            callback_query["message"]["chat"]["id"],
+            callback_query["message"]["message_id"],
+            f"📊 **Отчеты по трафику**\n\n"
+            f"Текущий статус: {status_emoji} **{status_text.capitalize()}**\n\n"
+            f"💡 Отчеты отправляются администраторам после каждой автопроверки.\n\n"
+            f"Отчет содержит:\n"
+            f"• Количество проверенных аккаунтов\n"
+            f"• Разделение на активные/неактивные\n"
+            f"• Потребленный трафик\n"
+            f"• Среднее потребление трафика\n\n"
+            f"Чтобы {action_text} отчеты, нажмите кнопку ниже:",
+            keyboard
+        )
+        
+        bot.answer_callback_query(
+            callback_query["id"],
+            f"✅ Отчеты по трафику {status_text}"
+        )
+    
+    def handle_back_to_admin_callback(callback_query, user):
+        """Handle back to admin menu callback."""
+        if not ensure_admin(user):
+            bot.answer_callback_query(callback_query["id"], "⛔ Доступ запрещен")
+            return
+        
+        with session_factory() as session:
+            interval = get_auto_check_interval(session)
+            current_mode = get_global_verify_mode(session)
+            traffic_reports = get_traffic_reports_enabled(session)
+        
+        traffic_status = "✅ Включены" if traffic_reports else "❌ Выключены"
+        
+        bot.edit_message_text(
+            callback_query["message"]["chat"]["id"],
+            callback_query["message"]["message_id"],
+            f"⚙️ **Админ-панель**\n\n"
+            f"Текущие настройки:\n"
+            f"• Интервал автопроверки: **{interval} мин**\n"
+            f"• Режим проверки: **{current_mode}**\n"
+            f"• Отчеты по трафику: {traffic_status}\n\n"
+            f"Выберите действие:",
+        )
+        
+        bot.answer_callback_query(callback_query["id"])
+    
     # Combine all handlers
     message_handlers = {
         "Админка": handle_admin_menu,
         "Интервал автопроверки": handle_interval_menu,
         "Режим проверки": handle_verify_mode_menu,
+        "Отчеты по трафику": handle_traffic_reports_menu,
         "Статистика системы": handle_statistics,
         "Перезапуск бота": handle_restart_bot,
     }
@@ -271,6 +442,13 @@ def register_admin_menu_handlers(bot, session_factory):
         "waiting_for_restart_confirm": handle_restart_confirm,
     }
     
+    # Combine callback handlers
+    callback_handlers = {
+        "traffic_reports_toggle": handle_traffic_reports_toggle,
+        "back_to_admin": handle_back_to_admin_callback,
+    }
+    callback_handlers.update(user_mgmt_callbacks)
+    
     # Register message handlers
-    return message_handlers, fsm_handlers, user_mgmt_callbacks
+    return message_handlers, fsm_handlers, callback_handlers
 

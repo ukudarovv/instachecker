@@ -26,7 +26,7 @@ except ImportError:
 
 async def send_traffic_report_to_admins(SessionLocal: sessionmaker, bot, user_id: int, traffic_stats):
     """
-    Send traffic report to all admin users.
+    Send traffic report to all admin users (if enabled).
     
     Args:
         SessionLocal: SQLAlchemy session factory
@@ -35,6 +35,16 @@ async def send_traffic_report_to_admins(SessionLocal: sessionmaker, bot, user_id
         traffic_stats: AutoCheckTrafficStats instance with statistics
     """
     with SessionLocal() as session:
+        # Check if traffic reports are enabled
+        try:
+            from ..services.system_settings import get_traffic_reports_enabled
+        except ImportError:
+            from services.system_settings import get_traffic_reports_enabled
+        
+        if not get_traffic_reports_enabled(session):
+            print("[AUTO-CHECK] 📊 Traffic reports disabled, skipping report")
+            return
+        
         # Get all admin users
         admin_users = session.query(User).filter(
             User.role.in_(['admin', 'superuser']),
