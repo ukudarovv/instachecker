@@ -217,9 +217,7 @@ async def check_user_accounts_optimized(user_id: int, user_accounts: list, Sessi
                     not_found += 1
                     print(f"[AUTO-CHECK-OPT] ❌ @{acc.account} - NOT FOUND")
             
-            # Small delay between batches (0.5-1 sec)
-            if batch_idx + batch_size < len(user_accounts):
-                await asyncio.sleep(random.uniform(0.5, 1.0))
+            # No delay between batches for maximum speed
         
         traffic_stats.finalize()
         

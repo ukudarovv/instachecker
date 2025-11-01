@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 from typing import Dict, Any
+import time
+import uuid
 from aiohttp import ClientSession, ClientTimeout
 from sqlalchemy.orm import Session
 from datetime import date
@@ -9,11 +11,13 @@ from datetime import date
 try:
     from ..models import Account, APIKey
     from .api_keys import pick_best_key, incr_usage, set_work_status, _reset_if_new_day
+    from .traffic_monitor import get_traffic_monitor
     from ..config import get_settings
     from sqlalchemy import and_
 except ImportError:
     from models import Account, APIKey
     from services.api_keys import pick_best_key, incr_usage, set_work_status, _reset_if_new_day
+    from services.traffic_monitor import get_traffic_monitor
     from config import get_settings
     from sqlalchemy import and_
 
@@ -70,12 +74,42 @@ async def check_account_exists_via_api(session: Session, user_id: int, username:
             "Content-Type": "application/json"
         }
         payload = {"username": username.lower()}
+        
+        # Initialize traffic monitoring
+        monitor = get_traffic_monitor()
+        request_id = str(uuid.uuid4())
+        monitor.start_request(request_id, "rapidapi", settings.rapidapi_url)
+        
+        # Calculate request size
+        import json as json_lib
+        request_size = len(settings.rapidapi_url.encode('utf-8'))
+        request_size += len(str(headers).encode('utf-8'))
+        request_size += len(json_lib.dumps(payload).encode('utf-8'))
 
         try:
+            start_time = time.time()
             async with ClientSession(timeout=timeout, headers=headers) as sess:
                 async with sess.post(settings.rapidapi_url, json=payload) as resp:
                     # Parse response
-                    data = await resp.json(content_type=None)
+                    response_text = await resp.text()
+                    
+                    # Calculate response size and duration
+                    response_size = len(response_text.encode('utf-8'))
+                    duration_ms = (time.time() - start_time) * 1000
+                    
+                    # End traffic monitoring
+                    monitor.end_request(
+                        request_id=request_id,
+                        success=True,
+                        status_code=resp.status,
+                        request_size=request_size,
+                        response_size=response_size,
+                        duration_ms=duration_ms
+                    )
+                    
+                    # Parse JSON from text
+                    import json as json_lib
+                    data = json_lib.loads(response_text)
 
                     # Debug logging
                     print(f"[API-DEBUG] Response for @{username}: {data}")
@@ -137,6 +171,21 @@ async def check_account_exists_via_api(session: Session, user_id: int, username:
                         }
         except Exception as e:
             print(f"❌ Error with API key {key.id}: {e}")
+            
+            # End traffic monitoring for failed request
+            try:
+                duration_ms = (time.time() - start_time) * 1000 if 'start_time' in locals() else 0
+                monitor.end_request(
+                    request_id=request_id,
+                    success=False,
+                    status_code=0,
+                    request_size=request_size if 'request_size' in locals() else 0,
+                    response_size=0,
+                    duration_ms=duration_ms
+                )
+            except:
+                pass
+            
             # Mark key as potentially problematic but don't give up yet
             set_work_status(session, key, ok=False)
             continue  # Try next key

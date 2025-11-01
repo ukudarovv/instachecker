@@ -237,10 +237,7 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
                         except Exception as e:
                             print(f"[AUTO-CHECK] ❌ Failed to send API exhaustion notification: {e}")
                 
-                # Minimal delay between checks (0.5-1 second for rate limiting)
-                if idx < len(user_accounts) - 1:
-                    delay = random.uniform(0.5, 1.0)
-                    await asyncio.sleep(delay)
+                # No delay between checks for maximum speed
                         
             except Exception as e:
                 errors += 1
