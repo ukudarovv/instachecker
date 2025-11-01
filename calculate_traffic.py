@@ -3,9 +3,10 @@
 Расчет на основе тестовых данных.
 """
 
-# Средние значения из тестов
-AVG_TRAFFIC_ACTIVE = 5000  # bytes (~4.98 KB)
-AVG_TRAFFIC_INACTIVE = 1200  # bytes (~1.18 KB)
+# Средние значения из реальных измерений (после оптимизации)
+# max_attempts = 1 (одна попытка вместо трех)
+AVG_TRAFFIC_ACTIVE = 5000  # bytes (~5 KB) - API check + screenshot
+AVG_TRAFFIC_INACTIVE = 1900  # bytes (~1.9 KB) - API check only (1 attempt)
 
 def format_bytes(bytes_count):
     """Форматирование размера."""
