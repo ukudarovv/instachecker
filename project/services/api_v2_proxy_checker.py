@@ -565,6 +565,9 @@ async def check_account_via_api_v2_proxy(
     request_id = str(uuid.uuid4())
     start_time = time.time()
     
+    # Start monitoring request
+    monitor.start_request(request_id, "selenium-proxy", f"https://www.instagram.com/{username}/")
+    
     result = {
         "username": username,
         "exists": None,
@@ -685,7 +688,7 @@ async def check_account_via_api_v2_proxy(
             except Exception as db_e:
                 session.rollback()
                 print(f"[API-V2-PROXY] ⚠️ Не удалось обновить статус аккаунта в БД: {db_e}")
-            return result
+            # DON'T return here - need to register traffic first!
         
         elif api_result.get("exists") is False:
             print(f"[API-V2-PROXY] ❌ Аккаунт @{username} не существует")
@@ -707,7 +710,7 @@ async def check_account_via_api_v2_proxy(
         print(f"[API-V2-PROXY] ❌ Критическая ошибка для @{username}: {e}")
         result["error"] = str(e)
     
-    # End traffic monitoring with estimated sizes
+    # End traffic monitoring with estimated sizes BEFORE returning
     # (Selenium doesn't provide exact traffic data, so we estimate based on result)
     duration_ms = (time.time() - start_time) * 1000
     proxy_used = result.get("proxy_used", "unknown")
@@ -730,6 +733,8 @@ async def check_account_via_api_v2_proxy(
         response_size=estimated_traffic - 500,  # Estimated response size
         duration_ms=duration_ms
     )
+    
+    print(f"[API-V2-PROXY] 📊 Traffic registered: {estimated_traffic} bytes (active={result.get('exists')})")
     
     return result
 

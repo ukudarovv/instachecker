@@ -130,6 +130,10 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
                 check_traffic = traffic_monitor.total_traffic - check_start_traffic
                 check_duration_ms = (check_end_time - check_start_time).total_seconds() * 1000
                 
+                # Debug logging
+                print(f"[AUTO-CHECK] 📊 Traffic for @{acc.account}: {check_traffic} bytes (start: {check_start_traffic}, end: {traffic_monitor.total_traffic})")
+                print(f"[AUTO-CHECK] 📊 Account status: {'ACTIVE' if success else 'INACTIVE'}")
+                
                 # Add to traffic stats
                 traffic_stats.add_check(
                     username=acc.account,

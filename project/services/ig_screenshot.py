@@ -251,6 +251,9 @@ async def check_account_with_header_screenshot(
     url = f"https://www.instagram.com/{username.strip('@')}/"
     proxy_kwargs = _proxy_kwargs_from_url(proxy_url) if proxy_url else None
     
+    # Will be updated in finally block
+    traffic_registered = False
+    
     try:
         async with async_playwright() as p:
             # 🔥 УЛУЧШЕННАЯ настройка браузера
@@ -1269,32 +1272,38 @@ async def check_account_with_header_screenshot(
         print(f"[PROXY-HEADER-SCREENSHOT] ❌ Критическая ошибка: {e}")
         result["error"] = str(e)
     
-    # End traffic monitoring with estimated sizes
-    # (Playwright doesn't provide exact traffic data, so we estimate based on result)
-    duration_ms = (time.time() - start_time) * 1000
-    
-    if result.get("exists") is True:
-        # Active account: page loaded with images and profile data
-        # Estimate: HTML(~20KB) + CSS(~15KB) + JS(~20KB) + Profile pic(~20KB) = ~75KB
-        estimated_request = 2000  # Request headers + HTML request
-        estimated_response = 75000  # Page content + resources
-    elif result.get("exists") is False:
-        # Inactive account: minimal page or error page
-        # Estimate: HTML(~5KB) + CSS(~3KB) = ~8KB  
-        estimated_request = 2000
-        estimated_response = 8000
-    else:
-        # Error case: minimal traffic
-        estimated_request = 1000
-        estimated_response = 2000
-    
-    monitor.end_request(
-        request_id=request_id,
-        success=(result.get("exists") is not None),
-        status_code=200 if result.get("exists") is not None else 0,
-        request_size=estimated_request,
-        response_size=estimated_response,
-        duration_ms=duration_ms
-    )
+    finally:
+        # ALWAYS end traffic monitoring (even on early returns/errors)
+        # (Playwright doesn't provide exact traffic data, so we estimate based on result)
+        try:
+            duration_ms = (time.time() - start_time) * 1000
+            
+            if result.get("exists") is True:
+                # Active account: page loaded with images and profile data
+                # Estimate: HTML(~20KB) + CSS(~15KB) + JS(~20KB) + Profile pic(~20KB) = ~75KB
+                estimated_request = 2000  # Request headers + HTML request
+                estimated_response = 75000  # Page content + resources
+            elif result.get("exists") is False:
+                # Inactive account: minimal page or error page
+                # Estimate: HTML(~5KB) + CSS(~3KB) = ~8KB  
+                estimated_request = 2000
+                estimated_response = 8000
+            else:
+                # Error case: minimal traffic
+                estimated_request = 1000
+                estimated_response = 2000
+            
+            monitor.end_request(
+                request_id=request_id,
+                success=(result.get("exists") is not None),
+                status_code=200 if result.get("exists") is not None else 0,
+                request_size=estimated_request,
+                response_size=estimated_response,
+                duration_ms=duration_ms
+            )
+            
+            print(f"[PROXY-HEADER-SCREENSHOT] 📊 Traffic registered: {estimated_request + estimated_response} bytes (active={result.get('exists')})")
+        except Exception as monitor_error:
+            print(f"[PROXY-HEADER-SCREENSHOT] ⚠️ Failed to register traffic: {monitor_error}")
     
     return result
