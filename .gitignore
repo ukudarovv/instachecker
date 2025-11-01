@@ -48,6 +48,8 @@ Thumbs.db
 
 # Project specific
 screenshots/
+design_tests/
+generated_profiles/
 *.log
 temp/
 .env.local
