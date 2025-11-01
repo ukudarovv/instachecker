@@ -1608,17 +1608,17 @@ class TelegramBot:
                         from services.accounts import normalize_username, find_duplicate, create_account
                         from services.checker import is_valid_instagram_username, check_account_exists_placeholder
                     
+                    # Нормализуем username - только удаляем @ в начале и пробелы по краям
+                    # Сохраняем все остальные символы (регистр, подчеркивания, точки и т.д.) как написано
                     username = normalize_username(raw)
-                    if not is_valid_instagram_username(username):
+                    
+                    # Минимальная проверка - только на пустоту и длину
+                    if not username or len(username) > 30:
                         self.send_message(chat_id, 
-                            "⚠️ Неверный формат. Допустимы: буквы, цифры, точка, нижнее подчёркивание, до 30 символов.\n"
+                            "⚠️ Username не может быть пустым или длиннее 30 символов.\n"
                             "Попробуйте снова или нажмите «Отмена».", 
                             cancel_kb()
                         )
-                        return
-                    
-                    if not check_account_exists_placeholder(username):
-                        self.send_message(chat_id, "⚠️ Похоже, такого аккаунта не существует. Введите другой или «Отмена».", cancel_kb())
                         return
                     
                     # Check for duplicates and create account immediately
@@ -2116,49 +2116,19 @@ class TelegramBot:
                     auto_fixed_usernames = []  # Track auto-fixed usernames
                     
                     for username_input in usernames:
-                        # Clean username
-                        username = username_input.replace('@', '').strip().lower()
+                        # Clean username - только удаляем @ в начале и пробелы по краям
+                        # Сохраняем все остальные символы (регистр, подчеркивания, точки и т.д.) как написано
+                        username = username_input.strip().lstrip("@")
                         if not username:
                             continue
                         
-                        # Auto-fix username: remove trailing underscores and dots
-                        original_username = username
-                        while username.endswith('_') or username.endswith('.'):
-                            username = username.rstrip('_.')
-                        
-                        # Also remove leading underscores and dots
-                        while username.startswith('_') or username.startswith('.'):
-                            username = username.lstrip('_.')
-                        
-                        # If username was modified, add info message
-                        if username != original_username:
-                            print(f"[MASS-ADD] 🔧 Auto-fixed username: {original_username} → {username}")
-                            auto_fixed_usernames.append(f"{original_username} → {username}")
-                        
-                        if not username:
-                            errors.append(f"Username стал пустым после очистки: {username_input}")
-                            continue
-                        
-                        # Validate username (Instagram rules)
+                        # Validate username - минимальная проверка (только длина)
                         if len(username) < 1 or len(username) > 30:
                             errors.append(f"Некорректная длина username: {username_input}")
                             continue
                         
-                        # Check for valid characters (letters, numbers, dots, underscores)
-                        import re
-                        if not re.match(r'^[a-zA-Z0-9._]+$', username):
-                            errors.append(f"Некорректные символы в username: {username_input}")
-                            continue
-                        
-                        # Check for consecutive dots (Instagram doesn't allow this)
-                        if '..' in username:
-                            errors.append(f"Некорректный формат username: {username_input}")
-                            continue
-                        
-                        # Check for starting/ending with dot or underscore
-                        if username.startswith('.') or username.endswith('.') or username.startswith('_') or username.endswith('_'):
-                            errors.append(f"Username не может начинаться/заканчиваться точкой или подчеркиванием: {username_input}")
-                            continue
+                        # Сохраняем username как написано, без дополнительных проверок
+                        # Все символы (регистр, подчеркивания, точки и т.д.) сохраняются как введено
                         
                         # Check for duplicates in input
                         if username in [acc['username'] for acc in accounts]:
@@ -2423,10 +2393,26 @@ class TelegramBot:
                         return
                     
                     # Parse account list (semicolon-separated)
-                    usernames = [username.strip() for username in text.split(';') if username.strip()]
+                    # Import normalize_username to handle special characters
+                    try:
+                        from .services.accounts import normalize_username
+                    except ImportError:
+                        from services.accounts import normalize_username
+                    
+                    # Split by semicolon, newline, or comma for flexibility
+                    raw_usernames = text.replace('\n', ';').replace(',', ';').split(';')
+                    usernames = []
+                    
+                    for raw_username in raw_usernames:
+                        username = raw_username.strip()
+                        if username:
+                            # Normalize each username (remove @, trim spaces, preserve special chars)
+                            normalized = normalize_username(username)
+                            if normalized:
+                                usernames.append(normalized)
                     
                     if not usernames:
-                        self.send_message(chat_id, "❌ Список аккаунтов пуст. Попробуйте еще раз.")
+                        self.send_message(chat_id, "❌ Список аккаунтов пуст. Попробуйте еще раз или нажмите «Отмена».")
                         return
                     
                     # Get deletion type from FSM state
@@ -3149,22 +3135,24 @@ class TelegramBot:
 Конец работ: {acc.to_date.strftime("%d.%m.%Y") if acc.to_date else "N/A"}
 Статус: Аккаунт разблокирован✅"""
                                     
-                                    # Send result text
-                                    self.send_message(chat_id, caption)
-                                
-                                # Send screenshot if available
-                                if screenshot_path and os.path.exists(screenshot_path):
-                                    try:
-                                        asyncio.run(self.send_photo(chat_id, screenshot_path, f'📸 Скриншот <a href="https://www.instagram.com/{acc.account}/">@{acc.account}</a>'))
-                                        # Delete screenshot after sending to save disk space (TEMPORARILY DISABLED)
+                                    # Send screenshot with caption if available
+                                    if screenshot_path and os.path.exists(screenshot_path):
                                         try:
-                                            # os.remove(screenshot_path)
-                                            # print(f"🗑️ Screenshot deleted: {screenshot_path}")
-                                            print(f"🗑️ Screenshot kept: {screenshot_path}")
-                                        except Exception as del_err:
-                                            print(f"Warning: Failed to delete screenshot: {del_err}")
-                                    except Exception as e:
-                                        print(f"Failed to send photo: {e}")
+                                            asyncio.run(self.send_photo(chat_id, screenshot_path, caption))
+                                            # Delete screenshot after sending to save disk space (TEMPORARILY DISABLED)
+                                            try:
+                                                # os.remove(screenshot_path)
+                                                # print(f"🗑️ Screenshot deleted: {screenshot_path}")
+                                                print(f"🗑️ Screenshot kept: {screenshot_path}")
+                                            except Exception as del_err:
+                                                print(f"Warning: Failed to delete screenshot: {del_err}")
+                                        except Exception as e:
+                                            print(f"Failed to send photo: {e}, sending message separately")
+                                            # Fallback: send message separately if photo fails
+                                            self.send_message(chat_id, caption)
+                                    else:
+                                        # If no screenshot, send message separately
+                                        self.send_message(chat_id, caption)
                                 
                                 # Update account status
                                 if success:
@@ -3489,12 +3477,11 @@ class TelegramBot:
                                         if info.get("error"):
                                             caption += f"\nОшибка: {info['error']}"
                                         
-                                        self.send_message(chat_id, caption)
-                                        
+                                        # Send screenshot with caption if available
                                         if info.get("screenshot_path") and os.path.exists(info["screenshot_path"]):
                                             try:
                                                 screenshot_path = info["screenshot_path"]
-                                                asyncio.run(self.send_photo(chat_id, screenshot_path, f'📸 Скриншот <a href="https://www.instagram.com/{a.account}/">@{a.account}</a>'))
+                                                asyncio.run(self.send_photo(chat_id, screenshot_path, caption))
                                                 # Delete screenshot after sending to save disk space (TEMPORARILY DISABLED)
                                                 try:
                                                     # os.remove(screenshot_path)
@@ -3503,7 +3490,12 @@ class TelegramBot:
                                                 except Exception as del_err:
                                                     print(f"Warning: Failed to delete screenshot: {del_err}")
                                             except Exception as e:
-                                                print(f"Failed to send photo: {e}")
+                                                print(f"Failed to send photo: {e}, sending message separately")
+                                                # Fallback: send message separately if photo fails
+                                                self.send_message(chat_id, caption)
+                                        else:
+                                            # If no screenshot, send message separately
+                                            self.send_message(chat_id, caption)
                                     
                                     self.send_message(chat_id, 
                                         f"🎯 Готово!\n\n📊 Результаты:\n• Найдено: {ok_count}\n• Не найдено: {nf_count}\n• Ошибки: {unk_count}"

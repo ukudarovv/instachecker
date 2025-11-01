@@ -16,8 +16,9 @@ PAGE_SIZE = 15
 
 
 def normalize_username(username: str) -> str:
-    """Normalize username by removing @ and converting to lowercase."""
-    return (username or "").strip().lstrip("@").lower()
+    """Normalize username by removing @ and leading/trailing spaces only."""
+    # Только удаляем @ в начале и пробелы по краям, сохраняем все остальные символы как есть
+    return (username or "").strip().lstrip("@")
 
 
 def find_duplicate(session: Session, user_id: int, username: str) -> Optional[Account]:
@@ -159,7 +160,7 @@ def get_accounts_expiring_soon(session: Session, days_ahead: int = 3) -> List[Ac
 
 def mass_delete_accounts_by_usernames(session: Session, user_id: int, usernames: List[str], delete_type: str = "all") -> Tuple[int, List[str]]:
     """
-    Mass delete accounts by usernames list.
+    Mass delete accounts by usernames list with flexible matching.
     
     Args:
         session: Database session
@@ -176,14 +177,33 @@ def mass_delete_accounts_by_usernames(session: Session, user_id: int, usernames:
     for username in usernames:
         normalized_username = normalize_username(username)
         
-        # Find account by username and user_id
+        print(f"[MASS-DELETE] Поиск аккаунта: '{normalized_username}' для user_id={user_id}")
+        
+        # Try exact match first
         account = (
             session.query(Account)
             .filter(Account.user_id == user_id, Account.account == normalized_username)
             .one_or_none()
         )
         
+        # If not found, try case-insensitive search
         if not account:
+            print(f"[MASS-DELETE] Точное совпадение не найдено, пробуем case-insensitive поиск...")
+            from sqlalchemy import func
+            account = (
+                session.query(Account)
+                .filter(
+                    Account.user_id == user_id,
+                    func.lower(Account.account) == func.lower(normalized_username)
+                )
+                .first()
+            )
+            
+            if account:
+                print(f"[MASS-DELETE] ✅ Найден с другим регистром: '{account.account}' вместо '{normalized_username}'")
+        
+        if not account:
+            print(f"[MASS-DELETE] ❌ Аккаунт не найден: '{normalized_username}'")
             not_found_usernames.append(username)
             continue
             
