@@ -611,9 +611,6 @@ def user_card_kb(user_id: int, is_active: bool, role: str, page: int = 1, filter
     else:
         keyboard.append([{"text": "👑 Сделать админом", "callback_data": f"usr_promote:{user_id}:{page}:{filter_type}"}])
     
-    # Verify mode row
-    keyboard.append([{"text": "🔄 Изменить режим проверки", "callback_data": f"usr_change_verify:{user_id}:{page}:{filter_type}"}])
-    
     # Accounts row
     keyboard.append([{"text": "📱 Показать аккаунты", "callback_data": f"usr_accounts:{user_id}:{page}:{filter_type}"}])
     

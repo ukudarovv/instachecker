@@ -339,8 +339,31 @@ def register_user_management_handlers(bot, session_factory):
                 "proxy": "🌐 Прокси",
                 "instagram": "📸 Instagram",
                 "api+instagram": "🔑 API + 📸 Instagram",
-                "api+proxy": "🔑 API + 🌐 Proxy"
+                "api+proxy": "🔑 API + 🌐 Proxy",
+                "api-v2": "🔑 API v2 + 🌐 Proxy"
             }.get(target_user.verify_mode, "❓ Неизвестно")
+            
+            # Get traffic statistics
+            try:
+                from ..services.traffic_monitor import get_traffic_monitor
+            except ImportError:
+                from services.traffic_monitor import get_traffic_monitor
+            
+            monitor = get_traffic_monitor()
+            total_stats = monitor.get_total_stats()
+            
+            # Calculate traffic for last hour
+            from datetime import datetime, timedelta
+            one_hour_ago = datetime.now() - timedelta(hours=1)
+            
+            # Filter stats for last hour (if we have saved them)
+            traffic_last_hour = 0
+            requests_last_hour = 0
+            # Note: Simple approximation - would need time-based tracking for exact numbers
+            # For now, show total traffic
+            
+            # Format traffic info
+            total_traffic_text = monitor._format_bytes(total_stats['total_traffic']) if total_stats['total_requests'] > 0 else "0 B"
             
             user_info = (
                 f"👤 <b>Информация о пользователе</b>\n\n"
@@ -354,6 +377,9 @@ def register_user_management_handlers(bot, session_factory):
                 f"• API ключей: {api_keys_count}\n"
                 f"• Прокси: {proxies_count}\n"
                 f"• IG-сессий: {ig_sessions_count}\n\n"
+                f"📡 <b>Трафик:</b>\n"
+                f"• За все время: {total_traffic_text}\n"
+                f"• Всего запросов: {total_stats['total_requests']}\n\n"
                 f"Выберите действие:"
             )
             
