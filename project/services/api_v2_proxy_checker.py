@@ -329,7 +329,7 @@ class InstagramCheckerWithProxy:
     async def check_account(
         self, 
         username: str, 
-        max_attempts: int = 3,
+        max_attempts: int = 1,  # Changed from 3 to 1 for traffic optimization
         use_proxy: bool = True
     ) -> Dict:
         """
@@ -527,7 +527,7 @@ async def check_account_via_api_v2_proxy(
     session: Session,
     user_id: int,
     username: str,
-    max_attempts: int = 3
+    max_attempts: int = 1  # Changed from 3 to 1 for traffic optimization
 ) -> Dict[str, Any]:
     """
     Проверка Instagram аккаунта через API v2 с поддержкой прокси.
