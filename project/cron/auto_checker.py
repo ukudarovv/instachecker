@@ -62,9 +62,70 @@ async def send_traffic_report_to_admins(SessionLocal: sessionmaker, bot, user_id
                 print(f"[AUTO-CHECK] ❌ Failed to send traffic report to admin {admin.id}: {e}")
 
 
-async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: sessionmaker, fernet: OptionalFernet, bot=None):
+async def check_single_account(acc, user_id: int, session, verify_mode: str, traffic_monitor, bot=None):
     """
-    Check accounts for a specific user using new API + Proxy logic.
+    Check a single account (optimized for parallel execution).
+    
+    Returns:
+        Dict with check results and statistics
+    """
+    check_start_traffic = traffic_monitor.total_traffic
+    check_start_time = datetime.now()
+    
+    result = {
+        'username': acc.account,
+        'success': False,
+        'message': '',
+        'screenshot_path': None,
+        'traffic_bytes': 0,
+        'duration_ms': 0,
+        'error': False
+    }
+    
+    try:
+        print(f"[AUTO-CHECK] 🔍 Проверка @{acc.account}...")
+        
+        # Use new main_checker with API + Proxy logic
+        success, message, screenshot_path = await check_account_main(
+            username=acc.account,
+            session=session,
+            user_id=user_id
+        )
+        
+        # Calculate traffic and duration
+        check_end_time = datetime.now()
+        check_traffic = traffic_monitor.total_traffic - check_start_traffic
+        check_duration_ms = (check_end_time - check_start_time).total_seconds() * 1000
+        
+        result.update({
+            'success': success,
+            'message': message,
+            'screenshot_path': screenshot_path,
+            'traffic_bytes': check_traffic,
+            'duration_ms': check_duration_ms
+        })
+        
+        if success:
+            print(f"[AUTO-CHECK] ✅ @{acc.account} - FOUND")
+        else:
+            print(f"[AUTO-CHECK] ❌ @{acc.account} - NOT FOUND")
+            
+    except Exception as e:
+        print(f"[AUTO-CHECK] ❌ Error checking @{acc.account}: {str(e)}")
+        check_end_time = datetime.now()
+        result.update({
+            'error': True,
+            'message': str(e),
+            'traffic_bytes': traffic_monitor.total_traffic - check_start_traffic,
+            'duration_ms': (check_end_time - check_start_time).total_seconds() * 1000
+        })
+    
+    return acc, result
+
+
+async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: sessionmaker, fernet: OptionalFernet, bot=None, batch_size: int = 3):
+    """
+    Check accounts for a specific user using new API + Proxy logic with parallel batch processing.
     
     Args:
         user_id: User ID
@@ -72,8 +133,9 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
         SessionLocal: SQLAlchemy session factory
         fernet: Fernet encryptor
         bot: Optional TelegramBot instance
+        batch_size: Number of accounts to check in parallel (default: 3)
     """
-    print(f"[AUTO-CHECK] 🧵 Starting check for user {user_id} with {len(user_accounts)} accounts")
+    print(f"[AUTO-CHECK] 🧵 Starting OPTIMIZED check for user {user_id} with {len(user_accounts)} accounts (batch size: {batch_size})")
     
     checked = 0
     found = 0
@@ -98,8 +160,25 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
         verify_mode = get_global_verify_mode(session)
         print(f"[AUTO-CHECK] 👤 User {user_id} - режим проверки: {verify_mode}")
         
-        # Check all accounts using new main_checker logic
-        for idx, acc in enumerate(user_accounts):
+        # Process accounts in batches for parallel checking
+        for batch_idx in range(0, len(user_accounts), batch_size):
+            batch = user_accounts[batch_idx:batch_idx + batch_size]
+            batch_num = batch_idx // batch_size + 1
+            total_batches = (len(user_accounts) + batch_size - 1) // batch_size
+            
+            print(f"[AUTO-CHECK] 📦 Batch {batch_num}/{total_batches}: Checking {len(batch)} accounts in parallel...")
+            
+            # Create tasks for parallel checking
+            tasks = []
+            for acc in batch:
+                task = check_single_account(acc, user_id, session, verify_mode, traffic_monitor, bot)
+                tasks.append(task)
+            
+            # Execute batch in parallel
+            batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Process results
+            for idx, acc_result in enumerate(batch_results):
             check_start_traffic = traffic_monitor.total_traffic
             check_start_time = datetime.now()
             
@@ -237,10 +316,9 @@ async def check_user_accounts(user_id: int, user_accounts: list, SessionLocal: s
                         except Exception as e:
                             print(f"[AUTO-CHECK] ❌ Failed to send API exhaustion notification: {e}")
                 
-                # Delay between checks (3-7 seconds)
+                # Minimal delay between checks (0.5-1 second for rate limiting)
                 if idx < len(user_accounts) - 1:
-                    delay = random.uniform(3, 7)
-                    print(f"[AUTO-CHECK] ⏳ Waiting {delay:.1f}s before next check...")
+                    delay = random.uniform(0.5, 1.0)
                     await asyncio.sleep(delay)
                         
             except Exception as e:

@@ -13,12 +13,18 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 try:
     from .cron.auto_checker import check_user_pending_accounts
+    from .cron.auto_checker_optimized import check_user_accounts_optimized
     from .utils.async_bot_wrapper import AsyncBotWrapper
-    from .models import User
+    from .utils.encryptor import OptionalFernet
+    from .config import get_settings
+    from .models import User, Account
 except ImportError:
     from cron.auto_checker import check_user_pending_accounts
+    from cron.auto_checker_optimized import check_user_accounts_optimized
     from utils.async_bot_wrapper import AsyncBotWrapper
-    from models import User
+    from utils.encryptor import OptionalFernet
+    from config import get_settings
+    from models import User, Account
 
 
 class AutoCheckerScheduler:
@@ -59,24 +65,61 @@ class AutoCheckerScheduler:
         print(f"[AUTO-CHECK-SCHEDULER] Initialized (per-user intervals)")
     
     async def _check_user_job(self, user_id: int):
-        """Job that runs on schedule for a specific user."""
+        """OPTIMIZED: Job that runs on schedule for a specific user with parallel checking."""
         try:
-            print(f"[AUTO-CHECK-SCHEDULER-USER-{user_id}] Starting check at {datetime.now()}")
+            print(f"[AUTO-CHECK-SCHEDULER-USER-{user_id}] 🚀 Starting OPTIMIZED check at {datetime.now()}")
+            
+            # Get settings and fernet
+            settings = get_settings()
+            fernet = OptionalFernet(settings.encryption_key)
             
             # Create bot wrapper for this check
             async_bot = AsyncBotWrapper(self._bot_token)
             
-            await check_user_pending_accounts(
+            # Get pending accounts for this user
+            with self._SessionLocal() as session:
+                user = session.query(User).get(user_id)
+                if not user or not user.auto_check_enabled:
+                    print(f"[AUTO-CHECK-SCHEDULER-USER-{user_id}] User not found or auto-check disabled")
+                    return
+                
+                pending_accounts = session.query(Account).filter(
+                    Account.user_id == user_id,
+                    Account.done == False
+                ).order_by(Account.from_date.asc()).all()
+                
+                if not pending_accounts:
+                    print(f"[AUTO-CHECK-SCHEDULER-USER-{user_id}] No pending accounts")
+                    return
+            
+            # Use optimized parallel checker (batch size 3 for balance between speed and resources)
+            result = await check_user_accounts_optimized(
                 user_id=user_id,
+                user_accounts=pending_accounts,
                 SessionLocal=self._SessionLocal,
+                fernet=fernet,
                 bot=async_bot,
-                max_accounts=999999
+                batch_size=3  # Check 3 accounts in parallel
             )
             
-            print(f"[AUTO-CHECK-SCHEDULER-USER-{user_id}] Check completed at {datetime.now()}")
+            # Send traffic report to admins
+            if result and result.get('traffic_stats'):
+                try:
+                    from .cron.auto_checker import send_traffic_report_to_admins
+                except ImportError:
+                    from cron.auto_checker import send_traffic_report_to_admins
+                
+                await send_traffic_report_to_admins(
+                    SessionLocal=self._SessionLocal,
+                    bot=async_bot,
+                    user_id=user_id,
+                    traffic_stats=result['traffic_stats']
+                )
+            
+            print(f"[AUTO-CHECK-SCHEDULER-USER-{user_id}] ✅ Check completed at {datetime.now()}")
             
         except Exception as e:
-            print(f"[AUTO-CHECK-SCHEDULER-USER-{user_id}] Error during check: {e}")
+            print(f"[AUTO-CHECK-SCHEDULER-USER-{user_id}] ❌ Error during check: {e}")
             import traceback
             traceback.print_exc()
     
