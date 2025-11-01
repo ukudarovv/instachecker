@@ -435,7 +435,7 @@ class InstagramCheckerWithProxy:
                                 'full_name': user_data.get('full_name', ''),
                                 'username': user_data.get('username', ''),
                                 'profile_pic_url': user_data.get('profile_pic_url', ''),
-                                'biography': user_data.get('biography', ''),
+                                'biography': '',  # Всегда пустое описание
                                 'error': None,
                                 'attempts': attempts,
                                 'final_attempt': attempt + 1,
@@ -558,6 +558,13 @@ async def check_account_via_api_v2_proxy(
     """
     print(f"[API-V2-PROXY] 🔍 Проверка @{username} через API v2 с прокси")
     
+    # Initialize traffic monitoring (estimate for Selenium-based checks)
+    import time
+    import uuid
+    monitor = get_traffic_monitor()
+    request_id = str(uuid.uuid4())
+    start_time = time.time()
+    
     result = {
         "username": username,
         "exists": None,
@@ -653,7 +660,7 @@ async def check_account_via_api_v2_proxy(
                     following=api_result.get('following', 0),
                     is_private=api_result.get('is_private', False),
                     is_verified=api_result.get('is_verified', False),
-                    biography=api_result.get('biography', ''),
+                    biography='',  # Всегда пустое описание
                     profile_pic_url=api_result.get('profile_pic_url', ''),
                     output_path=screenshot_path.replace('header_', 'profile_')
                 )
@@ -700,9 +707,29 @@ async def check_account_via_api_v2_proxy(
         print(f"[API-V2-PROXY] ❌ Критическая ошибка для @{username}: {e}")
         result["error"] = str(e)
     
-    # Показываем статистику трафика после завершения проверки
-    monitor = get_traffic_monitor()
-    monitor.print_summary()
+    # End traffic monitoring with estimated sizes
+    # (Selenium doesn't provide exact traffic data, so we estimate based on result)
+    duration_ms = (time.time() - start_time) * 1000
+    proxy_used = result.get("proxy_used", "unknown")
+    
+    if result.get("exists") is True:
+        # Active account: larger response (profile data + screenshot loading)
+        estimated_traffic = 5000  # ~5 KB
+    elif result.get("exists") is False:
+        # Inactive account: smaller response (just "not found")
+        estimated_traffic = 1200  # ~1.2 KB
+    else:
+        # Error case
+        estimated_traffic = 500  # ~0.5 KB
+    
+    monitor.end_request(
+        request_id=request_id,
+        success=(result.get("exists") is not None),
+        status_code=200 if result.get("exists") is not None else 0,
+        request_size=500,  # Estimated request size
+        response_size=estimated_traffic - 500,  # Estimated response size
+        duration_ms=duration_ms
+    )
     
     return result
 
